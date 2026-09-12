@@ -31,6 +31,13 @@ class PointerControls extends EventDispatcher {
 
 		const mouseUpEvent = { type: 'select', node: null };
 
+		// signals the end of a station hover to the rest of the viewer. The hover itself
+		// is reported to applications as an event of the viewer, but its end is of no
+		// interest outside, where anything displayed for a station is displayed until
+		// something else replaces it.
+
+		const hoverEndEvent = { type: 'hoverEnd' };
+
 		let lastMouseMode = MOUSE_MODE_NORMAL;
 		let mouseMode = MOUSE_MODE_NORMAL;
 		let mouseTargets = [];
@@ -72,7 +79,8 @@ class PointerControls extends EventDispatcher {
 			survey = null;
 			mouseTargets = [];
 			mouseMode = MOUSE_MODE_NORMAL;
-			hoverStation = null;
+
+			endHover();
 
 			container.removeEventListener( 'pointerdown', onPointerDown );
 
@@ -308,8 +316,7 @@ class PointerControls extends EventDispatcher {
 
 				}
 
-				hoverStation = null;
-				hoverHandled = false;
+				endHover();
 
 				container.removeEventListener( 'pointermove', onPointerMove );
 
@@ -432,6 +439,17 @@ class PointerControls extends EventDispatcher {
 
 		}
 
+		function endHover () {
+
+			if ( hoverStation === null ) return;
+
+			hoverStation = null;
+			hoverHandled = false;
+
+			self.dispatchEvent( hoverEndEvent );
+
+		}
+
 		function onPointerMove( event ) {
 
 			if ( event.target !== domElement ) return;
@@ -453,8 +471,7 @@ class PointerControls extends EventDispatcher {
 
 					// the pointer has left the station - returning to it is a new hover
 
-					hoverStation = null;
-					hoverHandled = false;
+					endHover();
 
 					if ( hoverLabel !== null ) {
 
