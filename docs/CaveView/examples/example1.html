@@ -8,6 +8,24 @@
 	<meta name="Description" content="CaveView - 3d Cave model viewer">
 </head>
 <body onload="onload();" >
+
+<style>
+
+	#scene {
+
+		/* the viewer is never wider or taller than the window it is displayed in.
+		   Dynamic viewport units follow the browser chrome that appears and disappears as
+		   a page is scrolled on a phone, which static units do not, so the bottom of the
+		   model is not left underneath it. The static unit is what a browser that does
+		   not know the dynamic one uses. */
+
+		max-width: 100%;
+		max-height: 100vh;
+		max-height: 100dvh;
+	}
+
+</style>
+
 <script type="text/javascript" src="CaveView/js/CaveView2.js" ></script>
 
 <script type="text/javascript" >

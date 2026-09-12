@@ -1,4 +1,5 @@
 import { Vector2 } from '../Three';
+import { coarsePointer } from './PointerGestures';
 
 // screen position of the station the strip is anchored to, in container pixels
 
@@ -8,53 +9,92 @@ const __v = new Vector2();
 
 const ANCHOR_OFFSET = 12;
 
+// a thumbnail is both what the strip displays and what is tapped or clicked to open the
+// image, so how big it has to be depends on what is pointing at it rather than on how big
+// the screen is: a phone held sideways is wider than a small laptop and is still driven
+// with a finger. Each set below is only what the custom properties fall back to, so a size
+// set by the application is still the one used, whichever pointer is in use.
+
+const fineSizes = {
+	thumbnail: '64px',
+	gap: '4px',
+	padding: '4px',
+	caption: '11px'
+};
+
+const coarseSizes = {
+	thumbnail: '88px',
+	gap: '8px',
+	padding: '8px',
+	caption: '13px'
+};
+
 // appearance is taken from CSS custom properties, which a host may set on the viewer
 // container or on any of its ancestors. The second argument of each var() is the value
 // used where the property is not set, so the strip is usable without any stylesheet.
 
-const stripStyle = {
-	'position': 'absolute',
-	'display': 'none',
-	'box-sizing': 'border-box',
-	'gap': 'var( --cv-media-gap, 4px )',
-	'padding': 'var( --cv-media-padding, 4px )',
-	'background': 'var( --cv-media-background, rgba( 34, 34, 34, 0.85 ) )',
-	'border': 'var( --cv-media-border, 1px solid #808080 )',
-	'border-radius': 'var( --cv-media-radius, 2px )',
-	'font-family': 'var( --cv-media-font, sans-serif )',
-	// the side panel of the user interface is above the strip
-	'z-index': 'var( --cv-media-z-index, 9 )',
-	// the strip covers part of the model: everything but the thumbnails must let
-	// pointer events through, or rotating the model near a station stops working
-	'pointer-events': 'none'
-};
+function stripStyle ( sizes ) {
 
-const itemStyle = {
-	'display': 'flex',
-	'flex-direction': 'column',
-	'align-items': 'center',
-	'width': 'var( --cv-media-thumbnail-size, 64px )'
-};
+	return {
+		'position': 'absolute',
+		'display': 'none',
+		'box-sizing': 'border-box',
+		'gap': `var( --cv-media-gap, ${sizes.gap} )`,
+		'padding': `var( --cv-media-padding, ${sizes.padding} )`,
+		'background': 'var( --cv-media-background, rgba( 34, 34, 34, 0.85 ) )',
+		'border': 'var( --cv-media-border, 1px solid #808080 )',
+		'border-radius': 'var( --cv-media-radius, 2px )',
+		'font-family': 'var( --cv-media-font, sans-serif )',
+		// the side panel of the user interface is above the strip
+		'z-index': 'var( --cv-media-z-index, 9 )',
+		// the strip covers part of the model: everything but the thumbnails must let
+		// pointer events through, or rotating the model near a station stops working
+		'pointer-events': 'none'
+	};
 
-const thumbnailStyle = {
-	'display': 'block',
-	'width': 'var( --cv-media-thumbnail-size, 64px )',
-	'height': 'var( --cv-media-thumbnail-size, 64px )',
-	'object-fit': 'cover',
-	'border-radius': 'var( --cv-media-radius, 2px )',
-	'cursor': 'pointer',
-	'pointer-events': 'auto'
-};
+}
 
-const captionStyle = {
-	'max-width': 'var( --cv-media-thumbnail-size, 64px )',
-	'overflow': 'hidden',
-	'text-overflow': 'ellipsis',
-	'white-space': 'nowrap',
-	'text-align': 'center',
-	'color': 'var( --cv-media-caption-color, #dddddd )',
-	'font-size': 'var( --cv-media-caption-size, 11px )'
-};
+function itemStyle ( sizes ) {
+
+	return {
+		'display': 'flex',
+		'flex-direction': 'column',
+		'align-items': 'center',
+		'width': `var( --cv-media-thumbnail-size, ${sizes.thumbnail} )`
+	};
+
+}
+
+function thumbnailStyle ( sizes ) {
+
+	return {
+		'display': 'block',
+		'width': `var( --cv-media-thumbnail-size, ${sizes.thumbnail} )`,
+		'height': `var( --cv-media-thumbnail-size, ${sizes.thumbnail} )`,
+		'object-fit': 'cover',
+		'border-radius': 'var( --cv-media-radius, 2px )',
+		'cursor': 'pointer',
+		// a tap opens the image as it is made, rather than after the wait for a second tap
+		// that would have zoomed the page
+		'touch-action': 'manipulation',
+		'pointer-events': 'auto'
+	};
+
+}
+
+function captionStyle ( sizes ) {
+
+	return {
+		'max-width': `var( --cv-media-thumbnail-size, ${sizes.thumbnail} )`,
+		'overflow': 'hidden',
+		'text-overflow': 'ellipsis',
+		'white-space': 'nowrap',
+		'text-align': 'center',
+		'color': 'var( --cv-media-caption-color, #dddddd )',
+		'font-size': `var( --cv-media-caption-size, ${sizes.caption} )`
+	};
+
+}
 
 function setStyle ( element, properties ) {
 
@@ -75,11 +115,18 @@ class StationMediaOverlay {
 		const viewer = ctx.viewer;
 		const container = ctx.container;
 
+		// the pointer the strip is sized for, which a device may gain or lose while it is
+		// displaying one
+
+		const pointerQuery = coarsePointer();
+
+		let sizes = pointerQuery.matches ? coarseSizes : fineSizes;
+
 		const strip = document.createElement( 'div' );
 
 		strip.classList.add( 'cv-media-strip' );
 
-		setStyle( strip, stripStyle );
+		setStyle( strip, stripStyle( sizes ) );
 
 		container.appendChild( strip );
 
@@ -109,6 +156,8 @@ class StationMediaOverlay {
 		strip.addEventListener( 'click', onClick );
 		strip.addEventListener( 'pointerover', onPointerOver );
 		strip.addEventListener( 'pointerout', onPointerOut );
+
+		pointerQuery.addEventListener( 'change', onPointerChange );
 
 		viewer.addEventListener( 'clear', hide );
 		viewer.addEventListener( 'resized', onResize );
@@ -198,8 +247,8 @@ class StationMediaOverlay {
 				const item = document.createElement( 'div' );
 				const thumbnail = document.createElement( 'img' );
 
-				setStyle( item, itemStyle );
-				setStyle( thumbnail, thumbnailStyle );
+				setStyle( item, itemStyle( sizes ) );
+				setStyle( thumbnail, thumbnailStyle( sizes ) );
 
 				// only URLs are held - the browser fetches the images as it would any
 				// other image of the page
@@ -218,7 +267,7 @@ class StationMediaOverlay {
 
 					const caption = document.createElement( 'div' );
 
-					setStyle( caption, captionStyle );
+					setStyle( caption, captionStyle( sizes ) );
 
 					caption.textContent = entry.caption;
 
@@ -269,6 +318,25 @@ class StationMediaOverlay {
 
 			containerWidth = event.width;
 			containerHeight = event.height;
+
+		}
+
+		// a pointer attached to or detached from the device changes what the thumbnails
+		// have to be big enough for
+
+		function onPointerChange ( event ) {
+
+			sizes = event.matches ? coarseSizes : fineSizes;
+
+			setStyle( strip, stripStyle( sizes ) );
+
+			if ( station === null ) return;
+
+			// the strip holds thumbnails of the size that has just been replaced, and is
+			// measured as it is built, so it is built again rather than laid out again
+
+			build();
+			place();
 
 		}
 
@@ -340,6 +408,8 @@ class StationMediaOverlay {
 			strip.removeEventListener( 'click', onClick );
 			strip.removeEventListener( 'pointerover', onPointerOver );
 			strip.removeEventListener( 'pointerout', onPointerOut );
+
+			pointerQuery.removeEventListener( 'change', onPointerChange );
 
 			viewer.removeEventListener( 'clear', hide );
 			viewer.removeEventListener( 'resized', onResize );

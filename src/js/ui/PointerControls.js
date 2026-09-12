@@ -8,6 +8,7 @@ import { StationDistancePopup } from './StationDistancePopup';
 import { SegmentPopup } from './SegmentPopup';
 import { ImagePopup } from './ImagePopup';
 import { StationNameLabel } from './StationNameLabel';
+import { TapGesture, pointerHovers } from './PointerGestures';
 import { EventDispatcher, Raycaster, MOUSE } from '../Three';
 
 class PointerControls extends EventDispatcher {
@@ -61,6 +62,10 @@ class PointerControls extends EventDispatcher {
 		let lastPointerOver = 0;
 		let activePointerId = null;
 
+		// a pointer that does not hover reveals a station by tapping it - see pointerUp()
+
+		const tap = new TapGesture();
+
 		// event handler
 
 		viewer.addEventListener( 'newSurvey', e => {
@@ -91,8 +96,10 @@ class PointerControls extends EventDispatcher {
 			document.removeEventListener( 'keyup', endDistanceMode );
 
 			container.removeEventListener( 'pointerup', pointerUp );
+			container.removeEventListener( 'pointercancel', pointerCancel );
 			container.removeEventListener( 'pointerdown', onPointerDown );
 			container.removeEventListener( 'pointermove', onPointerMove );
+			container.removeEventListener( 'pointermove', trackTap );
 
 		} );
 
@@ -265,20 +272,68 @@ class PointerControls extends EventDispatcher {
 
 		}
 
-		function pointerUp ( event ) {
+		function endPointer () {
 
 			container.removeEventListener( 'pointerup', pointerUp );
+			container.removeEventListener( 'pointercancel', pointerCancel );
+			container.removeEventListener( 'pointermove', trackTap );
+
+			activePointerId = null;
+
+		}
+
+		// where the pointer goes while it is down is what tells a tap from the drag that
+		// turns the model, so it is reported to the gesture for as long as it is down.
+		// This is not the tracking that displays what is under the pointer: that follows a
+		// pointer that hovers, and only while the name label is displayed.
+
+		function trackTap ( event ) {
+
+			tap.move( event );
+
+		}
+
+		function pointerUp ( event ) {
 
 			// trap for event that shouldn't happen
 			if ( event.pointerId !== activePointerId ) console.warn( 'wrong pointer up' );
 
-			activePointerId = null;
+			endPointer();
 
 			if ( mouseUpFunction ) mouseUpFunction();
+
+			// what a mouse reveals by being moved over a station, a pointer that does not
+			// hover reveals by tapping it: the same tracking is run where the tap ended,
+			// and a tap on anything else dismisses what the last one revealed. Stations
+			// are tracked under either pointer only while the name label is displayed.
+
+			if ( tap.end( event ) && showStationNameLabel ) {
+
+				if ( ! hoverAt( event.clientX, event.clientY, event.pointerType ) ) {
+
+					endHover();
+					closeHoverLabel();
+
+				}
+
+			}
 
 			viewer.renderView();
 
 			viewer.dispatchEvent( mouseUpEvent );
+
+		}
+
+		// a gesture the browser has taken over ends without a pointerup, so the state the
+		// next one starts from is reset here instead
+
+		function pointerCancel ( event ) {
+
+			if ( event.pointerId !== activePointerId ) return;
+
+			endPointer();
+
+			tap.cancel();
 
 		}
 
@@ -308,13 +363,7 @@ class PointerControls extends EventDispatcher {
 
 			} else {
 
-				if ( hoverLabel !== null ) {
-
-					hoverLabel.close();
-					hoverLabel = null;
-					viewer.renderView();
-
-				}
+				if ( closeHoverLabel() ) viewer.renderView();
 
 				endHover();
 
@@ -450,11 +499,25 @@ class PointerControls extends EventDispatcher {
 
 		}
 
-		function onPointerMove( event ) {
+		function closeHoverLabel () {
 
-			if ( event.target !== domElement ) return;
+			if ( hoverLabel === null ) return false;
 
-			viewer.setRaycaster( raycaster, viewer.getMouse( event.clientX, event.clientY ) );
+			hoverLabel.close();
+			hoverLabel = null;
+
+			return true;
+
+		}
+
+		// the station at a position of the screen becomes the one being hovered over, and
+		// is reported as such to the application. Returns false where there is no station
+		// there, which the pointer being moved and the pointer being tapped end the hover
+		// differently for - see onPointerMove() and pointerUp().
+
+		function hoverAt ( x, y, pointerType ) {
+
+			viewer.setRaycaster( raycaster, viewer.getMouse( x, y ) );
 
 			const hit = raycaster.intersectObjects( mouseTargets, false )[ 0 ];
 
@@ -463,37 +526,9 @@ class PointerControls extends EventDispatcher {
 
 			const station = hit?.station;
 
-			if ( station === undefined ) {
+			if ( station === undefined ) return false;
 
-				setTimeout( () => {
-
-					if ( performance.now() - lastPointerOver <= 250 ) return;
-
-					// the pointer has left the station - returning to it is a new hover
-
-					endHover();
-
-					if ( hoverLabel !== null ) {
-
-						hoverLabel.close();
-						hoverLabel = null;
-
-						viewer.renderView();
-
-					}
-
-				}, 500 );
-
-				return;
-
-			}
-
-			if ( hoverLabel !== null && hoverLabel.station !== station ) {
-
-				hoverLabel.close();
-				hoverLabel = null;
-
-			}
+			if ( hoverLabel !== null && hoverLabel.station !== station ) closeHoverLabel();
 
 			if ( station !== hoverStation ) {
 
@@ -502,6 +537,7 @@ class PointerControls extends EventDispatcher {
 				const hoverEvent = {
 					type: 'stationHover',
 					station: publicFactory.getStation( station ),
+					pointerType: pointerType,
 					handled: false
 				};
 
@@ -534,17 +570,57 @@ class PointerControls extends EventDispatcher {
 
 			viewer.renderView();
 
+			return true;
+
+		}
+
+		function onPointerMove( event ) {
+
+			if ( event.target !== domElement ) return;
+
+			// a pointer that does not hover is dragging the model while it is down, which
+			// reveals nothing: what a hover would reveal, a tap of the same pointer does
+
+			if ( event.buttons !== 0 && ! pointerHovers( event.pointerType ) ) return;
+
+			if ( hoverAt( event.clientX, event.clientY, event.pointerType ) ) return;
+
+			setTimeout( () => {
+
+				if ( performance.now() - lastPointerOver <= 250 ) return;
+
+				// the pointer has left the station - returning to it is a new hover
+
+				endHover();
+
+				if ( closeHoverLabel() ) viewer.renderView();
+
+			}, 500 );
+
 		}
 
 		function onPointerDown ( event ) {
 
-			if ( activePointerId !== null || event.target !== domElement ) return;
+			if ( activePointerId !== null || event.target !== domElement ) {
+
+				// a gesture of a second pointer, or one begun over something placed over
+				// the model, is not a tap of the model
+
+				tap.cancel();
+
+				return;
+
+			}
 
 			viewer.setRaycaster( raycaster, viewer.getMouse( event.clientX, event.clientY ) );
 
 			container.addEventListener( 'pointerup', pointerUp );
+			container.addEventListener( 'pointercancel', pointerCancel );
+			container.addEventListener( 'pointermove', trackTap );
 
 			activePointerId = event.pointerId;
+
+			tap.start( event );
 
 			if ( event.altKey ) {
 
