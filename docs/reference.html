@@ -142,6 +142,42 @@ displayed while measuring between stations is not suppressed.</p>
 
 <h4>dispose()</h4>
 <p>Free used memory including GPU and Javascript heap allocations.</p>
+
+<h2>CaveViewToolbar Object</h2>
+
+<p>A row of buttons placed over the model, each of which drives one of the documented properties of the
+viewer. It is independent of the CaveViewUI side panel - either may be used without the other, and the
+two may be used together.</p>
+
+<h3>Constructor</h3>
+
+<h4>CV2.CaveViewToolbar( &lt;viewer&gt;, &lt;container&gt;, &lt;options&gt; )</h4>
+<p>Create a toolbar and add it to a container element, against its top or bottom edge. The container
+must be a positioned element - the container of a viewer is, so passing that places the toolbar over the
+model.</p>
+<p>Each button is labelled with the name of the property it drives, and displays the state of that
+property as the viewer reports it changing, whether the change was made by the toolbar, by the side
+panel or by the application. Buttons that need a model are disabled until one is loaded, and a button
+for something the loaded model does not hold - the scraps of a model surveyed without them - is disabled
+with the model displayed.</p>
+<p>Only the viewer container is displayed fullscreen. A toolbar added to an element outside it is
+therefore moved into the viewer container for as long as that lasts, and returned to where it was
+afterwards, so that a fullscreen button does not remove the toolbar it was pressed on. The CSS custom
+properties below are read where the toolbar then is, so set them on the viewer container, or on an
+ancestor of both elements, for a toolbar outside the viewer to keep its appearance in fullscreen.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>viewer</dt><dd><span>Object</span>A CaveViewer object.</dd>
+	<dt>container</dt><dd><span>Object</span> or <span>string</span>The HTML element the toolbar is added to, or the id of that element.</dd>
+	<dt>options</dt><dd><span>Object</span>An object defined below (optional).</dd>
+</dl>
+
+<h3>Methods</h3>
+
+<h4>dispose()</h4>
+<p>Remove the toolbar from its container. The toolbar is also removed when the viewer it was created for
+is disposed.</p>
+
 <h2>API Objects</h2>
 <h4>configuration Object</h4>
 
@@ -181,6 +217,63 @@ displayed while measuring between stations is not suppressed.</p>
 	<dd><span>boolean</span>highlight the station <span>default: true</span>. Set to false to remove an existing highlight. (optional).</dd>
 	<dt>popup</dt>
 	<dd><span>boolean</span>display the popup for the station. Set to false to close an open popup. If not set, an open popup is left as it is <span>default: unset</span>. (optional).</dd>
+</dl>
+
+<h4>toolbar options Object</h4>
+<h5>Properties</h5>
+<dl>
+	<dt>placement</dt>
+	<dd><span>string</span>the edge of the container the toolbar is placed against, <i>top</i> or <i>bottom</i> <span>default: top</span>. (optional).</dd>
+	<dt>buttons</dt>
+	<dd><span>Array</span>the identifiers of the buttons to display, in the order they are to appear. The
+	full list below is used, in the order it is listed, if this is not given, and an unrecognised
+	identifier is ignored (optional).</dd>
+</dl>
+<p>Each identifier below names one button, and the property of the viewer that it drives. An entry that
+names a property alone is a button inverting that boolean property. An entry that names a property and
+one of its constants is a button setting the property to that constant: those setting <i>cameraType</i>
+show which of the two the property currently holds, while those setting <i>view</i> move the camera to a
+viewpoint, which is not a state and so is never shown as selected.</p>
+<dl>
+	<dt>stations</dt><dd><span>stations</span>visibility of station markers.</dd>
+	<dt>stationLabels</dt><dd><span>stationLabels</span>visibility of station names.</dd>
+	<dt>stationComments</dt><dd><span>stationComments</span>visibility of station comments.</dd>
+	<dt>splays</dt><dd><span>splays</span>visibility of splay legs.</dd>
+	<dt>walls</dt><dd><span>walls</span>visibility of passage walls generated from cross section measurements.</dd>
+	<dt>scraps</dt><dd><span>scraps</span>visibility of modelled passage walls.</dd>
+	<dt>entrances</dt><dd><span>entrances</span>visibility of entrance names.</dd>
+	<dt>boundingBox</dt><dd><span>box</span>visibility of the model bounding box.</dd>
+	<dt>viewNorth</dt><dd><span>view</span>CV2.VIEW_ELEVATION_N.</dd>
+	<dt>viewEast</dt><dd><span>view</span>CV2.VIEW_ELEVATION_E.</dd>
+	<dt>viewSouth</dt><dd><span>view</span>CV2.VIEW_ELEVATION_S.</dd>
+	<dt>viewWest</dt><dd><span>view</span>CV2.VIEW_ELEVATION_W.</dd>
+	<dt>viewPlan</dt><dd><span>view</span>CV2.VIEW_PLAN.</dd>
+	<dt>cameraOrthographic</dt><dd><span>cameraType</span>CV2.CAMERA_ORTHOGRAPHIC.</dd>
+	<dt>cameraPerspective</dt><dd><span>cameraType</span>CV2.CAMERA_PERSPECTIVE.</dd>
+	<dt>shadingMode</dt><dd><span>shadingMode</span>a selection list of the shading modes the loaded model can be displayed with.</dd>
+	<dt>autoRotate</dt><dd><span>autoRotate</span>rotation of the model.</dd>
+	<dt>fullscreen</dt><dd><span>fullscreen</span>fullscreen display. The only button that does not need a model to be loaded.</dd>
+</dl>
+<p>The toolbar is styled by the CSS custom properties below, which may be set on the element the toolbar
+is added to or on any of its ancestors. The value listed is the one used where the property is not
+set.</p>
+<dl>
+	<dt>--cv-toolbar-offset</dt><dd><span>8px</span>distance between the toolbar and the edge of the container it is placed against.</dd>
+	<dt>--cv-toolbar-background</dt><dd><span>rgba( 34, 34, 34, 0.85 )</span>background of the toolbar.</dd>
+	<dt>--cv-toolbar-border</dt><dd><span>1px solid #808080</span>border of the toolbar.</dd>
+	<dt>--cv-toolbar-radius</dt><dd><span>3px</span>corner radius of the toolbar and of its buttons.</dd>
+	<dt>--cv-toolbar-padding</dt><dd><span>3px</span>space between the buttons and the edge of the toolbar.</dd>
+	<dt>--cv-toolbar-gap</dt><dd><span>2px</span>space between buttons.</dd>
+	<dt>--cv-toolbar-button-size</dt><dd><span>28px</span>width and height of each button.</dd>
+	<dt>--cv-toolbar-button-background</dt><dd><span>transparent</span>background of a button that is not selected.</dd>
+	<dt>--cv-toolbar-button-border</dt><dd><span>1px solid transparent</span>border of a button.</dd>
+	<dt>--cv-toolbar-color</dt><dd><span>#dddddd</span>colour of a button that is not selected.</dd>
+	<dt>--cv-toolbar-active-background</dt><dd><span>#1ab4e5</span>background of a selected button.</dd>
+	<dt>--cv-toolbar-active-color</dt><dd><span>#ffffff</span>colour of a selected button.</dd>
+	<dt>--cv-toolbar-font</dt><dd><span>sans-serif</span>font family of the selection list.</dd>
+	<dt>--cv-toolbar-font-size</dt><dd><span>12px</span>font size of the selection list.</dd>
+	<dt>--cv-toolbar-select-width</dt><dd><span>130px</span>maximum width of the selection list.</dd>
+	<dt>--cv-toolbar-z-index</dt><dd><span>8</span>stacking order of the toolbar, below the side panel of the user interface.</dd>
 </dl>
 
 <h4>view Object</h4>
