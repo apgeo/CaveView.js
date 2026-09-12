@@ -93,6 +93,18 @@ the forms focusStation() accepts.</p>
 loaded, is held unresolved: it is drawn nowhere, it is reported as unresolved by getLiveMarkers(), and
 it is placed as soon as a model containing that station is loaded. A model that is cleared and loaded
 again therefore keeps its markers without the application adding them a second time.</p>
+<p>Markers that resolve to the same station are collapsed into a single marker drawn in their place,
+labelled with the number of them or with what setLiveMarkerClusterLabel() says of them, and dispatching
+liveMarkerCluster rather than liveMarkerHover when it is pointed at. Markers at one station would
+otherwise write their labels over one another, which two of them is already enough to make unreadable.
+Markers are collapsed by the station they resolve to and not by how close together they happen to be
+drawn, so which of them are collapsed does not change as the model is turned, zoomed or resized. A
+marker alone at its station is drawn as described above, with its own label and sublabel.</p>
+<p>Markers that set off between the same two stations at the same moment travel as one: they are drawn
+as a single marker for the whole of the move and not only at its ends, which is what a party moved
+together does. A marker travelling on its own - moved while the others of its station stay where they
+are, or moved at another moment - is drawn on its own while it travels, and is collapsed with whatever
+it finds at the station it arrives at.</p>
 <p>Returns a live marker Object describing the marker added.</p>
 <h5>Parameters</h5>
 <dl>
@@ -127,7 +139,29 @@ the marker was added with; those not given are left as they are.</p>
 
 <h4>getLiveMarkers()</h4>
 <p>Returns an Array of live marker Objects, one for each marker added and not removed, in the order they
-were added - including those that are unresolved and so displayed nowhere.</p>
+were added - including those that are unresolved and so displayed nowhere, and those collapsed with
+other markers of their station. Collapsing is a matter of how the markers are drawn rather than of what
+the set holds, and each marker is reported with a resolved state of its own either way.</p>
+
+<h4>setLiveMarkerClusterLabel( &lt;function&gt; )</h4>
+<p>Set the function that labels a collapsed marker - the single marker drawn in place of the markers of
+one station. It is called with an Array of live marker Objects, one for each marker collapsed and in the
+order the markers were added, and returns the text to display. What the collapsed marker stands for is
+the application's to say: the viewer knows only how many markers there are.</p>
+<p>The number of markers collapsed is displayed where no function has been set, where the function
+returns null or undefined, and after a value that is not a function has been passed to remove one that
+was set. A function that throws is reported to the console and leaves the number of markers displayed:
+a collapsed marker that cannot be labelled as the application asked is still drawn, rather than the
+markers being taken off the model. The collapsed markers already displayed are built again to say what
+the new function says of them.</p>
+<p>The function is called each time what is drawn is settled - as markers are added, moved and removed -
+and so is called more than once for a set of markers that has not changed. It is asked what a collapsed
+marker says rather than told, so that a marker says what the application now says of it without the
+application having to report the change.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>function</dt><dd><span>function</span>A function taking an Array of live marker Objects and returning a string.</dd>
+</dl>
 
 <h4>dispose()</h4>
 <p>Free used memory including GPU and Javascript heap allocations.</p>
@@ -165,6 +199,23 @@ elsewhere.</p>
 	<dt>id</dt><dd><span>string</span>The name the marker was added with.</dd>
 	<dt>payload</dt><dd><span>any</span>The payload the marker was added with, untouched.</dd>
 	<dt>handled</dt><dd><span>boolean</span>Set to true by a listener to suppress the built in sublabel <span>default: false</span>.</dd>
+</dl>
+
+<h4>liveMarkerCluster</h4>
+<p>Dispatched when the pointer is moved onto a collapsed marker - the single marker drawn in place of
+the markers of one station - and reports the markers it stands for, so that an application can display
+what is at the station rather than how much of it there is.</p>
+<p>This event stands in for liveMarkerHover for the markers collapsed: they are not drawn while their
+collapsed marker is, so there is nothing of them to point at. A marker alone at its station dispatches
+liveMarkerHover, unchanged.</p>
+<p>A listener that displays the group itself sets the handled property of the event. A collapsed marker
+displays its label either way: unlike a marker drawn on its own it has no second line of its own to
+suppress, so an application that leaves the event unhandled sees the label it was collapsed with.</p>
+<h5>Properties</h5>
+<dl>
+	<dt>markers</dt><dd><span>Array</span>A live marker Object for each marker collapsed, in the order the markers were added.</dd>
+	<dt>pointerType</dt><dd><span>string</span>The kind of pointer the collapsed marker was revealed with, as the browser reports it.</dd>
+	<dt>handled</dt><dd><span>boolean</span>Set to true by a listener to record that it has displayed the group itself <span>default: false</span>.</dd>
 </dl>
 
 <h2>CaveViewUI Object</h2>

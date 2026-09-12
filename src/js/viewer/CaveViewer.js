@@ -1374,6 +1374,12 @@ class CaveViewer extends EventDispatcher {
 
 		};
 
+		this.setLiveMarkerClusterLabel = function ( func ) {
+
+			liveMarkers.setClusterLabel( func );
+
+		};
+
 		this.showImagePopup = function ( event, imageUrl ) {
 
 			pointerControls.showImagePopup( event, imageUrl );
