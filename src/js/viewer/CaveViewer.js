@@ -20,6 +20,7 @@ import { PointerControls } from '../ui/PointerControls';
 import { PublicFactory } from '../public/PublicFactory';
 import { RenderUtils } from '../core/RenderUtils';
 import { Snapshot } from './Snapshot';
+import { StationMediaOverlay } from '../ui/StationMediaOverlay';
 import { Survey } from './Survey';
 import { ViewState } from './ViewState';
 import { WebTerrain } from '../terrain/WebTerrain';
@@ -119,6 +120,7 @@ class CaveViewer extends EventDispatcher {
 		// preallocated tmp objects
 
 		const __v = new Vector3();
+		const __p = new Vector3();
 		const self = this;
 
 		let savedView = null;
@@ -126,6 +128,9 @@ class CaveViewer extends EventDispatcher {
 
 		// the camera move a focus call is waiting on - see settlePendingMove()
 		let pendingMove = null;
+
+		// the media overlay, created by the first setStationMedia() call - see below
+		let stationMedia = null;
 
 		// event handler
 		window.addEventListener( 'resize', onResize );
@@ -1055,6 +1060,12 @@ class CaveViewer extends EventDispatcher {
 
 			hud.renderHUD();
 
+			// anything anchored to a position in the model is placed from the camera
+			// matrices the frame was rendered with, rather than from those of the one
+			// before it, which would leave it a frame behind the model while the view moves
+
+			if ( stationMedia !== null ) stationMedia.reposition();
+
 		}
 
 		this.selectSection = selectSection;
@@ -1292,7 +1303,19 @@ class CaveViewer extends EventDispatcher {
 
 				cameraMove.start( true );
 
-			} ).then( () => publicFactory.getStation( node ) );
+			} ).then( () => {
+
+				const pStation = publicFactory.getStation( node );
+
+				// the camera has arrived, so the station is where the media strip expects
+				// to find it. Media is displayed with the popup rather than instead of it:
+				// the popup cannot hold images and the strip cannot hold the station data.
+
+				if ( popup === true && stationMedia !== null ) stationMedia.show( pStation );
+
+				return pStation;
+
+			} );
 
 		};
 
@@ -1335,6 +1358,76 @@ class CaveViewer extends EventDispatcher {
 			if ( survey === null ) return;
 
 			self.highlight = survey.surveyTree;
+
+		};
+
+		// the screen position of a station, in pixels from the top left of the container.
+		// Returns false for a station with no position on the screen to anchor anything
+		// to: one behind the camera, or one the view has been moved off. What is anchored
+		// to the station then goes off the screen with it, rather than being held against
+		// the edge it left by and pointing at nothing.
+
+		function getStationAnchor ( pStation, target ) {
+
+			if ( survey === null ) return false;
+
+			__p.copy( pStation.station ).applyMatrix4( survey.matrixWorld ).project( cameraManager.activeCamera );
+
+			// projection gives normalised device coordinates: the visible volume is the
+			// cube between -1 and 1 in each of the three axes
+
+			if (
+				__p.x < -1 || __p.x > 1 ||
+				__p.y < -1 || __p.y > 1 ||
+				__p.z < -1 || __p.z > 1
+			) return false;
+
+			target.set(
+				( __p.x + 1 ) / 2 * container.clientWidth,
+				( 1 - __p.y ) / 2 * container.clientHeight
+			);
+
+			return true;
+
+		}
+
+		function onStationHover ( event ) {
+
+			stationMedia.show( event.station );
+
+		}
+
+		function onStationHoverEnd () {
+
+			stationMedia.hoverEnd();
+
+		}
+
+		this.setStationMedia = function ( source ) {
+
+			if ( stationMedia === null ) {
+
+				stationMedia = new StationMediaOverlay( ctx, getStationAnchor );
+
+				self.addEventListener( 'stationHover', onStationHover );
+				pointerControls.addEventListener( 'hoverEnd', onStationHoverEnd );
+
+			}
+
+			stationMedia.setSource( source );
+
+		};
+
+		this.clearStationMedia = function () {
+
+			if ( stationMedia === null ) return;
+
+			self.removeEventListener( 'stationHover', onStationHover );
+			pointerControls.removeEventListener( 'hoverEnd', onStationHoverEnd );
+
+			stationMedia.dispose();
+
+			stationMedia = null;
 
 		};
 
