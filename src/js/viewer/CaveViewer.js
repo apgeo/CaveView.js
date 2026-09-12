@@ -13,6 +13,7 @@ import { CommonTerrain } from '../terrain/CommonTerrain';
 import { ExportGltf } from './ExportGltf';
 import { HUD } from '../hud/HUD';
 import { LightingManager } from './LightingManager';
+import { LiveMarkers } from './LiveMarkers';
 import { Materials } from '../materials/Materials';
 import { ModelSource } from '../core/ModelSource';
 import { OrbitControls } from '../ui/OrbitControls';
@@ -100,6 +101,7 @@ class CaveViewer extends EventDispatcher {
 
 		const moveEndEvent = { type: 'moved', cameraManager: cameraManager };
 		const pointerControls = new PointerControls( ctx, renderer.domElement );
+		const liveMarkers = new LiveMarkers( ctx, renderer.domElement );
 
 		let publicFactory = null;
 
@@ -1428,6 +1430,40 @@ class CaveViewer extends EventDispatcher {
 			stationMedia.dispose();
 
 			stationMedia = null;
+
+		};
+
+		// markers an application maintains over the loaded model, each identified by a
+		// name of its own and placed at a station named by a reference. They are added
+		// and moved while the model is displayed, without it being rebuilt or reloaded.
+
+		this.addLiveMarker = function ( id, ref, options ) {
+
+			return liveMarkers.add( id, ref, options );
+
+		};
+
+		this.moveLiveMarker = function ( id, ref, options ) {
+
+			return liveMarkers.move( id, ref, options );
+
+		};
+
+		this.removeLiveMarker = function ( id ) {
+
+			return liveMarkers.remove( id );
+
+		};
+
+		this.clearLiveMarkers = function () {
+
+			liveMarkers.clear();
+
+		};
+
+		this.getLiveMarkers = function () {
+
+			return liveMarkers.list();
 
 		};
 

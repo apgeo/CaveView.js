@@ -107,6 +107,54 @@ events, so the model can still be rotated and stations still selected through th
 <h4>clearStationMedia()</h4>
 <p>Remove the media source set by setStationMedia(), and any strip displayed.</p>
 
+<h4>addLiveMarker( &lt;id&gt;, &lt;reference&gt;, &lt;options&gt; )</h4>
+<p>Display a marker at a station of the loaded model - a labelled dot drawn over the model, which an
+application adds, moves and removes while the model is displayed rather than loading a model to show
+it. Markers are displayed whatever the view settings are, and are drawn against the model like its own
+features: one placed at a station that the terrain covers is hidden by it as the station is.</p>
+<p>The identifier names the marker for the calls below, and adding a marker with the identifier of one
+already displayed replaces it. The reference names the station the marker is placed at, in either of
+the forms focusStation() accepts.</p>
+<p>A marker whose reference names no station of the loaded model, or that is added while no model is
+loaded, is held unresolved: it is drawn nowhere, it is reported as unresolved by getLiveMarkers(), and
+it is placed as soon as a model containing that station is loaded. A model that is cleared and loaded
+again therefore keeps its markers without the application adding them a second time.</p>
+<p>Returns a live marker Object describing the marker added.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>id</dt><dd><span>string</span>The name of the marker. Any value that can be a key of a Map is accepted.</dd>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the station.</dd>
+	<dt>options</dt><dd><span>Object</span>An object defined below (optional).</dd>
+</dl>
+
+<h4>moveLiveMarker( &lt;id&gt;, &lt;reference&gt;, &lt;options&gt; )</h4>
+<p>Move a marker to another station. The marker slides between the two positions where it is displayed
+at both, and appears at the new station where it is not - because it was unresolved, or because no model
+is loaded. A marker moved to a station the loaded model does not contain is held unresolved in turn: it
+is taken off the model rather than left at the station it was moved from. Options given replace those
+the marker was added with; those not given are left as they are.</p>
+<p>Returns a live marker Object, or null if no marker of that name has been added.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>id</dt><dd><span>string</span>The name of the marker.</dd>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the station to move to.</dd>
+	<dt>options</dt><dd><span>Object</span>An object defined below (optional).</dd>
+</dl>
+
+<h4>removeLiveMarker( &lt;id&gt; )</h4>
+<p>Remove a marker. Returns true, or false if no marker of that name has been added.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>id</dt><dd><span>string</span>The name of the marker.</dd>
+</dl>
+
+<h4>clearLiveMarkers()</h4>
+<p>Remove every marker.</p>
+
+<h4>getLiveMarkers()</h4>
+<p>Returns an Array of live marker Objects, one for each marker added and not removed, in the order they
+were added - including those that are unresolved and so displayed nowhere.</p>
+
 <h4>dispose()</h4>
 <p>Free used memory including GPU and Javascript heap allocations.</p>
 
@@ -140,6 +188,23 @@ station select event is.</p>
 	<dt>station</dt><dd><span>Object</span>A Station object for the station the strip is displayed for.</dd>
 	<dt>entry</dt><dd><span>Object</span>The media entry Object of the thumbnail clicked.</dd>
 	<dt>handled</dt><dd><span>boolean</span>Set to true by a listener to suppress the built in image popup <span>default: false</span>.</dd>
+</dl>
+
+<h4>liveMarkerHover</h4>
+<p>Dispatched when the pointer is moved onto a marker added by addLiveMarker(), before the marker
+displays the second line of its own label. Markers are tracked whenever any of them is displayed,
+independently of the stationLabelOver view setting.</p>
+<p>A listener that displays its own information for the marker sets the handled property of the event,
+which suppresses the sublabel until the pointer is moved onto the marker again. A marker added without a
+sublabel has nothing to display and looks the same either way.</p>
+<p>The hover ends when the pointer is moved off the marker, and when it is moved out of the model area
+altogether, so the sublabel of a marker is not left displayed behind a pointer that has gone
+elsewhere.</p>
+<h5>Properties</h5>
+<dl>
+	<dt>id</dt><dd><span>string</span>The name the marker was added with.</dd>
+	<dt>payload</dt><dd><span>any</span>The payload the marker was added with, untouched.</dd>
+	<dt>handled</dt><dd><span>boolean</span>Set to true by a listener to suppress the built in sublabel <span>default: false</span>.</dd>
 </dl>
 
 <h2>CaveViewUI Object</h2>
@@ -341,6 +406,34 @@ set.</p>
 	<dt>--cv-toolbar-font-size</dt><dd><span>12px</span>font size of the selection list.</dd>
 	<dt>--cv-toolbar-select-width</dt><dd><span>130px</span>maximum width of the selection list.</dd>
 	<dt>--cv-toolbar-z-index</dt><dd><span>8</span>stacking order of the toolbar, below the side panel of the user interface.</dd>
+</dl>
+
+<h4>live marker options Object</h4>
+<h5>Properties</h5>
+<dl>
+	<dt>label</dt>
+	<dd><span>string</span>the text displayed next to the marker. The identifier of the marker is used where this is not given (optional).</dd>
+	<dt>sublabel</dt>
+	<dd><span>string</span>further text, displayed after the label while the pointer is over the marker (optional).</dd>
+	<dt>color</dt>
+	<dd><span>string</span> or <span>number</span>the colour of the marker, as a CSS colour or a hexadecimal value. The station marker colour of the theme is used where this is not given (optional).</dd>
+	<dt>payload</dt>
+	<dd><span>any</span>a value of the application's own, untouched by the viewer and returned with the marker and with its hover event (optional).</dd>
+</dl>
+
+<h4>live marker Object</h4>
+<p>Describes one marker. The object is a copy, a reference given as an Array included: changing either
+does not change the marker. The payload is the value the application supplied, and is passed back
+untouched rather than copied.</p>
+<h5>Properties</h5>
+<dl>
+	<dt>id</dt><dd><span>string</span>The name the marker was added with.</dd>
+	<dt>ref</dt><dd><span>string</span> or <span>Array</span>The reference the marker was last placed by.</dd>
+	<dt>label</dt><dd><span>string</span>The label of the marker.</dd>
+	<dt>sublabel</dt><dd><span>string</span>The sublabel of the marker, or undefined.</dd>
+	<dt>color</dt><dd><span>string</span> or <span>number</span>The colour asked for, or undefined where the theme colour is used.</dd>
+	<dt>payload</dt><dd><span>any</span>The payload of the marker, or undefined.</dd>
+	<dt>resolved</dt><dd><span>boolean</span>Whether the reference names a station of the loaded model. A marker that is not resolved is displayed nowhere.</dd>
 </dl>
 
 <h4>view Object</h4>
