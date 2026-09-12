@@ -93,21 +93,20 @@ function onload () {
 
 	document.getElementById( 'add' ).addEventListener( 'click', function () {
 
-		const id = 'party-' + ( ++count );
+		status.textContent = addMarker() + ' added';
 
-		viewer.addLiveMarker( id, stationList.value, {
-			label: id,
-			sublabel: 'last reported ' + new Date().toLocaleTimeString(),
-			color: colors[ count % colors.length ],
-			// anything the page wants back when the marker is pointed at
-			payload: { party: count }
-		} );
+	} );
 
-		addOption( markerList, id );
+	// a party underground moves together, so several markers at one station is the
+	// ordinary case rather than an unlucky one. They are drawn as a single marker, which
+	// says how many of them there are.
 
-		status.textContent = id + ' added';
+	document.getElementById( 'add-three' ).addEventListener( 'click', function () {
 
-		report();
+		addMarker();
+		addMarker();
+
+		status.textContent = addMarker() + ' added - three markers at one station';
 
 	} );
 
@@ -125,6 +124,26 @@ function onload () {
 		} );
 
 		status.textContent = id + ' moved';
+
+		report();
+
+	} );
+
+	// a party is moved as it moves, together. Markers that set off between the same two
+	// stations at the same moment are drawn as a single marker for the whole of the move
+	// rather than only at the ends of it.
+
+	document.getElementById( 'move-all' ).addEventListener( 'click', function () {
+
+		viewer.getLiveMarkers().forEach( function ( marker ) {
+
+			viewer.moveLiveMarker( marker.id, stationList.value, {
+				sublabel: 'last reported ' + new Date().toLocaleTimeString()
+			} );
+
+		} );
+
+		status.textContent = 'all markers moved';
 
 		report();
 
@@ -158,6 +177,18 @@ function onload () {
 
 	} );
 
+	// what a marker standing for several others says is this page's business: the viewer
+	// counts them, and says nothing else of them without being told what they are
+
+	document.getElementById( 'cluster-label' ).addEventListener( 'change', function ( event ) {
+
+		viewer.setLiveMarkerClusterLabel( event.target.checked
+			? markers => markers.map( marker => marker.label ).join( ' + ' )
+			: null
+		);
+
+	} );
+
 	viewer.addEventListener( 'liveMarkerHover', function ( event ) {
 
 		hover.textContent = event.id + ' - party ' + event.payload.party;
@@ -169,9 +200,43 @@ function onload () {
 
 	} );
 
+	viewer.addEventListener( 'liveMarkerCluster', function ( event ) {
+
+		// the markers drawn as the one pointed at, described as getLiveMarkers() describes
+		// them and in the order they were added
+
+		hover.textContent = event.markers.length + ' parties at one station: ' +
+			event.markers.map( marker => marker.id ).join( ', ' );
+
+		event.handled = true;
+
+	} );
+
+	function addMarker () {
+
+		const id = 'party-' + ( ++count );
+
+		viewer.addLiveMarker( id, stationList.value, {
+			label: id,
+			sublabel: 'last reported ' + new Date().toLocaleTimeString(),
+			color: colors[ count % colors.length ],
+			// anything the page wants back when the marker is pointed at
+			payload: { party: count }
+		} );
+
+		addOption( markerList, id );
+
+		report();
+
+		return id;
+
+	}
+
 	function report () {
 
-		// a marker naming a station of another model is kept, and reported unresolved
+		// a marker naming a station of another model is kept, and reported unresolved.
+		// Markers collapsed into one are reported one by one: which markers are drawn
+		// together does not change what the set holds.
 
 		markers.textContent = viewer.getLiveMarkers().map(
 			marker => marker.id + ( marker.resolved ? '' : ' (not in this model)' )
@@ -202,12 +267,17 @@ function onload () {
 	<p>
 		<select id="station-list" ></select>
 		<button id="add" >add a marker here</button>
+		<button id="add-three" >add three markers here</button>
 	</p>
 	<p>
 		<select id="marker-list" ></select>
 		<button id="move" >move it to the selected station</button>
+		<button id="move-all" >move them all there</button>
 		<button id="remove" >remove it</button>
 		<button id="clear-markers" >remove all</button>
+	</p>
+	<p>
+		<label><input type="checkbox" id="cluster-label" > name the markers a collapsed marker stands for</label>
 	</p>
 	<p>markers: <span id="markers" ></span></p>
 	<p>pointed at: <span id="hover" ></span></p>
