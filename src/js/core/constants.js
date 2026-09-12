@@ -67,6 +67,7 @@ export const FEATURE_ENTRANCE_DOTS = 17;
 export const FEATURE_GRID          = 18;
 export const LEG_DUPLICATE         = 19;
 export const FACE_MODEL            = 20;
+export const FEATURE_LIVE_MARKERS  = 21;
 
 export const WALL_OVAL             = 1; // based on Therion .lox types
 export const WALL_SQUARE           = 2;
