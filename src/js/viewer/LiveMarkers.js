@@ -1,6 +1,7 @@
 import { Group, Raycaster, Vector3 } from '../Three';
 import { FEATURE_LIVE_MARKERS } from '../core/constants';
 import { MutableGlyphString } from '../core/GlyphString';
+import { TapGesture, pointerHovers } from '../ui/PointerGestures';
 import { PointIndicator } from './PointIndicator';
 
 // duration of the move between two stations, in milliseconds
@@ -46,6 +47,10 @@ class LiveMarkers {
 
 		let hovered = null;
 		let tracking = false;
+
+		// a pointer that does not hover reveals a marker by tapping it - see onPointerUp()
+
+		const tap = new TapGesture();
 
 		let rafID = 0;
 		let lastTime = 0;
@@ -344,12 +349,20 @@ class LiveMarkers {
 			if ( tracking ) {
 
 				container.addEventListener( 'pointermove', onPointerMove );
+				container.addEventListener( 'pointerdown', onPointerDown );
+				container.addEventListener( 'pointerup', onPointerUp );
+				container.addEventListener( 'pointercancel', onPointerCancel );
 				domElement.addEventListener( 'pointerleave', onPointerLeave );
 
 			} else {
 
 				container.removeEventListener( 'pointermove', onPointerMove );
+				container.removeEventListener( 'pointerdown', onPointerDown );
+				container.removeEventListener( 'pointerup', onPointerUp );
+				container.removeEventListener( 'pointercancel', onPointerCancel );
 				domElement.removeEventListener( 'pointerleave', onPointerLeave );
+
+				tap.cancel();
 
 				hovered = null;
 
@@ -449,11 +462,9 @@ class LiveMarkers {
 
 		}
 
-		function onPointerMove ( event ) {
+		function hoverAt ( x, y, pointerType ) {
 
-			if ( event.target !== domElement ) return;
-
-			viewer.setRaycaster( raycaster, viewer.getMouse( event.clientX, event.clientY ) );
+			viewer.setRaycaster( raycaster, viewer.getMouse( x, y ) );
 
 			const hit = raycaster.intersectObjects( targets, false )[ 0 ];
 			const marker = hit?.object.liveMarker ?? null;
@@ -470,6 +481,7 @@ class LiveMarkers {
 					type: 'liveMarkerHover',
 					id: marker.id,
 					payload: marker.payload,
+					pointerType: pointerType,
 					handled: false
 				};
 
@@ -486,11 +498,73 @@ class LiveMarkers {
 
 		}
 
+		function onPointerMove ( event ) {
+
+			// where the pointer goes while it is down is what tells a tap from the drag
+			// that turns the model, and is followed wherever it goes: a gesture that
+			// crosses something displayed over the model is still that gesture
+
+			tap.move( event );
+
+			if ( event.target !== domElement ) return;
+
+			// a pointer that does not hover is dragging the model while it is down, which
+			// reveals nothing: what a hover would reveal, a tap of the same pointer does
+
+			if ( event.buttons !== 0 && ! pointerHovers( event.pointerType ) ) return;
+
+			hoverAt( event.clientX, event.clientY, event.pointerType );
+
+		}
+
+		function onPointerDown ( event ) {
+
+			if ( event.target !== domElement ) {
+
+				// a gesture begun over something placed over the model is not a tap of a
+				// marker, whatever it ends over
+
+				tap.cancel();
+
+				return;
+
+			}
+
+			tap.start( event );
+
+		}
+
+		// what a mouse reveals by being moved onto a marker, a pointer that does not hover
+		// reveals by tapping it, and a tap on anything else ends the hover as moving the
+		// mouse off the marker does
+
+		function onPointerUp ( event ) {
+
+			if ( ! tap.end( event ) ) return;
+
+			hoverAt( event.clientX, event.clientY, event.pointerType );
+
+		}
+
+		function onPointerCancel () {
+
+			tap.cancel();
+
+		}
+
 		// the pointer leaving the model area ends the hover it was over: no further move is
 		// reported there, so a hover left standing would keep a marker showing what it has
 		// to say for as long as the pointer is away
 
-		function onPointerLeave () {
+		function onPointerLeave ( event ) {
+
+			// a pointer that does not hover ceases to exist as it is lifted, which the
+			// browser reports as that pointer leaving the element - immediately after the
+			// pointerup that a tap is recognised by. What a tap reveals is left revealed
+			// until something else is tapped, exactly as what a hover reveals is left
+			// until the pointer is moved off it.
+
+			if ( ! pointerHovers( event.pointerType ) ) return;
 
 			if ( hovered === null ) return;
 

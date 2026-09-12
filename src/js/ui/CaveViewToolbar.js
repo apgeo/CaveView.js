@@ -5,59 +5,124 @@ import {
 	VIEW_ELEVATION_E, VIEW_ELEVATION_N, VIEW_ELEVATION_S, VIEW_ELEVATION_W, VIEW_PLAN
 } from '../core/constants';
 
+import { coarsePointer } from './PointerGestures';
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// distance in pixels between the toolbar and the edge of the container it is placed
+// against, where the application sets none of its own
+
+const EDGE_OFFSET = 8;
+
+// how big a control has to be depends on what is pointing at it and not on how big the
+// screen is: a phone held sideways is wider than a small laptop and is still driven with a
+// finger, which needs a target a mouse pointer does not. Each set below is only what the
+// custom properties fall back to, so a size set by the application is still the one used,
+// whichever pointer the viewer is being driven with.
+
+const fineSizes = {
+	button: '28px',
+	icon: '18',
+	gap: '2px',
+	padding: '3px',
+	selectWidth: '130px',
+	fontSize: '12px',
+	barWidth: 'auto'
+};
+
+// 44px is the smallest target a finger reaches reliably, and a list needs text of at least
+// 16px for a browser not to zoom the page in as it is opened
+
+const coarseSizes = {
+	button: '44px',
+	icon: '24',
+	gap: '4px',
+	padding: '6px',
+	selectWidth: '160px',
+	fontSize: '16px',
+	// a bar centred by being placed at the middle of the container and pulled back by half
+	// of itself is offered only the half of the container it starts at, which is room for
+	// a row of controls the size a mouse needs but not for one the size a finger needs -
+	// where the rest of the width is the difference between a bar of two rows and a block
+	// of six. Sizing to the content rather than to what is offered, capped at the width of
+	// the container by the max-width below, lets the wider row wrap across the whole of it.
+	barWidth: 'max-content'
+};
 
 // appearance is taken from CSS custom properties, which may be set on the container or on
 // any of its ancestors. The second argument of each var() is the value used where the
 // property is not set, so the toolbar is usable without a stylesheet of its own.
 
-const barStyle = {
-	'position': 'absolute',
-	'left': '50%',
-	'transform': 'translateX( -50% )',
-	'display': 'flex',
-	'flex-wrap': 'wrap',
-	'justify-content': 'center',
-	'align-items': 'center',
-	'box-sizing': 'border-box',
-	'max-width': '100%',
-	'gap': 'var( --cv-toolbar-gap, 2px )',
-	'padding': 'var( --cv-toolbar-padding, 3px )',
-	'background': 'var( --cv-toolbar-background, rgba( 34, 34, 34, 0.85 ) )',
-	'border': 'var( --cv-toolbar-border, 1px solid #808080 )',
-	'border-radius': 'var( --cv-toolbar-radius, 3px )',
-	'font-family': 'var( --cv-toolbar-font, sans-serif )',
-	// the side panel of the user interface is above the toolbar
-	'z-index': 'var( --cv-toolbar-z-index, 8 )'
-};
+function barStyle ( sizes ) {
 
-const buttonStyle = {
-	'display': 'flex',
-	'align-items': 'center',
-	'justify-content': 'center',
-	'box-sizing': 'border-box',
-	'width': 'var( --cv-toolbar-button-size, 28px )',
-	'height': 'var( --cv-toolbar-button-size, 28px )',
-	'padding': '0',
-	'border': 'var( --cv-toolbar-button-border, 1px solid transparent )',
-	'border-radius': 'var( --cv-toolbar-radius, 3px )',
-	'background': 'var( --cv-toolbar-button-background, transparent )',
-	'color': 'var( --cv-toolbar-color, #dddddd )',
-	'cursor': 'pointer'
-};
+	return {
+		'position': 'absolute',
+		'left': '50%',
+		'transform': 'translateX( -50% )',
+		'display': 'flex',
+		'flex-wrap': 'wrap',
+		'justify-content': 'center',
+		'align-items': 'center',
+		'box-sizing': 'border-box',
+		'width': sizes.barWidth,
+		'max-width': '100%',
+		// a row too wide to wrap - one long control - is scrolled rather than left
+		// hanging over the edge of the container
+		'overflow-x': 'auto',
+		'gap': `var( --cv-toolbar-gap, ${sizes.gap} )`,
+		'padding': `var( --cv-toolbar-padding, ${sizes.padding} )`,
+		'background': 'var( --cv-toolbar-background, rgba( 34, 34, 34, 0.85 ) )',
+		'border': 'var( --cv-toolbar-border, 1px solid #808080 )',
+		'border-radius': 'var( --cv-toolbar-radius, 3px )',
+		'font-family': 'var( --cv-toolbar-font, sans-serif )',
+		// a tap is acted on as it is made, rather than after the wait for a second tap
+		// that would have zoomed the page
+		'touch-action': 'manipulation',
+		// the side panel of the user interface is above the toolbar
+		'z-index': 'var( --cv-toolbar-z-index, 8 )'
+	};
 
-const selectStyle = {
-	'box-sizing': 'border-box',
-	'height': 'var( --cv-toolbar-button-size, 28px )',
-	'max-width': 'var( --cv-toolbar-select-width, 130px )',
-	'border': 'var( --cv-toolbar-button-border, 1px solid transparent )',
-	'border-radius': 'var( --cv-toolbar-radius, 3px )',
-	'background': 'var( --cv-toolbar-button-background, transparent )',
-	'color': 'var( --cv-toolbar-color, #dddddd )',
-	'font-family': 'inherit',
-	'font-size': 'var( --cv-toolbar-font-size, 12px )',
-	'cursor': 'pointer'
-};
+}
+
+function buttonStyle ( sizes ) {
+
+	return {
+		'display': 'flex',
+		'align-items': 'center',
+		'justify-content': 'center',
+		'box-sizing': 'border-box',
+		'flex': 'none',
+		'width': `var( --cv-toolbar-button-size, ${sizes.button} )`,
+		'height': `var( --cv-toolbar-button-size, ${sizes.button} )`,
+		'padding': '0',
+		'border': 'var( --cv-toolbar-button-border, 1px solid transparent )',
+		'border-radius': 'var( --cv-toolbar-radius, 3px )',
+		'background': 'var( --cv-toolbar-button-background, transparent )',
+		'color': 'var( --cv-toolbar-color, #dddddd )',
+		'cursor': 'pointer'
+	};
+
+}
+
+function selectStyle ( sizes ) {
+
+	return {
+		'box-sizing': 'border-box',
+		'height': `var( --cv-toolbar-button-size, ${sizes.button} )`,
+		'max-width': `var( --cv-toolbar-select-width, ${sizes.selectWidth} )`,
+		// a flex item does not shrink below the width of its content unless it is allowed
+		// to, which would widen the whole bar to fit the longest mode name
+		'min-width': '0',
+		'border': 'var( --cv-toolbar-button-border, 1px solid transparent )',
+		'border-radius': 'var( --cv-toolbar-radius, 3px )',
+		'background': 'var( --cv-toolbar-button-background, transparent )',
+		'color': 'var( --cv-toolbar-color, #dddddd )',
+		'font-family': 'inherit',
+		'font-size': `var( --cv-toolbar-font-size, ${sizes.fontSize} )`,
+		'cursor': 'pointer'
+	};
+
+}
 
 // icons are drawn rather than loaded, so that the toolbar needs no font and no file of
 // its own. Shapes are stroked in the colour of the button, which changes with its state.
@@ -186,13 +251,13 @@ function setStyle ( element, properties ) {
 
 }
 
-function icon ( shapes ) {
+function icon ( shapes, size ) {
 
 	const svg = document.createElementNS( SVG_NS, 'svg' );
 
 	svg.setAttribute( 'viewBox', '0 0 24 24' );
-	svg.setAttribute( 'width', '18' );
-	svg.setAttribute( 'height', '18' );
+	svg.setAttribute( 'width', size );
+	svg.setAttribute( 'height', size );
 	svg.setAttribute( 'fill', 'none' );
 	svg.setAttribute( 'stroke', 'currentColor' );
 	svg.setAttribute( 'stroke-width', '1.5' );
@@ -227,19 +292,27 @@ class CaveViewToolbar {
 
 		const cfg = viewer.ctx.cfg;
 
+		// the pointer the toolbar is sized for, which a device may gain or lose while it
+		// is displaying one
+
+		const pointerQuery = coarsePointer();
+
+		let sizes = pointerQuery.matches ? coarseSizes : fineSizes;
+
 		const bar = document.createElement( 'div' );
 
 		bar.classList.add( 'cv-toolbar' );
 
-		setStyle( bar, barStyle );
+		setStyle( bar, barStyle( sizes ) );
 
 		// the toolbar is placed against one edge of the container, which must be a
 		// positioned element - the container of a viewer is
 
-		bar.style.setProperty( ( options.placement === 'bottom' ) ? 'bottom' : 'top', 'var( --cv-toolbar-offset, 8px )' );
+		const edge = ( options.placement === 'bottom' ) ? 'bottom' : 'top';
 
 		const controls = [];
 		const listeners = [];
+		const iconElements = [];
 
 		// only the viewer container is displayed fullscreen, so a toolbar added to an element
 		// outside it is not on screen for as long as that lasts. It is moved into the container
@@ -255,9 +328,12 @@ class CaveViewToolbar {
 
 		target.appendChild( bar );
 
+		placeAgainstEdge();
+
 		viewer.addEventListener( 'change', onChange );
 		viewer.addEventListener( 'newCave', onModelChange );
 		viewer.addEventListener( 'clear', onModelChange );
+		viewer.addEventListener( 'resized', placeAgainstEdge );
 		viewer.addEventListener( 'dispose', dispose );
 
 		// the fullscreen events reach the document whichever element was displayed
@@ -265,11 +341,49 @@ class CaveViewToolbar {
 		addListener( document, 'fullscreenchange', onFullscreenChange );
 		addListener( document, 'webkitfullscreenchange', onFullscreenChange );
 
+		addListener( pointerQuery, 'change', onPointerChange );
+
 		onModelChange();
 
 		this.dispose = dispose;
 
 		return;
+
+		// the tab strip of the user interface stands above the toolbar, which is what keeps
+		// the side panel reachable while a toolbar is displayed over the model. On a narrow
+		// screen that strip lies right across the top of the container rather than down one
+		// side of it, where it would cover a toolbar placed against the same edge. What is
+		// there is measured rather than assumed, so a bar at the top clears it whether or
+		// not the side panel is in use, and is placed as it always was where it is not.
+
+		function edgeClearance () {
+
+			// a toolbar added to an element outside the viewer is not over the model, and
+			// so has nothing of the viewer to clear
+
+			if ( edge === 'bottom' || ! viewerContainer.contains( bar ) ) return 0;
+
+			const tabs = viewerContainer.querySelector( '.cv-tab-box' );
+
+			if ( tabs === null ) return 0;
+
+			const tabsRect = tabs.getBoundingClientRect();
+			const containerRect = viewerContainer.getBoundingClientRect();
+
+			// the bar is centred in the container, so only something reaching from one
+			// edge of it to the other cannot be avoided by staying where it is
+
+			if ( tabsRect.left > containerRect.left + 1 || tabsRect.right < containerRect.right - 1 ) return 0;
+
+			return Math.max( 0, tabsRect.bottom - containerRect.top );
+
+		}
+
+		function placeAgainstEdge () {
+
+			bar.style.setProperty( edge, `var( --cv-toolbar-offset, ${EDGE_OFFSET + edgeClearance()}px )` );
+
+		}
 
 		function addListener ( element, type, handler ) {
 
@@ -338,9 +452,13 @@ class CaveViewToolbar {
 			button.classList.add( 'cv-toolbar-button', `cv-toolbar-${id}` );
 			button.setAttribute( 'aria-label', title );
 
-			setStyle( button, buttonStyle );
+			setStyle( button, buttonStyle( sizes ) );
 
-			button.appendChild( icon( icons[ id ] ) );
+			const image = icon( icons[ id ], sizes.icon );
+
+			iconElements.push( image );
+
+			button.appendChild( image );
 
 			addListener( button, 'click', () => {
 
@@ -357,6 +475,7 @@ class CaveViewToolbar {
 			controls.push( {
 				property: definition.property,
 				element: button,
+				style: buttonStyle,
 				needsSurvey: definition.needsSurvey !== false,
 				featureTest: featureTest( definition ),
 				update: () => {
@@ -381,7 +500,7 @@ class CaveViewToolbar {
 			select.classList.add( 'cv-toolbar-select', `cv-toolbar-${id}` );
 			select.setAttribute( 'aria-label', definition.property );
 
-			setStyle( select, selectStyle );
+			setStyle( select, selectStyle( sizes ) );
 
 			addListener( select, 'change', () => { viewer.shadingMode = Number( select.value ); } );
 
@@ -392,6 +511,7 @@ class CaveViewToolbar {
 			controls.push( {
 				property: definition.property,
 				element: select,
+				style: selectStyle,
 				needsSurvey: true,
 				featureTest: featureTest( definition ),
 				update: () => { select.value = viewer.shadingMode ?? ''; }
@@ -474,12 +594,41 @@ class CaveViewToolbar {
 
 		}
 
+		// a pointer attached to or detached from the device changes what the controls have
+		// to be big enough for
+
+		function onPointerChange ( event ) {
+
+			sizes = event.matches ? coarseSizes : fineSizes;
+
+			setStyle( bar, barStyle( sizes ) );
+
+			controls.forEach( control => setStyle( control.element, control.style( sizes ) ) );
+
+			iconElements.forEach( image => {
+
+				image.setAttribute( 'width', sizes.icon );
+				image.setAttribute( 'height', sizes.icon );
+
+			} );
+
+			// the styles just applied include the ones that display the state of a control
+
+			refresh();
+
+		}
+
 		function onModelChange () {
 
 			// which shading modes a model can be displayed with depends on what it holds
 
 			buildShadingOptions();
 			refresh();
+
+			// the side panel is built with the first model loaded, so what the bar has to
+			// clear may only now be there
+
+			placeAgainstEdge();
 
 		}
 
@@ -498,6 +647,11 @@ class CaveViewToolbar {
 				viewerContainer.appendChild( bar );
 
 			}
+
+			// a container displayed fullscreen is a different size, and the user interface
+			// it holds is laid out for that size
+
+			placeAgainstEdge();
 
 		}
 
@@ -526,12 +680,14 @@ class CaveViewToolbar {
 			viewer.removeEventListener( 'change', onChange );
 			viewer.removeEventListener( 'newCave', onModelChange );
 			viewer.removeEventListener( 'clear', onModelChange );
+			viewer.removeEventListener( 'resized', placeAgainstEdge );
 			viewer.removeEventListener( 'dispose', dispose );
 
 			bar.remove();
 
 			controls.length = 0;
 			listeners.length = 0;
+			iconElements.length = 0;
 
 		}
 

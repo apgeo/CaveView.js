@@ -167,12 +167,18 @@ removeEventListener( &lt;type&gt;, &lt;listener&gt; ).</p>
 <p>Dispatched when the pointer comes to rest over a station, before the station name label is displayed.
 Stations are only tracked, and this event therefore only dispatched, when the stationLabelOver view
 setting is true. Hovering over any other part of the model dispatches no event.</p>
+<p>A pointer that cannot hover - a finger, and a pen used as one - reports a station by tapping it
+instead, dispatching the same event, and a tap anywhere else ends the hover as moving a mouse off a
+station does. That is the whole of the difference: a listener has the same event to act on either way,
+and the pointerType property says which kind of pointer made it. A tap that reports a station also does
+what a click of a mouse does, so the station is selected by the same tap that reports it.</p>
 <p>A listener that displays its own information for the station sets the handled property of the event,
 which suppresses the station name label until another station is hovered over. The distance popup
 displayed while measuring between stations is not suppressed.</p>
 <h5>Properties</h5>
 <dl>
 	<dt>station</dt><dd><span>Object</span>A Station object for the station under the pointer.</dd>
+	<dt>pointerType</dt><dd><span>string</span>The kind of pointer the station was pointed at with, as the browser reports it: <i>mouse</i>, <i>touch</i> or <i>pen</i>.</dd>
 	<dt>handled</dt><dd><span>boolean</span>Set to true by a listener to suppress the built in station name label <span>default: false</span>.</dd>
 </dl>
 
@@ -200,10 +206,16 @@ sublabel has nothing to display and looks the same either way.</p>
 <p>The hover ends when the pointer is moved off the marker, and when it is moved out of the model area
 altogether, so the sublabel of a marker is not left displayed behind a pointer that has gone
 elsewhere.</p>
+<p>A pointer that cannot hover - a finger, and a pen used as one - reports a marker by tapping it
+instead, dispatching the same event, and a tap anywhere else ends the hover as moving a mouse off the
+marker does. Lifting the finger is not that pointer leaving the model area: what a tap reports stays
+reported until something else is tapped. The pointerType property says which kind of pointer made the
+event; nothing else about it differs.</p>
 <h5>Properties</h5>
 <dl>
 	<dt>id</dt><dd><span>string</span>The name the marker was added with.</dd>
 	<dt>payload</dt><dd><span>any</span>The payload the marker was added with, untouched.</dd>
+	<dt>pointerType</dt><dd><span>string</span>The kind of pointer the marker was pointed at with, as the browser reports it: <i>mouse</i>, <i>touch</i> or <i>pen</i>.</dd>
 	<dt>handled</dt><dd><span>boolean</span>Set to true by a listener to suppress the built in sublabel <span>default: false</span>.</dd>
 </dl>
 
@@ -260,6 +272,12 @@ two may be used together.</p>
 <p>Create a toolbar and add it to a container element, against its top or bottom edge. The container
 must be a positioned element - the container of a viewer is, so passing that places the toolbar over the
 model.</p>
+<p>The bar is no wider than the container, wrapping onto as many rows as it takes rather than reaching
+past the edge; a toolbar of more controls than fit is therefore taller rather than partly out of reach.
+How big each control is depends on what is pointing at it - see the custom properties below - so the
+same toolbar is offered a bigger target on a device driven with a finger, and a bar of targets that
+size is given the whole width of the container to wrap in rather than being left a block of rows in the
+middle of it.</p>
 <p>Each button is labelled with the name of the property it drives, and displays the state of that
 property as the viewer reports it changing, whether the change was made by the toolbar, by the side
 panel or by the application. Buttons that need a model are disabled until one is loaded, and a button
@@ -337,17 +355,22 @@ ignored, and a station whose entries are all ignored displays no strip.</p>
 	<dd><span>string</span>A caption, displayed under the thumbnail and as its tool tip (optional).</dd>
 </dl>
 <p>The strip is styled by the CSS custom properties below, which may be set on the container element of
-the viewer or on any of its ancestors. The value listed is the one used where the property is not set.</p>
+the viewer or on any of its ancestors. The value listed is the one used where the property is not set.
+A thumbnail is tapped as well as looked at, so where two values are listed the second is the one used
+for a coarse pointer - a finger - and the first for a fine one. Which is in use is a question about the
+pointer and not about the size of the screen, so it is answered by the pointer media feature rather than
+by the width of the window: a phone held sideways is wider than a small laptop and is still driven with
+a finger. A property that is set is used whichever pointer is in use.</p>
 <dl>
 	<dt>--cv-media-background</dt><dd><span>rgba( 34, 34, 34, 0.85 )</span>background of the strip.</dd>
 	<dt>--cv-media-border</dt><dd><span>1px solid #808080</span>border of the strip.</dd>
 	<dt>--cv-media-radius</dt><dd><span>2px</span>corner radius of the strip and of the thumbnails.</dd>
-	<dt>--cv-media-padding</dt><dd><span>4px</span>space between the thumbnails and the edge of the strip.</dd>
-	<dt>--cv-media-gap</dt><dd><span>4px</span>space between thumbnails.</dd>
-	<dt>--cv-media-thumbnail-size</dt><dd><span>64px</span>width and height of each thumbnail.</dd>
+	<dt>--cv-media-padding</dt><dd><span>4px / 8px</span>space between the thumbnails and the edge of the strip.</dd>
+	<dt>--cv-media-gap</dt><dd><span>4px / 8px</span>space between thumbnails.</dd>
+	<dt>--cv-media-thumbnail-size</dt><dd><span>64px / 88px</span>width and height of each thumbnail, which is also the area tapped to open the image.</dd>
 	<dt>--cv-media-font</dt><dd><span>sans-serif</span>font family of the captions.</dd>
 	<dt>--cv-media-caption-color</dt><dd><span>#dddddd</span>colour of the captions.</dd>
-	<dt>--cv-media-caption-size</dt><dd><span>11px</span>font size of the captions.</dd>
+	<dt>--cv-media-caption-size</dt><dd><span>11px / 13px</span>font size of the captions.</dd>
 	<dt>--cv-media-z-index</dt><dd><span>9</span>stacking order of the strip, below the side panel of the user interface.</dd>
 </dl>
 
@@ -388,23 +411,28 @@ viewpoint, which is not a state and so is never shown as selected.</p>
 </dl>
 <p>The toolbar is styled by the CSS custom properties below, which may be set on the element the toolbar
 is added to or on any of its ancestors. The value listed is the one used where the property is not
-set.</p>
+set. Where two are listed the second is the one used for a coarse pointer - a finger, which needs a
+bigger target than a mouse pointer - and the first for a fine one. Which is in use is a question about
+the pointer and not about the size of the screen, so it is answered by the pointer media feature rather
+than by the width of the window: a phone held sideways is wider than a small laptop and is still driven
+with a finger. A property that is set is used whichever pointer is in use, and the toolbar is sized
+again if a pointer is attached to or detached from the device while it is displayed.</p>
 <dl>
-	<dt>--cv-toolbar-offset</dt><dd><span>8px</span>distance between the toolbar and the edge of the container it is placed against.</dd>
+	<dt>--cv-toolbar-offset</dt><dd><span>8px</span>distance between the toolbar and the edge of the container it is placed against. A toolbar at the top clears the tab strip of the side panel where that lies across the container, so the default there is 8px below it.</dd>
 	<dt>--cv-toolbar-background</dt><dd><span>rgba( 34, 34, 34, 0.85 )</span>background of the toolbar.</dd>
 	<dt>--cv-toolbar-border</dt><dd><span>1px solid #808080</span>border of the toolbar.</dd>
 	<dt>--cv-toolbar-radius</dt><dd><span>3px</span>corner radius of the toolbar and of its buttons.</dd>
-	<dt>--cv-toolbar-padding</dt><dd><span>3px</span>space between the buttons and the edge of the toolbar.</dd>
-	<dt>--cv-toolbar-gap</dt><dd><span>2px</span>space between buttons.</dd>
-	<dt>--cv-toolbar-button-size</dt><dd><span>28px</span>width and height of each button.</dd>
+	<dt>--cv-toolbar-padding</dt><dd><span>3px / 6px</span>space between the buttons and the edge of the toolbar.</dd>
+	<dt>--cv-toolbar-gap</dt><dd><span>2px / 4px</span>space between buttons.</dd>
+	<dt>--cv-toolbar-button-size</dt><dd><span>28px / 44px</span>width and height of each button, and the height of the selection list.</dd>
 	<dt>--cv-toolbar-button-background</dt><dd><span>transparent</span>background of a button that is not selected.</dd>
 	<dt>--cv-toolbar-button-border</dt><dd><span>1px solid transparent</span>border of a button.</dd>
 	<dt>--cv-toolbar-color</dt><dd><span>#dddddd</span>colour of a button that is not selected.</dd>
 	<dt>--cv-toolbar-active-background</dt><dd><span>#1ab4e5</span>background of a selected button.</dd>
 	<dt>--cv-toolbar-active-color</dt><dd><span>#ffffff</span>colour of a selected button.</dd>
 	<dt>--cv-toolbar-font</dt><dd><span>sans-serif</span>font family of the selection list.</dd>
-	<dt>--cv-toolbar-font-size</dt><dd><span>12px</span>font size of the selection list.</dd>
-	<dt>--cv-toolbar-select-width</dt><dd><span>130px</span>maximum width of the selection list.</dd>
+	<dt>--cv-toolbar-font-size</dt><dd><span>12px / 16px</span>font size of the selection list.</dd>
+	<dt>--cv-toolbar-select-width</dt><dd><span>130px / 160px</span>maximum width of the selection list.</dd>
 	<dt>--cv-toolbar-z-index</dt><dd><span>8</span>stacking order of the toolbar, below the side panel of the user interface.</dd>
 </dl>
 

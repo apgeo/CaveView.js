@@ -20,7 +20,18 @@
 		width: 800px;
 		height: 600px;
 
-		/* the toolbar takes its appearance from these */
+		/* the viewer is never wider or taller than the window it is displayed in. Dynamic
+		   viewport units follow the browser chrome that appears and disappears as a page
+		   is scrolled on a phone, which static units do not, so the bottom of the model
+		   is not left underneath it. The static unit is what a browser that does not know
+		   the dynamic one uses. */
+
+		max-width: 100%;
+		max-height: 100vh;
+		max-height: 100dvh;
+
+		/* the toolbar takes its appearance from these. Its colours are set here and its
+		   sizes are not, so it is still sized for whatever is pointing at it. */
 
 		--cv-toolbar-background: rgba( 0, 0, 0, 0.7 );
 		--cv-toolbar-border: 1px solid #1ab4e5;

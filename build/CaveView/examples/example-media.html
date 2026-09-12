@@ -20,7 +20,19 @@
 		width: 600px;
 		height: 600px;
 
-		/* the thumbnail strip takes its appearance from these */
+		/* the viewer is never wider or taller than the window it is displayed in. Dynamic
+		   viewport units follow the browser chrome that appears and disappears as a page
+		   is scrolled on a phone, which static units do not, so the bottom of the model
+		   is not left underneath it. The static unit is what a browser that does not know
+		   the dynamic one uses. */
+
+		max-width: 100%;
+		max-height: 100vh;
+		max-height: 100dvh;
+
+		/* the thumbnail strip takes its appearance from these. The size given here is
+		   used whatever is pointing at the strip, in place of the two the viewer picks
+		   between - see the reference. */
 
 		--cv-media-thumbnail-size: 72px;
 		--cv-media-background: rgba( 0, 0, 0, 0.75 );
