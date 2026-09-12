@@ -9,7 +9,7 @@ import {
 } from '../Three';
 import {
 	CAMERA_ORTHOGRAPHIC, CAMERA_PERSPECTIVE, CAMERA_ANAGLYPH,
-	LEG_CAVE, FEATURE_SELECTED_BOX, FEATURE_SURVEY, FEATURE_TERRAIN
+	LEG_CAVE, FEATURE_LIVE_MARKERS, FEATURE_SELECTED_BOX, FEATURE_SURVEY, FEATURE_TERRAIN
 } from '../core/constants';
 
 import { AnaglyphEffect } from './AnaglyphEffect';
@@ -108,6 +108,13 @@ function CameraManager ( ctx, renderer, scene ) {
 
 		camera.layers.enable( LEG_CAVE );
 		camera.layers.enable( FEATURE_SELECTED_BOX );
+
+		// markers added to a loaded model by an application are displayed while they are
+		// there: unlike a feature of the model, they answer to no view setting, so the
+		// layer is enabled here and never disabled. It is empty until a marker is added.
+
+		camera.layers.enable( FEATURE_LIVE_MARKERS );
+
 		savedMask = camera.layers.mask;
 
 	}
