@@ -20,6 +20,13 @@ class GlyphAtlas {
 		this.cellScale = cellSize / atlasSize;
 		this.cellSize = cellSize;
 
+		// the cell a glyph is held in is rounded up to a power of two and so stands in no
+		// fixed relation to the size of the text drawn in it - an 18 pixel font and a 24
+		// pixel one are both held in a 32 pixel cell. Text is spaced by the size of the
+		// text, so that size is kept.
+
+		this.fontSize = fontSize;
+
 		if ( glyphCount > divisions * divisions ) {
 
 			console.error( 'too many glyphs for atlas' );

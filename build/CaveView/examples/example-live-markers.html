@@ -56,6 +56,7 @@ function onload () {
 	const hover = document.getElementById( 'hover' );
 	const status = document.getElementById( 'status' );
 	const markers = document.getElementById( 'markers' );
+	const twoLine = document.getElementById( 'two-line' );
 
 	const colors = [ 'yellow', 'cyan', 'magenta' ];
 
@@ -168,14 +169,29 @@ function onload () {
 	} );
 
 	// what a marker standing for several others says is this page's business: the viewer
-	// counts them, and says nothing else of them without being told what they are
+	// counts them, and says nothing else of them without being told what they are. Text
+	// returned as an array of strings is drawn as those lines, one below the other - a
+	// party has a name of its own and members of its own, and one line is not room for both.
 
 	document.getElementById( 'cluster-label' ).addEventListener( 'change', function ( event ) {
 
-		viewer.setLiveMarkerClusterLabel( event.target.checked
-			? markers => markers.map( marker => marker.label ).join( ' + ' )
-			: null
+		const mode = event.target.value;
+
+		viewer.setLiveMarkerClusterLabel(
+			mode === 'names' ? markers => markers.map( marker => marker.label ).join( ' + ' ) :
+				mode === 'lines' ? markers => [ markers.length + ' parties here' ].concat(
+					markers.map( marker => marker.label )
+				) : null
 		);
+
+	} );
+
+	// a screen crowded with labels is cleared without the markers being taken off it: they
+	// are drawn, and are pointed at, whether or not they are labelled
+
+	document.getElementById( 'marker-labels' ).addEventListener( 'change', function ( event ) {
+
+		viewer.liveMarkerLabels = event.target.checked;
 
 	} );
 
@@ -205,10 +221,12 @@ function onload () {
 	function addMarker () {
 
 		const id = 'party-' + ( ++count );
+		const time = new Date().toLocaleTimeString();
 
 		viewer.addLiveMarker( id, stationList.value, {
-			label: id,
-			sublabel: 'last reported ' + new Date().toLocaleTimeString(),
+			// a label of more than one line is given as the lines it is drawn on
+			label: twoLine.checked ? [ id, 'reported ' + time ] : id,
+			sublabel: 'last reported ' + time,
 			color: colors[ count % colors.length ],
 			// anything the page wants back when the marker is pointed at
 			payload: { party: count }
@@ -267,7 +285,17 @@ function onload () {
 		<button id="clear-markers" >remove all</button>
 	</p>
 	<p>
-		<label><input type="checkbox" id="cluster-label" > name the markers a collapsed marker stands for</label>
+		<label>a collapsed marker says
+			<select id="cluster-label" >
+				<option value="count" >how many markers it stands for</option>
+				<option value="names" >their names, on one line</option>
+				<option value="lines" >how many, then a line for each</option>
+			</select>
+		</label>
+	</p>
+	<p>
+		<label><input type="checkbox" id="two-line" > give each marker added a second line</label>
+		<label><input type="checkbox" id="marker-labels" checked > label the markers</label>
 	</p>
 	<p>markers: <span id="markers" ></span></p>
 	<p>pointed at: <span id="hover" ></span></p>

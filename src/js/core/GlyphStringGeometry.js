@@ -14,13 +14,13 @@ class GlyphStringGeometryCache {
 
 	}
 
-	getGeometry ( text, yOffset ) {
+	getGeometry ( text, yOffset, xOffset ) {
 
 		let entry = this.cache[ text ];
 
 		if ( entry === undefined ) {
 
-			entry = new GlyphStringGeometry( text, this.material.getAtlas(), yOffset );
+			entry = new GlyphStringGeometry( text, this.material.getAtlas(), yOffset, xOffset );
 			this.cache[ text ] = entry;
 			entry.isCached = true;
 
@@ -34,14 +34,23 @@ class GlyphStringGeometryCache {
 
 class GlyphStringGeometry extends InstancedBufferGeometry {
 
-	constructor ( text, glyphAtlas, yOffset = 0 ) {
+	constructor ( text, glyphAtlas, yOffset = 0, xOffset = 0 ) {
 
 		super();
 
 		this.type = 'GlyphStringGeometry';
 		this.width = 0;
 
+		// the offsets are given in the pixels the atlas is drawn in and are held in cells
+		// of the atlas, which is the unit the shader shifts the string by and so the unit
+		// they can be read back in - the screen height of a cell is known to the material.
+		// The shift across is carried by the place each glyph starts at, which is already
+		// in that unit, so it asks nothing of the shader that is not there already.
+
 		yOffset /= glyphAtlas.cellSize;
+
+		this.yOffset = yOffset;
+		this.xOffset = xOffset / glyphAtlas.cellSize;
 
 		this.setIndex( CommonAttributes.index );
 		this.setAttribute( 'position', CommonAttributes.position );
@@ -86,7 +95,12 @@ class GlyphStringGeometry extends InstancedBufferGeometry {
 
 		const l = text.length, glyphAtlas = this.glyphAtlas;
 
-		let offset = 0;
+		// the string starts where it is shifted to, and its width is what it measures from
+		// there: the shift places the string, it is not part of the text
+
+		const xOffset = this.xOffset;
+
+		let offset = xOffset;
 
 		for ( let i = 0; i < l; i++ ) {
 
@@ -105,7 +119,7 @@ class GlyphStringGeometry extends InstancedBufferGeometry {
 		instanceOffsets.needsUpdate = true;
 		instanceWidths.needsUpdate = true;
 
-		this.width = offset;
+		this.width = offset - xOffset;
 		this.name = text;
 
 	}

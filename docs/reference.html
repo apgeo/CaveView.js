@@ -89,6 +89,25 @@ features: one placed at a station that the terrain covers is hidden by it as the
 <p>The identifier names the marker for the calls below, and adding a marker with the identifier of one
 already displayed replaces it. The reference names the station the marker is placed at, in either of
 the forms focusStation() accepts.</p>
+<p>A label may be a single string, or an Array of the strings its lines are. The lines are drawn one
+below the other, ranged left, with the first of them on the line of the dot: a label grows downwards as
+lines are added to it, so the dot stays where it is and whatever the marker is first called stays
+beside it. The block is set clear of the dot rather than starting on it, by a distance in the pixels
+the dot is drawn in, so it is beside the dot on a screen of any density. Whether the markers are
+labelled at all is the liveMarkerLabels property.</p>
+<p>A marker is pointed at over an area of the screen rather than where its dot is drawn: a disc of 32
+pixels for a pointer that hovers and of 44 pixels for one that does not, which is the smallest target a
+finger reaches reliably. The label is pointed at over the area it covers, as before. The disc is the
+same size however far the model is zoomed in or out, because the dot is drawn at the same size however
+far the model is zoomed, and it belongs to the markers alone: a station beside a marker is picked
+exactly as it was, and a pointer between the two reaches both.</p>
+<p>A pointer that does not hover - a finger, and a pen used as one - reaches a marker by tapping it,
+which is what the larger of the two targets is offered to. A tap is told from the drag that turns the
+model by how far the pointer was taken from where it went down and by how long it was held, and is
+abandoned where a second pointer joins it, so one finger still orbits and two still zoom and pan:
+nothing is consumed and nothing is prevented. A marker crossed while the model is being turned is not
+reported, having been passed over rather than aimed at, and what a tap reveals stays revealed until
+something else is tapped - a pointer that does not hover ceases to exist as it is lifted.</p>
 <p>A marker whose reference names no station of the loaded model, or that is added while no model is
 loaded, is held unresolved: it is drawn nowhere, it is reported as unresolved by getLiveMarkers(), and
 it is placed as soon as a model containing that station is loaded. A model that is cleared and loaded
@@ -148,6 +167,9 @@ the set holds, and each marker is reported with a resolved state of its own eith
 one station. It is called with an Array of live marker Objects, one for each marker collapsed and in the
 order the markers were added, and returns the text to display. What the collapsed marker stands for is
 the application's to say: the viewer knows only how many markers there are.</p>
+<p>The text may be a single string, or an Array of the strings its lines are, drawn one below the other
+as the label of a marker is. A collapsed marker commonly stands for a party, which has a name of its own
+and members of its own, and one line is not room enough to say both.</p>
 <p>The number of markers collapsed is displayed where no function has been set, where the function
 returns null or undefined, and after a value that is not a function has been passed to remove one that
 was set. A function that throws is reported to the console and leaves the number of markers displayed:
@@ -165,6 +187,19 @@ application having to report the change.</p>
 
 <h4>dispose()</h4>
 <p>Free used memory including GPU and Javascript heap allocations.</p>
+
+<h3>Properties</h3>
+
+<h4>liveMarkerLabels</h4>
+<p>Whether the markers added by addLiveMarker() are labelled. Setting it to false takes the labels off
+the screen and frees them, and setting it to true builds them again; the markers themselves are drawn
+and pointed at either way, so a screen that a party of markers has crowded can be cleared without the
+application taking its markers off the model and putting them back. Setting the property dispatches the
+change event, as the view settings do.</p>
+<p>It is a property of the markers rather than one of the view settings, and so is not reset when a
+model is loaded: the markers outlive the model they are displayed on, and whether they are labelled
+outlives it with them. It is not reported by getView() and is not kept by saveView().</p>
+<p><span>boolean</span> <span>default: true</span></p>
 
 <h3>Events</h3>
 
@@ -185,24 +220,26 @@ displayed while measuring between stations is not suppressed.</p>
 </dl>
 
 <h4>liveMarkerHover</h4>
-<p>Dispatched when the pointer is moved onto a marker added by addLiveMarker(), before the marker
-displays the second line of its own label. Markers are tracked whenever any of them is displayed,
-independently of the stationLabelOver view setting.</p>
+<p>Dispatched when the pointer is moved onto a marker added by addLiveMarker(), or a pointer that does
+not hover is tapped on one, before the marker displays the second line of its own label. Markers are
+tracked whenever any of them is displayed, independently of the stationLabelOver view setting.</p>
 <p>A listener that displays its own information for the marker sets the handled property of the event,
 which suppresses the sublabel until the pointer is moved onto the marker again. A marker added without a
-sublabel has nothing to display and looks the same either way.</p>
-<p>The hover ends when the pointer is moved off the marker, and when it is moved out of the model area
-altogether, so the sublabel of a marker is not left displayed behind a pointer that has gone
-elsewhere.</p>
+sublabel has nothing to display and looks the same either way. Nothing is displayed while the
+liveMarkerLabels property is false, however the event is handled.</p>
+<p>The hover of a pointer that hovers ends when the pointer is moved off the marker, and when it is moved
+out of the model area altogether, so the sublabel of a marker is not left displayed behind a pointer
+that has gone elsewhere. What a tap reveals is left revealed until something else is tapped.</p>
 <h5>Properties</h5>
 <dl>
 	<dt>id</dt><dd><span>string</span>The name the marker was added with.</dd>
 	<dt>payload</dt><dd><span>any</span>The payload the marker was added with, untouched.</dd>
+	<dt>pointerType</dt><dd><span>string</span>The kind of pointer the marker was revealed with, as the browser reports it.</dd>
 	<dt>handled</dt><dd><span>boolean</span>Set to true by a listener to suppress the built in sublabel <span>default: false</span>.</dd>
 </dl>
 
 <h4>liveMarkerCluster</h4>
-<p>Dispatched when the pointer is moved onto a collapsed marker - the single marker drawn in place of
+<p>Dispatched when the pointer is moved onto, or tapped on, a collapsed marker - the single marker drawn in place of
 the markers of one station - and reports the markers it stands for, so that an application can display
 what is at the station rather than how much of it there is.</p>
 <p>This event stands in for liveMarkerHover for the markers collapsed: they are not drawn while their
@@ -303,9 +340,9 @@ suppress, so an application that leaves the event unhandled sees the label it wa
 <h5>Properties</h5>
 <dl>
 	<dt>label</dt>
-	<dd><span>string</span>the text displayed next to the marker. The identifier of the marker is used where this is not given (optional).</dd>
+	<dd><span>string</span> or <span>Array</span>the text displayed next to the marker, as a single line or as an Array of the lines it is drawn on. The identifier of the marker is used where this is not given, and an empty Array displays nothing (optional).</dd>
 	<dt>sublabel</dt>
-	<dd><span>string</span>further text, displayed after the label while the pointer is over the marker (optional).</dd>
+	<dd><span>string</span> or <span>Array</span>further text, displayed while the pointer is over the marker: after the label where both are a single line, and below it as lines of its own where either is more than one (optional).</dd>
 	<dt>color</dt>
 	<dd><span>string</span> or <span>number</span>the colour of the marker, as a CSS colour or a hexadecimal value. The station marker colour of the theme is used where this is not given (optional).</dd>
 	<dt>payload</dt>
@@ -313,15 +350,15 @@ suppress, so an application that leaves the event unhandled sees the label it wa
 </dl>
 
 <h4>live marker Object</h4>
-<p>Describes one marker. The object is a copy, a reference given as an Array included: changing either
-does not change the marker. The payload is the value the application supplied, and is passed back
-untouched rather than copied.</p>
+<p>Describes one marker. The object is a copy, a reference or a label given as an Array included:
+changing either does not change the marker. The payload is the value the application supplied, and is
+passed back untouched rather than copied.</p>
 <h5>Properties</h5>
 <dl>
 	<dt>id</dt><dd><span>string</span>The name the marker was added with.</dd>
 	<dt>ref</dt><dd><span>string</span> or <span>Array</span>The reference the marker was last placed by.</dd>
-	<dt>label</dt><dd><span>string</span>The label of the marker.</dd>
-	<dt>sublabel</dt><dd><span>string</span>The sublabel of the marker, or undefined.</dd>
+	<dt>label</dt><dd><span>string</span> or <span>Array</span>The label of the marker, in the form it was given in.</dd>
+	<dt>sublabel</dt><dd><span>string</span> or <span>Array</span>The sublabel of the marker, in the form it was given in, or undefined.</dd>
 	<dt>color</dt><dd><span>string</span> or <span>number</span>The colour asked for, or undefined where the theme colour is used.</dd>
 	<dt>payload</dt><dd><span>any</span>The payload of the marker, or undefined.</dd>
 	<dt>resolved</dt><dd><span>boolean</span>Whether the reference names a station of the loaded model. A marker that is not resolved is displayed nowhere.</dd>

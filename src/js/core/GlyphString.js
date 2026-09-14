@@ -63,6 +63,15 @@ class GlyphStringBase extends Mesh {
 		// rotate into alignment with text rotation
 		glyphMaterial.rotateVector( labelOrigin );
 
+		// a string shifted from the point it is placed at - one line of several drawn one
+		// below the other, or a label set beside what it names rather than over it - is
+		// drawn there and so is picked there. The shader applies the shift before the
+		// rotation, which is the space the box is now in, and the shift is held in cells
+		// of the glyph atlas, of which one is a line of text.
+
+		labelOrigin.x += this.geometry.xOffset * this.getHeight();
+		labelOrigin.y += this.geometry.yOffset * this.getHeight();
+
 		// find other corner = origin + offset (maintained in coords aligned with rotation)
 		_labelEnd.copy( labelOrigin );
 		_labelEnd.add( this.labelOffset );
@@ -177,9 +186,14 @@ class GlyphString extends GlyphStringBase {
 
 class MutableGlyphString extends GlyphStringBase {
 
-	constructor ( text, glyphMaterial ) {
+	// yOffset shifts the string along its own vertical, in the pixels the glyph atlas is
+	// drawn in, which is how strings drawn at one point are stacked into lines. xOffset
+	// shifts it along its own horizontal in the same unit, which sets a string beside the
+	// point it is placed at rather than starting on it.
 
-		super( text, glyphMaterial, new GlyphStringGeometry( text, glyphMaterial.getAtlas() ) );
+	constructor ( text, glyphMaterial, yOffset = 0, xOffset = 0 ) {
+
+		super( text, glyphMaterial, new GlyphStringGeometry( text, glyphMaterial.getAtlas(), yOffset, xOffset ) );
 
 	}
 

@@ -158,6 +158,20 @@ class CaveViewer extends EventDispatcher {
 				enumerable: true
 			},
 
+			// the markers an application maintains are kept as models are cleared and
+			// loaded, so whether they are labelled is kept with them rather than being
+			// among the view settings that each model is displayed with
+
+			'liveMarkerLabels': {
+				get() { return liveMarkers.getLabels(); },
+				set( x ) {
+
+					liveMarkers.setLabels( x );
+					self.dispatchEvent( { type: 'change', name: 'liveMarkerLabels' } );
+
+				}
+			},
+
 			'terrainShading': {
 				get() { return terrain !== null ? terrain.shadingMode : null; },
 				set: stateSetter( setTerrainShadingMode, 'terrainShading'),
