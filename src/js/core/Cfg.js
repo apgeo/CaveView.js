@@ -131,7 +131,11 @@ class Cfg extends EventDispatcher {
 
 		}
 
-		return value || defaultValue;
+		// a theme that gives 0 has given a value, and 0 is a value several of these settings
+		// take - an opacity that is fully transparent, a colour that is black, an angle that
+		// is none. Only a setting the theme says nothing of at all is the default.
+
+		return ( value === undefined ) ? defaultValue : value;
 
 	}
 

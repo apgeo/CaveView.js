@@ -177,6 +177,33 @@ class CaveViewer extends EventDispatcher {
 				}
 			},
 
+			// a marker is labelled with a block of lines rather than with the single name a
+			// station is labelled with, so its text is drawn smaller than the text of the
+			// model's own labels, and a backing is drawn behind the block so that it can be
+			// read over the line work of the survey. Both belong to the markers for the same
+			// reason as above, and either can be set back to what a marker looked like
+			// without it: a size of null is the size the labels of the model are drawn at.
+
+			'liveMarkerLabelSize': {
+				get() { return liveMarkers.getLabelSize(); },
+				set( x ) {
+
+					liveMarkers.setLabelSize( x );
+					self.dispatchEvent( { type: 'change', name: 'liveMarkerLabelSize' } );
+
+				}
+			},
+
+			'liveMarkerLabelBacking': {
+				get() { return liveMarkers.getLabelBacking(); },
+				set( x ) {
+
+					liveMarkers.setLabelBacking( x );
+					self.dispatchEvent( { type: 'change', name: 'liveMarkerLabelBacking' } );
+
+				}
+			},
+
 			'terrainShading': {
 				get() { return terrain !== null ? terrain.shadingMode : null; },
 				set: stateSetter( setTerrainShadingMode, 'terrainShading'),

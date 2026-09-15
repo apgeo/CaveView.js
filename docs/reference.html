@@ -121,12 +121,23 @@ lines are added to it, so the dot stays where it is and whatever the marker is f
 beside it. The block is set clear of the dot rather than starting on it, by a distance in the pixels
 the dot is drawn in, so it is beside the dot on a screen of any density. Whether the markers are
 labelled at all is the liveMarkerLabels property.</p>
+<p>The text of a label is drawn smaller than the labels of the model are - a marker is labelled with a
+block of lines rather than with the single name a station is labelled with - and a translucent backing
+is drawn behind the whole block, so that a list of names can be read over the line work of the survey
+and over the markers of its stations. The size is the liveMarkerLabelSize property and the backing is
+the liveMarkerLabelBacking property; the colour and the opacity of the backing are the theme's
+(liveMarkers.labelBackground and liveMarkers.labelBackgroundOpacity). An application that wants the
+text alone, at the size the labels of the model are drawn at, sets the size to null and the backing to
+false. The label is drawn over the line work of the survey and over the markers of its stations,
+whatever it is drawn at, and under anything the application displays over the model; the dot is drawn
+against the model as before, and is hidden by the terrain where the station it stands at is.</p>
 <p>A marker is pointed at over an area of the screen rather than where its dot is drawn: a disc of 32
 pixels for a pointer that hovers and of 44 pixels for one that does not, which is the smallest target a
-finger reaches reliably. The label is pointed at over the area it covers, as before. The disc is the
-same size however far the model is zoomed in or out, because the dot is drawn at the same size however
-far the model is zoomed, and it belongs to the markers alone: a station beside a marker is picked
-exactly as it was, and a pointer between the two reaches both.</p>
+finger reaches reliably. The label is pointed at over the area its text covers, and the backing drawn
+behind the text adds nothing to it: a pointer over the backing but not over the text reaches whatever
+is drawn behind them both. The disc is the same size however far the model is zoomed in or out, because
+the dot is drawn at the same size however far the model is zoomed, and it belongs to the markers alone:
+a station beside a marker is picked exactly as it was, and a pointer between the two reaches both.</p>
 <p>A pointer that does not hover - a finger, and a pen used as one - reaches a marker by tapping it,
 which is what the larger of the two targets is offered to. A tap is told from the drag that turns the
 model by how far the pointer was taken from where it went down and by how long it was held, and is
@@ -218,13 +229,53 @@ application having to report the change.</p>
 
 <h4>liveMarkerLabels</h4>
 <p>Whether the markers added by addLiveMarker() are labelled. Setting it to false takes the labels off
-the screen and frees them, and setting it to true builds them again; the markers themselves are drawn
-and pointed at either way, so a screen that a party of markers has crowded can be cleared without the
-application taking its markers off the model and putting them back. Setting the property dispatches the
-change event, as the view settings do.</p>
+the screen and frees them - the text, and the backing drawn behind it - and setting it to true builds
+them again; the markers themselves are drawn and pointed at either way, so a screen that a party of
+markers has crowded can be cleared without the application taking its markers off the model and putting
+them back. Setting the property dispatches the change event, as the view settings do.</p>
 <p>It is a property of the markers rather than one of the view settings, and so is not reset when a
 model is loaded: the markers outlive the model they are displayed on, and whether they are labelled
 outlives it with them. It is not reported by getView() and is not kept by saveView().</p>
+<p><span>boolean</span> <span>default: true</span></p>
+
+<h4>liveMarkerLabelSize</h4>
+<p>The size the text of the labels is drawn at, in the unit the font sizes of the theme are given in.
+A marker is labelled with a block of lines - what it stands for, and a line for each of the several
+things that may be at one station - rather than with the single name a station is labelled with, so its
+text is drawn smaller than the labels of the model by default. A size of null is the size the labels of
+the model are drawn at, whatever the theme says that is (stations.default.fontsize, 18 where the theme
+says nothing), which is what an application that wants its markers labelled as the model is asks for.</p>
+<p>Anything that is not a number greater than zero is refused, with a warning to the console, and the
+labels are left as they are: a boolean, a string of digits and undefined are refused rather than taken
+for the number they would convert to, and so is a size larger than the largest text the viewer draws.
+That largest one is set by the atlas a size of glyphs is held in - a fixed square of cells, one for each
+glyph, of which the fewer fit the larger the text is - and is 45 as the viewer stands. Setting the
+property dispatches the change event; the labels displayed are built again at the new size, and the
+markers themselves are untouched.</p>
+<p>The size is in the pixels of the screen rather than in the pixels of the page, as every font size of
+the theme is: text of a given size is drawn in that many of the screen's own pixels, so on a screen of
+high pixel density it is sharper and smaller. The default is therefore not one number but 12 pixels of
+the page stated in the pixels of the screen - <i>12 * window.devicePixelRatio</i>, and never more than
+the largest the viewer draws - so that a block of names is the same size on the page whatever it is
+displayed on. Twelve pixels of the screen on a telephone of 2.6 of them to the pixel of the page would
+be a block of four names 26 by 21 pixels of the page, with a cap height of six tenths of a millimetre,
+which is not a size a list of names can be read at; on such a screen the labels of the markers are
+therefore larger on the page than the labels of the model, which are given in the pixels of the screen
+by the theme. An application that wants a fixed number of the screen's pixels says so -
+<i>viewer.liveMarkerLabelSize = 12</i> - and one that wants its markers labelled as the model is sets
+null.</p>
+<p><span>number</span> or <span>null</span> <span>default: 12 * window.devicePixelRatio</span></p>
+
+<h4>liveMarkerLabelBacking</h4>
+<p>Whether a backing is drawn behind the text of each label. It covers the whole block of lines rather
+than each line, is sized to the text with a little room left around it, and follows the label as the
+model is turned, zoomed and resized: a list of names drawn over the line work of a survey, or over the
+cross hatching of a passage, is otherwise hard to read. Setting it to false draws the text alone.</p>
+<p>The colour and the opacity of the backing are the theme's - liveMarkers.labelBackground and
+liveMarkers.labelBackgroundOpacity - as the other colours of the viewer are. The backing is drawn over
+the model and under the text of its own label, and is not pointed at: a pointer over the backing but
+not over the text reaches whatever is drawn behind them both. Setting the property dispatches the
+change event.</p>
 <p><span>boolean</span> <span>default: true</span></p>
 
 <h3>Events</h3>

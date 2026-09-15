@@ -54,6 +54,15 @@ function onload () {
 		home: "CaveView/",
 		view: {
 			stations: true
+		},
+		// the colour and the opacity of the backing drawn behind a marker label are the
+		// theme's, as the other colours of the viewer are. These are the values it uses
+		// where the theme says nothing.
+		theme: {
+			liveMarkers: {
+				labelBackground: 'black',
+				labelBackgroundOpacity: 0.6
+			}
 		}
 	} );
 
@@ -205,6 +214,36 @@ function onload () {
 
 	} );
 
+	// a block of names beside a dot is drawn smaller than the labels of the model, which are
+	// single names. An application that disagrees says what size it wants; null is the size
+	// the labels of the model are drawn at.
+	//
+	// The size is in the pixels of the screen, as every font size of the theme is, so the
+	// size a marker label is drawn at where a page says nothing is 12 pixels of the page
+	// stated in those - which is a larger number on a dense screen, and is offered here as
+	// the size this page starts at.
+
+	const labelSize = document.getElementById( 'label-size' );
+
+	addSizeOption( labelSize, viewer.liveMarkerLabelSize );
+
+	labelSize.addEventListener( 'change', function ( event ) {
+
+		const size = event.target.value;
+
+		viewer.liveMarkerLabelSize = ( size === '' ) ? null : Number( size );
+
+	} );
+
+	// the backing is what makes a block of names readable where it is drawn over the line
+	// work of the survey rather than over the black around it
+
+	document.getElementById( 'label-backing' ).addEventListener( 'change', function ( event ) {
+
+		viewer.liveMarkerLabelBacking = event.target.checked;
+
+	} );
+
 	viewer.addEventListener( 'liveMarkerHover', function ( event ) {
 
 		hover.textContent = event.id + ' - party ' + event.payload.party;
@@ -273,6 +312,21 @@ function onload () {
 
 	}
 
+	// the size the viewer draws a marker label at where nothing asks for one depends on the
+	// screen, so it is offered as an option of its own and selected
+
+	function addSizeOption ( list, size ) {
+
+		const option = document.createElement( 'option' );
+
+		option.value = size;
+		option.textContent = size + ' - the size a marker label is drawn at on this screen';
+
+		list.insertBefore( option, list.firstChild );
+		list.value = String( size );
+
+	}
+
 }
 
 </script>
@@ -306,6 +360,17 @@ function onload () {
 	<p>
 		<label><input type="checkbox" id="two-line" > give each marker added a second line</label>
 		<label><input type="checkbox" id="marker-labels" checked > label the markers</label>
+	</p>
+	<p>
+		<label>label text, in pixels of the screen
+			<select id="label-size" >
+				<option value="9" >9 - smaller</option>
+				<option value="16" >16 - larger</option>
+				<option value="45" >45 - the largest the viewer draws</option>
+				<option value="" >the size the labels of the model are drawn at</option>
+			</select>
+		</label>
+		<label><input type="checkbox" id="label-backing" checked > draw a backing behind each label</label>
 	</p>
 	<p>markers: <span id="markers" ></span></p>
 	<p>pointed at: <span id="hover" ></span></p>

@@ -1,18 +1,60 @@
 import { CanvasTexture, LinearFilter } from '../Three';
 
+// an atlas is a square of a fixed size, divided into a cell for each glyph it holds. The
+// cell is the size of the text rounded up to the next power of two, so the larger the text
+// the fewer cells there are.
+
+const ATLAS_SIZE = 1024;
+
+const GLYPHS = '\u202f\u00B0\u2610 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%,.-_/()[]\'"';
+
+function cellSizeForFont ( fontSize ) {
+
+	return Math.pow( 2, Math.round( Math.log2( fontSize ) + 1 ) );
+
+}
+
+function cellsOfSize ( cellSize ) {
+
+	const divisions = ATLAS_SIZE / cellSize;
+
+	return divisions * divisions;
+
+}
+
+// the largest text an atlas can hold its glyphs at. Past it the atlas has fewer cells than
+// there are glyphs and is built holding nothing at all - no texture, and no glyph - so it
+// is the ceiling of any size the viewer is asked to draw text at. It is worked out from the
+// atlas rather than stated, so that a change to the size of the atlas, or to the set of
+// glyphs it holds, carries the ceiling with it.
+
+const maxGlyphAtlasFontSize = ( function () {
+
+	let cellSize = 1;
+
+	// the largest cell of which the atlas still holds one for every glyph
+
+	while ( cellSize < ATLAS_SIZE && cellsOfSize( cellSize * 2 ) >= GLYPHS.length ) cellSize *= 2;
+
+	// and the largest text held in a cell of that size: text is held in a cell of 2^n while
+	// it is smaller than 2^(n - 0.5), which is that cell divided by the root of two
+
+	return Math.floor( cellSize / Math.SQRT2 );
+
+} )();
+
 class GlyphAtlas {
 
 	constructor ( glyphAtlasSpec ) {
 
-		const atlasSize = 1024;
+		const atlasSize = ATLAS_SIZE;
 		const fontSize = glyphAtlasSpec.size || 18;
-		const exp = Math.round( Math.log2( fontSize ) + 1 );
-		const cellSize = Math.pow( 2, exp );
+		const cellSize = cellSizeForFont( fontSize );
 		const baseOffset = ( cellSize - fontSize ) / 2;
 
 		const divisions = atlasSize / cellSize;
 		const canvas = document.createElement( 'canvas' );
-		const glyphs = '\u202f\u00B0\u2610 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%,.-_/()[]\'"';
+		const glyphs = GLYPHS;
 		const map = {};
 
 		let glyphCount = glyphs.length;
@@ -52,6 +94,20 @@ class GlyphAtlas {
 		ctx.font = fontSize + 'px ' + glyphAtlasSpec.font;
 		ctx.fillStyle = glyphAtlasSpec.color || '#ffffff';
 
+		// where a line of text sits within the cell it is held in, as a fraction of the cell
+		// measured from the bottom of it. The cell is rounded up to a power of two and the
+		// text is drawn from a baseline placed to centre the font in it, so a box drawn
+		// around the cell is not a box drawn around the text. A browser that does not report
+		// the box of the font leaves the proportions of an ordinary sans-serif face.
+
+		const metrics = ctx.measureText( glyphs );
+
+		const ascent = metrics.fontBoundingBoxAscent ?? fontSize * 0.9;
+		const descent = metrics.fontBoundingBoxDescent ?? fontSize * 0.2;
+
+		this.textTop = ( baseOffset + ascent ) / cellSize;
+		this.textBottom = ( baseOffset - descent ) / cellSize;
+
 		for ( let i = 0; i < glyphCount; i++ ) {
 
 			addGlyphToCanvas( glyphs.charAt( i ), i );
@@ -87,6 +143,16 @@ class GlyphAtlas {
 		this.getTexture = function () {
 
 			return texture;
+
+		};
+
+		// an atlas built for a size an application asked for is held by the material that
+		// draws from it alone, and is freed with it: the texture it holds is a megapixel of
+		// the graphics card, and the canvas it was drawn from as much again.
+
+		this.dispose = function () {
+
+			texture.dispose();
 
 		};
 
@@ -140,4 +206,4 @@ function GlyphAtlasCache () {
 
 }
 
-export { GlyphAtlasCache };
+export { GlyphAtlas, GlyphAtlasCache, maxGlyphAtlasFontSize };
