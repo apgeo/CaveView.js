@@ -6,7 +6,7 @@ import { DepthCursorMaterial } from './DepthCursorMaterial';
 import { DepthMaterial } from './DepthMaterial';
 import { EntrancePointMaterial } from './EntrancePointMaterial';
 import { ExtendedPointsMaterial } from './ExtendedPointsMaterial';
-import { GlyphAtlasCache } from './GlyphAtlas';
+import { GlyphAtlas, GlyphAtlasCache } from './GlyphAtlas';
 import { GlyphMaterial } from './GlyphMaterial';
 import { HeightMaterial } from './HeightMaterial';
 import { HypsometricMaterial } from './HypsometricMaterial';
@@ -29,6 +29,12 @@ function Materials ( viewer ) {
 	const cfg = ctx.cfg;
 
 	const glyphAtlasCache = new GlyphAtlasCache();
+
+	// the label materials built for a size an application asked for rather than for a size
+	// of the theme. They are the caller's rather than the cache's, and are freed by it.
+
+	const ownedLabelMaterials = new Set();
+
 	const cursorMaterials = new Set();
 	const lineMaterials = new Set();
 	const surveyLineMaterials = new Set();
@@ -378,24 +384,50 @@ function Materials ( viewer ) {
 
 	};
 
-	this.getLabelMaterial = function ( type ) {
+	// a size given here is the size the text is drawn at, in place of the size the theme
+	// gives for this kind of label. A label drawn at a size the application asked for is
+	// drawn from an atlas and a material built for that size alone, which are the caller's:
+	// they are not held in the caches the theme's own materials are held in, since neither
+	// cache ever drops anything and the sizes an application steps through - animating one,
+	// or offering a control for it - would gather there, a megapixel of texture at a time.
+	// The caller frees them with releaseLabelMaterial() when it stops drawing at that size.
+	//
+	// A size of null is the theme's, and is the material the labels of that kind share.
 
-		let material = getCacheMaterial( `label-${type}` );
+	this.getLabelMaterial = function ( type, size = null ) {
 
-		if ( material === undefined ) {
+		const atlasSpec = {
+			color: cfg.themeColorCSS( `${type}.text` ),
+			background: cfg.themeValue( `${type}.background` ),
+			font: cfg.themeValue( `${type}.font` ),
+			size: size ?? cfg.themeValue( `${type}.fontsize` )
+		};
 
-			const atlasSpec = {
-				color: cfg.themeColorCSS( `${type}.text` ),
-				background: cfg.themeValue( `${type}.background` ),
-				font: cfg.themeValue( `${type}.font` ),
-				size: cfg.themeValue( `${type}.fontsize` )
-			};
+		const rotation = cfg.themeValue( `${type}.angle`, 0 );
 
-			material = this.getGlyphMaterial( atlasSpec, cfg.themeValue( `${type}.angle`, 0 ) );
+		if ( size === null ) return this.getGlyphMaterial( atlasSpec, rotation );
 
-		}
+		const material = new GlyphMaterial( ctx, new GlyphAtlas( atlasSpec ), rotation, viewer );
+
+		material.side = viewer.hasModel ? BackSide : FrontSide;
+
+		ownedLabelMaterials.add( material );
 
 		return material;
+
+	};
+
+	// frees a label material built for a size an application asked for, and the atlas built
+	// with it. A material of one of the theme's own sizes is shared with everything else
+	// drawing labels of its kind and belongs to the viewer, so one handed back here is left
+	// exactly as it is.
+
+	this.releaseLabelMaterial = function ( material ) {
+
+		if ( ! ownedLabelMaterials.delete( material ) ) return;
+
+		material.getAtlas().dispose();
+		material.dispose();
 
 	};
 

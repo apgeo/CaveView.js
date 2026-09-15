@@ -100,6 +100,10 @@ const defaultTheme = {
 		border: 'white',
 		background: 0x111111
 	},
+	liveMarkers: {
+		labelBackground: 'black',
+		labelBackgroundOpacity: 0.6
+	},
 	grid: {
 		base: 'gray'
 	}

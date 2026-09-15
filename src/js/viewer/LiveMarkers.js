@@ -1,11 +1,57 @@
-import { Group, Raycaster, Vector3 } from '../Three';
+import { Box2, Group, Raycaster, Vector2, Vector3 } from '../Three';
 import { FEATURE_LIVE_MARKERS } from '../core/constants';
 import { MutableGlyphString } from '../core/GlyphString';
+import { LabelBacking } from '../core/LabelBacking';
+import { maxGlyphAtlasFontSize } from '../materials/GlyphAtlas';
+import { LabelBackingMaterial } from '../materials/LabelBackingMaterial';
 import { PointIndicator, POINT_INDICATOR_SIZE } from './PointIndicator';
 
 // duration of the move between two stations, in milliseconds
 
 const MOVE_TIME = 600;
+
+// the size the text of a label is drawn at where the application asks for none, in the
+// pixels of the page. A marker is labelled with a block of lines - what it stands for, and
+// a line for each of the several things that may be at one station - rather than with the
+// single name a station is labelled with, so it is drawn smaller than the labels of the
+// model are: 12 pixels of the page against the 18 pixels of the screen the theme gives for
+// a station, which on a screen of one device pixel to the pixel of the page is the same
+// number and on a dense screen is not.
+//
+// The font sizes of the theme are given in the pixels of the screen, and a size given that
+// way is drawn smaller on the page the denser the screen is: on a telephone of 2.6 device
+// pixels to the pixel of the page, 12 would be a block of four names about a millimetre of
+// cap height, which is not a size anything can be read at and so is not a default. The
+// default is therefore stated in the pixels of the page and converted to the screen's, so
+// that a marker label is the same size on the page whatever it is displayed on, and an
+// application that wants it drawn as the labels of the model are says so.
+
+const LABEL_SIZE = 12;
+
+// the default in the unit the property is given in - the pixels of the screen - held below
+// the largest text the glyph atlas can draw, which the conversion would pass on a screen of
+// four device pixels to the pixel of the page.
+
+function defaultLabelSize () {
+
+	return Math.min( LABEL_SIZE * ( window.devicePixelRatio || 1 ), maxGlyphAtlasFontSize );
+
+}
+
+// the space, in CSS pixels, left between the text of a label and the edge of the backing
+// drawn behind it
+
+const LABEL_PADDING = 3;
+
+// where a label is drawn in the order the model is drawn in. A label is read over the line
+// work of the survey and over the markers of its stations, which are drawn over one another
+// in an order settled by how far each of them is from the camera, so the label is drawn
+// after all of them - and the backing a step before the text it stands behind, since which
+// of two objects standing at one point is drawn first is not otherwise settled. Anything an
+// application displays over the model, a popup among them, is drawn later still.
+
+const BACKING_RENDER_ORDER = 2;
+const LABEL_RENDER_ORDER = 3;
 
 // the distance between the lines of a label, as a multiple of the size of the text. The
 // lines of one label are read as one block, so they are spaced by the text they are made
@@ -153,6 +199,7 @@ class LiveMarkers {
 		let survey = null;
 		let group = null;
 		let labelMaterial = null;
+		let backingMaterial = null;
 
 		// what a collapsed marker says, decided by the application. The number of markers
 		// collapsed is all the viewer knows to say of them.
@@ -164,6 +211,13 @@ class LiveMarkers {
 		// being cleared, not the markers that are being taken off it.
 
 		let labelsShown = true;
+
+		// how the labels are drawn: the size of their text, and whether a backing is drawn
+		// behind each block of it. An application that wants its labels drawn at the size
+		// the labels of the model are drawn at asks for a size of null.
+
+		let labelSize = defaultLabelSize();
+		let labelBacking = true;
 
 		let hovered = null;
 		let tracking = false;
@@ -211,8 +265,8 @@ class LiveMarkers {
 				object: null,
 				cluster: null,
 				point: null,
-				labelStrings: [],
-				hoverStrings: null,
+				labelBlock: emptyBlock(),
+				hoverBlock: null,
 				from: null,
 				to: null,
 				t: 1
@@ -354,23 +408,76 @@ class LiveMarkers {
 
 			labelsShown = show;
 
-			// the text of a label is built into the objects drawn for it, so what is drawn
-			// is built again - without the labels, or with them. The markers themselves are
-			// untouched: the set is what it was and each marker is where it was.
-
-			markers.forEach( unmount );
-			clusters.forEach( unmountCluster );
-			clusters.length = 0;
-
-			draw();
-
-			viewer.renderView();
+			rebuildLabels();
 
 		};
 
 		this.getLabels = function () {
 
 			return labelsShown;
+
+		};
+
+		// the size of the text of a label, in the unit the font sizes of the theme are given
+		// in. A size of null is the size the labels of the model are drawn at, which is what
+		// an application that wants its markers labelled as the model is asks for.
+		//
+		// A size the text cannot be drawn at is refused and the labels are left as they are.
+		// It is taken as the number it is rather than as the number it can be read as, so
+		// that a value which is not a size - a boolean, a string, nothing at all - is
+		// refused rather than drawn as whatever it converts to. The largest is the largest
+		// the glyph atlas can hold its glyphs at: past that the atlas is built holding
+		// nothing, and the labels would be asked to draw from an atlas with no text in it.
+
+		this.setLabelSize = function ( size ) {
+
+			if ( size !== null ) {
+
+				if ( typeof size !== 'number' || ! ( size > 0 ) ) {
+
+					console.warn( 'a live marker label size must be a positive number, or null' );
+					return;
+
+				}
+
+				if ( size > maxGlyphAtlasFontSize ) {
+
+					console.warn( `a live marker label size of ${size} is larger than the largest text available (${maxGlyphAtlasFontSize})` );
+					return;
+
+				}
+
+			}
+
+			if ( size === labelSize ) return;
+
+			labelSize = size;
+
+			rebuildLabels();
+
+		};
+
+		this.getLabelSize = function () {
+
+			return labelSize;
+
+		};
+
+		this.setLabelBacking = function ( show ) {
+
+			show = !! show;
+
+			if ( show === labelBacking ) return;
+
+			labelBacking = show;
+
+			rebuildLabels();
+
+		};
+
+		this.getLabelBacking = function () {
+
+			return labelBacking;
 
 		};
 
@@ -448,6 +555,11 @@ class LiveMarkers {
 		// therefore stated in the units the dot is drawn in, and converted to the cells of
 		// the glyph atlas the string is shifted in - a cell is scaleFactor CSS pixels.
 		//
+		// A backing is drawn behind the whole block rather than behind each line, so that a
+		// block of text is read as a block, and covers the text with a little room around
+		// it: the lines of a label are drawn over the line work of the survey, which a
+		// stroke of text is easily lost in.
+		//
 		// The text of a marker is chosen by the application and changes as it reports the
 		// marker, so a geometry of its own is built for each line rather than one taken
 		// from the cache shared between labels of the same text: a cached geometry cannot
@@ -458,17 +570,18 @@ class LiveMarkers {
 
 		function mountLabel ( object, lines ) {
 
-			if ( ! labelsShown ) return [];
+			if ( ! labelsShown || lines.length === 0 ) return emptyBlock();
 
 			const atlas = labelMaterial.getAtlas();
 			const lineHeight = LINE_SPACING * atlas.fontSize;
 			const indent = ( POINT_INDICATOR_SIZE / 2 + LABEL_GAP ) * atlas.cellSize / labelMaterial.scaleFactor;
 
-			return lines.map( ( text, line ) => {
+			const strings = lines.map( ( text, line ) => {
 
 				const glyph = new MutableGlyphString( ` ${text} `, labelMaterial, - line * lineHeight, indent );
 
 				glyph.layers.set( FEATURE_LIVE_MARKERS );
+				glyph.renderOrder = LABEL_RENDER_ORDER;
 
 				object.addStatic( glyph );
 
@@ -476,20 +589,156 @@ class LiveMarkers {
 
 			} );
 
+			return { strings: strings, backing: mountBacking( object, strings, atlas ) };
+
 		}
 
-		// the geometry of each line belongs to the marker it was built for, and is freed
-		// with it
+		// the backing is sized to the text once the lines of it are built, which is when how
+		// much room they take is known
+
+		function mountBacking ( object, strings, atlas ) {
+
+			if ( ! labelBacking ) return null;
+
+			const backing = new LabelBacking( getBackingMaterial() );
+
+			backing.setBox( textBox( strings, atlas ) );
+			backing.layers.set( FEATURE_LIVE_MARKERS );
+			backing.renderOrder = BACKING_RENDER_ORDER;
+
+			object.addStatic( backing );
+
+			return backing;
+
+		}
+
+		// a label that is drawn with nothing - the labels are turned off, or the marker has
+		// nothing to say - is described as the labels that are
+
+		function emptyBlock () {
+
+			return { strings: [], backing: null };
+
+		}
+
+		// the room the lines of a label take, in the cells of the glyph atlas that the text
+		// is placed and spaced in: from the text of the first line down to the text of the
+		// last, across the widest of them, with a little space left around it. The lines are
+		// all placed from the same point, so they share a left edge.
+
+		function textBox ( strings, atlas ) {
+
+			const padding = LABEL_PADDING / labelMaterial.scaleFactor;
+
+			const first = strings[ 0 ].geometry;
+			const last = strings[ strings.length - 1 ].geometry;
+
+			let width = 0;
+
+			strings.forEach( glyph => { width = Math.max( width, glyph.geometry.width ); } );
+
+			return new Box2(
+				new Vector2( first.xOffset - padding, last.yOffset + atlas.textBottom - padding ),
+				new Vector2( first.xOffset + width + padding, first.yOffset + atlas.textTop + padding )
+			);
+
+		}
+
+		// the colour of the backing is the theme's, as the colours of the viewer are, and one
+		// material serves every label drawn: it is built when a label first needs it, and is
+		// freed when the model the labels were drawn on is cleared.
+
+		function getBackingMaterial () {
+
+			if ( backingMaterial === null ) {
+
+				backingMaterial = new LabelBackingMaterial(
+					labelMaterial,
+					cfg.themeColor( 'liveMarkers.labelBackground' ),
+					cfg.themeValue( 'liveMarkers.labelBackgroundOpacity' )
+				);
+
+			}
+
+			return backingMaterial;
+
+		}
+
+		// the geometry of each line, and of the backing behind them, belongs to the marker it
+		// was built for and is freed with it. The material of the backing is shared by every
+		// label and is not.
 
 		function unmountLabel ( block ) {
 
-			block.forEach( glyph => glyph.geometry.dispose() );
+			block.strings.forEach( glyph => glyph.geometry.dispose() );
+
+			if ( block.backing !== null ) block.backing.geometry.dispose();
 
 		}
 
 		function showLabel ( block, show ) {
 
-			block.forEach( glyph => { glyph.visible = show; } );
+			block.strings.forEach( glyph => { glyph.visible = show; } );
+
+			if ( block.backing !== null ) block.backing.visible = show;
+
+		}
+
+		// how a label is drawn is built into the objects drawn for it, so what is drawn is
+		// built again - without the labels, with them, or with them drawn differently. The
+		// markers themselves are untouched: the set is what it was, and each marker is where
+		// it was.
+
+		function rebuildLabels () {
+
+			markers.forEach( unmount );
+			clusters.forEach( unmountCluster );
+			clusters.length = 0;
+
+			// the material the text is drawn with belongs to the size it is drawn at, and
+			// the material of the backing to the material of the text
+
+			disposeBackingMaterial();
+			setLabelMaterial();
+
+			draw();
+
+			viewer.renderView();
+
+		}
+
+		// the material the text of the labels is drawn with. A material built for a size the
+		// application asked for is this object's own, and is freed here as soon as nothing is
+		// drawn from it - an application that steps or animates the size would otherwise
+		// leave an atlas, a texture and a material behind at every step. A material of the
+		// theme's own size is shared with the labels of the model and is left alone.
+		//
+		// There is none while there is nothing to draw with it: no model is displayed, or the
+		// labels are turned off, which is a screen being cleared and not a size being chosen.
+
+		function setLabelMaterial () {
+
+			releaseLabelMaterial();
+
+			if ( group === null || ! labelsShown ) return;
+
+			labelMaterial = ctx.materials.getLabelMaterial( 'stations.default', labelSize );
+
+		}
+
+		function releaseLabelMaterial () {
+
+			ctx.materials.releaseLabelMaterial( labelMaterial );
+
+			labelMaterial = null;
+
+		}
+
+		function disposeBackingMaterial () {
+
+			if ( backingMaterial !== null ) backingMaterial.dispose();
+
+			backingMaterial = null;
 
 		}
 
@@ -509,16 +758,16 @@ class LiveMarkers {
 
 			object.addStatic( point );
 
-			const labelStrings = mountLabel( object, toLines( marker.label ) );
+			const labelBlock = mountLabel( object, toLines( marker.label ) );
 
-			labelStrings.forEach( glyph => { glyph.liveMarker = marker; } );
+			labelBlock.strings.forEach( glyph => { glyph.liveMarker = marker; } );
 
 			group.addStatic( object );
 
 			marker.object = object;
 			marker.point = point;
-			marker.labelStrings = labelStrings;
-			marker.hoverStrings = null;
+			marker.labelBlock = labelBlock;
+			marker.hoverBlock = null;
 
 		}
 
@@ -532,21 +781,21 @@ class LiveMarkers {
 
 			if ( marker.object === null ) return;
 
-			// the label material is shared with the labels of the model and is left alone,
-			// but the dot material and the label geometries belong to this marker alone
+			// the label materials are shared between the markers, and are left alone; the dot
+			// material and the geometries of the label belong to this marker alone
 
 			marker.point.material.dispose();
 
-			unmountLabel( marker.labelStrings );
+			unmountLabel( marker.labelBlock );
 
-			if ( marker.hoverStrings !== null ) unmountLabel( marker.hoverStrings );
+			if ( marker.hoverBlock !== null ) unmountLabel( marker.hoverBlock );
 
 			marker.object.removeFromParent();
 
 			marker.object = null;
 			marker.point = null;
-			marker.labelStrings = [];
-			marker.hoverStrings = null;
+			marker.labelBlock = emptyBlock();
+			marker.hoverBlock = null;
 
 		}
 
@@ -575,7 +824,7 @@ class LiveMarkers {
 				text: '',
 				object: null,
 				point: null,
-				labelStrings: []
+				labelBlock: emptyBlock()
 			};
 
 			// asked for before anything is built, so that a label the application declines
@@ -603,15 +852,15 @@ class LiveMarkers {
 
 			object.addStatic( point );
 
-			const labelStrings = mountLabel( object, lines );
+			const labelBlock = mountLabel( object, lines );
 
-			labelStrings.forEach( glyph => { glyph.liveCluster = cluster; } );
+			labelBlock.strings.forEach( glyph => { glyph.liveCluster = cluster; } );
 
 			group.addStatic( object );
 
 			cluster.object = object;
 			cluster.point = point;
-			cluster.labelStrings = labelStrings;
+			cluster.labelBlock = labelBlock;
 
 			return cluster;
 
@@ -623,13 +872,13 @@ class LiveMarkers {
 
 			cluster.point.material.dispose();
 
-			unmountLabel( cluster.labelStrings );
+			unmountLabel( cluster.labelBlock );
 
 			cluster.object.removeFromParent();
 
 			cluster.object = null;
 			cluster.point = null;
-			cluster.labelStrings = [];
+			cluster.labelBlock = emptyBlock();
 
 		}
 
@@ -839,13 +1088,13 @@ class LiveMarkers {
 
 				if ( marker.object === null ) return;
 
-				targets.push( marker.point, ...marker.labelStrings );
+				targets.push( marker.point, ...marker.labelBlock.strings );
 
-				if ( marker.hoverStrings !== null ) targets.push( ...marker.hoverStrings );
+				if ( marker.hoverBlock !== null ) targets.push( ...marker.hoverBlock.strings );
 
 			} );
 
-			clusters.forEach( cluster => targets.push( cluster.point, ...cluster.labelStrings ) );
+			clusters.forEach( cluster => targets.push( cluster.point, ...cluster.labelBlock.strings ) );
 
 			// the pointer is only tracked while there is a marker to track it over
 
@@ -979,20 +1228,20 @@ class LiveMarkers {
 
 			if ( target.isCluster === true || target.sublabel === undefined || target.object === null || ! labelsShown ) return;
 
-			if ( show && target.hoverStrings === null ) {
+			if ( show && target.hoverBlock === null ) {
 
-				target.hoverStrings = mountLabel( target.object, hoverLines( target ) );
+				target.hoverBlock = mountLabel( target.object, hoverLines( target ) );
 
-				target.hoverStrings.forEach( glyph => { glyph.liveMarker = target; } );
+				target.hoverBlock.strings.forEach( glyph => { glyph.liveMarker = target; } );
 
 				rebuildTargets();
 
 			}
 
-			if ( target.hoverStrings === null ) return;
+			if ( target.hoverBlock === null ) return;
 
-			showLabel( target.hoverStrings, show );
-			showLabel( target.labelStrings, ! show );
+			showLabel( target.hoverBlock, show );
+			showLabel( target.labelBlock, ! show );
 
 		}
 
@@ -1180,14 +1429,15 @@ class LiveMarkers {
 
 			survey = event.survey;
 
-			// the label material of the model that has gone is not the one to draw with
-
-			labelMaterial = ctx.materials.getLabelMaterial( 'stations.default' );
-
 			group = new Group();
 			group.name = 'CV.LiveMarkers';
 
 			survey.addStatic( group );
+
+			// the label materials of the model that has gone are not the ones to draw with
+
+			disposeBackingMaterial();
+			setLabelMaterial();
 
 			// the markers name stations rather than positions, so the set is resolved
 			// against the model now loaded and displayed where it names something in it
@@ -1223,9 +1473,11 @@ class LiveMarkers {
 
 			rebuildTargets();
 
+			disposeBackingMaterial();
+			releaseLabelMaterial();
+
 			survey = null;
 			group = null;
-			labelMaterial = null;
 
 		}
 

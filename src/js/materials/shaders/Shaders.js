@@ -21,6 +21,9 @@ import glyphFragmentShader from './glyphFragmentShader.glsl';
 import heightVertexShader from './heightVertexShader.glsl';
 import heightFragmentShader from './heightFragmentShader.glsl';
 
+import labelBackingVertexShader from './labelBackingVertexShader.glsl';
+import labelBackingFragmentShader from './labelBackingFragmentShader.glsl';
+
 import popupVertexShader from './popupVertexShader.glsl';
 import popupFragmentShader from './popupFragmentShader.glsl';
 
@@ -115,6 +118,8 @@ export const Shaders = {
 	glyphFragmentShader:	glyphFragmentShader,
 	heightVertexShader:		heightVertexShader,
 	heightFragmentShader:	heightFragmentShader,
+	labelBackingVertexShader:	labelBackingVertexShader,
+	labelBackingFragmentShader:	labelBackingFragmentShader,
 	popupVertexShader:		popupVertexShader,
 	popupFragmentShader:	popupFragmentShader,
 	waterVertexShader:		waterVertexShader,
