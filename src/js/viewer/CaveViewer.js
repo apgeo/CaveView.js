@@ -1399,13 +1399,28 @@ class CaveViewer extends EventDispatcher {
 
 		};
 
-		this.highlightStation = function ( ref ) {
+		/**
+		 * Mark a station without moving the camera.
+		 *
+		 * options.popup opens (or closes) the station's popup as well, which matters
+		 * after selecting a survey section: selecting a section replaces the station
+		 * selection and closes any popup with it, so a caller that frames a section and
+		 * then wants the station still marked needs both back, and neither should
+		 * disturb a camera move already in flight.
+		 */
+		this.highlightStation = function ( ref, options ) {
 
 			const node = getNodeByRef( ref );
 
 			if ( node === null || ! node.isStation() ) return null;
 
 			self.highlight = node;
+
+			if ( options?.popup !== undefined ) {
+
+				self.popup = options.popup ? node : survey.surveyTree;
+
+			}
 
 			return publicFactory.getStation( node );
 
