@@ -7,9 +7,20 @@ import { LabelBackingMaterial } from '../materials/LabelBackingMaterial';
 import { TapGesture, pointerHovers } from '../ui/PointerGestures';
 import { PointIndicator, POINT_INDICATOR_SIZE } from './PointIndicator';
 
-// duration of the move between two stations, in milliseconds
+// duration of the move between two stations, in milliseconds. It is the default rather
+// than the rule: an application replaying a log at sixty times life speed issues moves far
+// closer together than this, and a marker that took six tenths of a second over every one
+// of them would lag further behind the clock with each report and never arrive. Such an
+// application sets the time its moves take, either for the viewer or for the one move.
 
 const MOVE_TIME = 600;
+
+// a move of no duration at all is not animated: it places the marker. That is what
+// scrubbing a replay needs - dragging the clock across an evening asks for a position
+// thirty times a second, and each one is where the party was, not somewhere to set off
+// towards.
+
+const PLACE_IMMEDIATELY = 0;
 
 // the size the text of a label is drawn at where the application asks for none, in the
 // pixels of the page. A marker is labelled with a block of lines - what it stands for, and
@@ -203,6 +214,10 @@ class LiveMarkers {
 		let hovered = null;
 		let tracking = false;
 
+		// how long a move takes where neither the move nor the application says
+
+		let moveTime = MOVE_TIME;
+
 		// a pointer that does not hover reveals a marker by tapping it - see onPointerUp()
 
 		const tap = new TapGesture();
@@ -246,7 +261,11 @@ class LiveMarkers {
 				hoverBlock: null,
 				from: null,
 				to: null,
-				t: 1
+				t: 1,
+				// the duration of the move now in flight, which is the one asked for when
+				// it was ordered rather than whatever the viewer's setting has since
+				// become: a move must not change speed underneath itself
+				moveTime: null
 			};
 
 			markers.set( id, marker );
@@ -305,11 +324,15 @@ class LiveMarkers {
 			// a marker with nowhere to travel - moved to the station it is already at -
 			// has no move to animate, and is redrawn where it stands
 
-			if ( from !== null && marker.node !== null && ! from.equals( marker.node ) ) {
+			const duration = durationOf( options );
+
+			if ( from !== null && marker.node !== null && ! from.equals( marker.node )
+					&& duration !== PLACE_IMMEDIATELY ) {
 
 				marker.from = from;
 				marker.to = new Vector3().copy( marker.node );
 				marker.t = 0;
+				marker.moveTime = duration;
 
 			}
 
@@ -361,6 +384,73 @@ class LiveMarkers {
 			markers.forEach( marker => list.push( describe( marker ) ) );
 
 			return list;
+
+		};
+
+		this.getMoveTime = function () {
+
+			return moveTime;
+
+		};
+
+		this.setMoveTime = function ( value ) {
+
+			const n = Number( value );
+
+			if ( ! isFinite( n ) || n < 0 ) {
+
+				console.warn( 'a live marker move time must be a number of milliseconds' );
+				return;
+
+			}
+
+			moveTime = n;
+
+		};
+
+		// display what a marker has to say without the pointer being on it.
+		//
+		// A marker reveals its second line when it is pointed at, and an application that
+		// can be asked to show a particular one - from a link in the text beside the model,
+		// or from a list of who is underground - has no pointer to do it with. This is that
+		// same reveal, asked for by name: one marker is revealed at a time, exactly as the
+		// pointer reveals one at a time, so the two cannot leave two labels open at once.
+
+		this.reveal = function ( id ) {
+
+			const marker = markers.get( id );
+
+			if ( marker === undefined ) return null;
+
+			if ( hovered !== null && hovered !== marker ) showHoverLabel( hovered, false );
+
+			// a marker drawn as part of a group is not on the screen to be revealed: what
+			// stands in its place is the collapsed marker, whose text is the application's
+			// own. Reported rather than silently doing nothing.
+
+			const collapsed = marker.cluster !== null;
+
+			if ( ! collapsed ) {
+
+				showHoverLabel( marker, true );
+				hovered = marker;
+
+			}
+
+			viewer.renderView();
+
+			return Object.assign( describe( marker ), { revealed: ! collapsed, collapsed: collapsed } );
+
+		};
+
+		this.clearReveal = function () {
+
+			if ( hovered === null ) return;
+
+			showHoverLabel( hovered, false );
+			hovered = null;
+
+			viewer.renderView();
 
 		};
 
@@ -783,6 +873,23 @@ class LiveMarkers {
 			marker.from = null;
 			marker.to = null;
 			marker.t = 1;
+			marker.moveTime = null;
+
+		}
+
+		// the duration a move was ordered with: the one named in its own options, else the
+		// viewer's setting. A duration of zero is a value and not an absence, so it is
+		// tested for rather than allowed to fall through the nullish default.
+
+		function durationOf ( options ) {
+
+			const asked = options?.duration;
+
+			if ( asked === undefined || asked === null ) return moveTime;
+
+			const n = Number( asked );
+
+			return ( isFinite( n ) && n >= 0 ) ? n : moveTime;
 
 		}
 
@@ -1129,7 +1236,7 @@ class LiveMarkers {
 
 			if ( lastTime === 0 ) lastTime = time;
 
-			const step = ( time - lastTime ) / MOVE_TIME;
+			const elapsed = time - lastTime;
 
 			lastTime = time;
 
@@ -1140,7 +1247,11 @@ class LiveMarkers {
 
 				if ( marker.from === null ) return;
 
-				marker.t = Math.min( 1, marker.t + step );
+				// each marker advances by its own clock: two markers ordered to move at
+				// once may have been given different durations, and one frame is the same
+				// number of milliseconds for both
+
+				marker.t = Math.min( 1, marker.t + elapsed / ( marker.moveTime ?? moveTime ) );
 
 				// whatever is drawn for the marker moves. A group travelling together is
 				// drawn as a single marker, which each of them places at the one position
