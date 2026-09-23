@@ -184,6 +184,20 @@ class CaveViewer extends EventDispatcher {
 			// reason as above, and either can be set back to what a marker looked like
 			// without it: a size of null is the size the labels of the model are drawn at.
 
+			// how long a marker takes to travel between two stations. An application
+			// replaying a log faster than it happened sets this down, and an application
+			// scrubbing one sets it to zero so that a marker is placed rather than sent.
+
+			'liveMarkerMoveTime': {
+				get() { return liveMarkers.getMoveTime(); },
+				set( x ) {
+
+					liveMarkers.setMoveTime( x );
+					self.dispatchEvent( { type: 'change', name: 'liveMarkerMoveTime' } );
+
+				}
+			},
+
 			'liveMarkerLabelSize': {
 				get() { return liveMarkers.getLabelSize(); },
 				set( x ) {
@@ -1541,6 +1555,21 @@ class CaveViewer extends EventDispatcher {
 		this.setLiveMarkerClusterLabel = function ( func ) {
 
 			liveMarkers.setClusterLabel( func );
+
+		};
+
+		// display a marker's second line without the pointer being on it, for an
+		// application asked to show a particular one from outside the model.
+
+		this.revealLiveMarker = function ( id ) {
+
+			return liveMarkers.reveal( id );
+
+		};
+
+		this.clearLiveMarkerReveal = function () {
+
+			liveMarkers.clearReveal();
 
 		};
 
