@@ -172,6 +172,47 @@ class CameraMove {
 
 		};
 
+		/**
+		 * Centre on a point WITHOUT turning the model.
+		 *
+		 * preparePoint() below leaves the camera where it is and swings it round to face
+		 * the new target. That is a rotation by definition, so flying to a station left
+		 * a reader who had chosen, say, the north elevation looking at something else.
+		 *
+		 * Here the camera is translated by the same vector as the target instead. The
+		 * direction of view is therefore unchanged — only what is centred changes — and
+		 * the end quaternion is the camera's current one, so animateMove()'s slerp is a
+		 * no-op rather than a turn.
+		 *
+		 * rotation is left at zero deliberately: it is what selects the branch of
+		 * animateMove() that moves the camera at all, and skipNext has to be cleared by
+		 * hand because preparePoint() uses "no rotation" to mean "nothing to do".
+		 */
+		this.preparePointKeepingView = function ( endPOIIn ) {
+
+			if ( running ) return this;
+
+			const camera = cameraManager.activeCamera;
+
+			__v1.copy( endPOIIn ).sub( controls.target );
+
+			endPOI.copy( endPOIIn );
+			endCameraPosition.copy( camera.position ).add( __v1 );
+			endQuaternion.copy( camera.quaternion );
+
+			// carried over explicitly: animateMove() lerps towards it on this branch, and
+			// a value left from an earlier move would pull the zoom with it
+			endZoom = camera.zoom;
+
+			rotation = 0;
+			skipNext = false;
+
+			animationFunction = animateMove;
+
+			return this;
+
+		};
+
 		this.preparePoint = function ( endPOIIn ) {
 
 			if ( running ) return this;

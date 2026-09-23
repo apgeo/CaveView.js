@@ -1328,6 +1328,11 @@ class CaveViewer extends EventDispatcher {
 			const highlight = ( options?.highlight !== false );
 			const popup = options?.popup;
 
+			// keepView: centre the station without turning the model, so a reader who has
+			// chosen a view keeps looking from that direction. Off by default, so every
+			// existing caller sees exactly the behaviour it saw before.
+			const keepView = ( options?.keepView === true );
+
 			return runCameraMove( () => {
 
 				// the station is selected directly rather than through selectSection(),
@@ -1335,7 +1340,17 @@ class CaveViewer extends EventDispatcher {
 
 				survey.selectStation( node );
 
-				cameraMove.preparePoint( survey.getWorldPosition( node.clone() ) );
+				const focusTarget = survey.getWorldPosition( node.clone() );
+
+				if ( keepView ) {
+
+					cameraMove.preparePointKeepingView( focusTarget );
+
+				} else {
+
+					cameraMove.preparePoint( focusTarget );
+
+				}
 
 				self.highlight = highlight ? node : survey.surveyTree;
 
