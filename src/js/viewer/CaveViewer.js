@@ -14,6 +14,7 @@ import { ExportGltf } from './ExportGltf';
 import { HUD } from '../hud/HUD';
 import { LightingManager } from './LightingManager';
 import { LiveMarkers } from './LiveMarkers';
+import { SurveyTrails } from './SurveyTrails';
 import { Materials } from '../materials/Materials';
 import { ModelSource } from '../core/ModelSource';
 import { OrbitControls } from '../ui/OrbitControls';
@@ -102,6 +103,7 @@ class CaveViewer extends EventDispatcher {
 		const moveEndEvent = { type: 'moved', cameraManager: cameraManager };
 		const pointerControls = new PointerControls( ctx, renderer.domElement );
 		const liveMarkers = new LiveMarkers( ctx, renderer.domElement );
+		const surveyTrails = new SurveyTrails( ctx );
 
 		let publicFactory = null;
 
@@ -1541,6 +1543,52 @@ class CaveViewer extends EventDispatcher {
 		this.setLiveMarkerClusterLabel = function ( func ) {
 
 			liveMarkers.setClusterLabel( func );
+
+		};
+
+		// the way somebody went, over the loaded model: an ordered list of station
+		// references drawn as the route the survey joins them by, rather than as straight
+		// lines between them. Like the markers above, a trail is the application's and is
+		// kept as models are cleared and loaded.
+
+		this.addTrail = function ( id, refs, options ) {
+
+			return surveyTrails.add( id, refs, options );
+
+		};
+
+		this.updateTrail = function ( id, refs, options ) {
+
+			return surveyTrails.update( id, refs, options );
+
+		};
+
+		// how much of a trail is drawn, as a fraction of its length. Separate from
+		// updateTrail() because a playback changes only this, and re-routing a trail
+		// across the survey on every frame of one would be the expensive half of the work
+		// done for nothing.
+
+		this.setTrailProgress = function ( id, value ) {
+
+			return surveyTrails.setProgress( id, value );
+
+		};
+
+		this.removeTrail = function ( id ) {
+
+			return surveyTrails.remove( id );
+
+		};
+
+		this.clearTrails = function () {
+
+			surveyTrails.clear();
+
+		};
+
+		this.getTrails = function () {
+
+			return surveyTrails.list();
 
 		};
 
