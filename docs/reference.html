@@ -199,6 +199,61 @@ were added - including those that are unresolved and so displayed nowhere, and t
 other markers of their station. Collapsing is a matter of how the markers are drawn rather than of what
 the set holds, and each marker is reported with a resolved state of its own either way.</p>
 
+<h4>revealLiveMarker( &lt;id&gt; )</h4>
+<p>Display what a marker has to say without the pointer being on it. A marker reveals its second line
+when it is pointed at, and an application that can be asked to show a particular one - from a link in
+the text beside the model, or from a list of who is underground - has no pointer to do it with. One
+marker is revealed at a time, exactly as the pointer reveals one at a time, so the two cannot leave two
+labels open at once.</p>
+<p>Returns the marker Object, with two further properties: revealed, and collapsed. A marker drawn as
+part of a group is not on the screen to be revealed - what stands in its place is the collapsed marker,
+whose text is the application's own - and is reported as collapsed rather than silently doing nothing.
+An identifier naming no marker returns null.</p>
+
+<h4>clearLiveMarkerReveal()</h4>
+<p>Take off whatever revealLiveMarker() revealed, or whatever the pointer is revealing.</p>
+
+<h4>addTrail( &lt;id&gt;, &lt;references&gt;, &lt;options&gt; )</h4>
+<p>Draw the way somebody went: an ordered list of station references, drawn as the route the cave legs
+join them by rather than as straight lines between them. Two stations forty metres apart in space can be
+a hundred and forty metres apart underground, and the straight line between them goes through rock - so
+a trail that joined its points directly would draw a passage that does not exist.</p>
+<p>The options are the colour, the width in pixels, the style (solid, or dashed), whether it is visible,
+how much of it is drawn (progress, from 0 to 1), and a payload of the application's own. A trail is the
+application's and is kept as models are cleared and loaded, exactly as a marker is: it names stations
+rather than positions, so it is routed again across whatever model is loaded next.</p>
+<p>Returns a trail Object: its identifier, whether every reference resolved, the points - each with its
+reference, whether it resolved, and how far along the trail it lies - the gaps, the length in metres,
+the progress, whether it is visible, and the payload. A reference the loaded model does not contain is
+reported and drawn nowhere, as an unresolved marker is. A pair of places the survey cannot join is drawn
+straight and dashed and reported as a gap: the line has to be continuous or the trail reads as two
+trails, but it must not claim to be a passage the survey does not have.</p>
+<p>The distance along the trail that each point lies at is what turns "they had reached the fourth place
+reported" into a progress: an application replaying a log looks its instant up in its own reports and
+sets the fraction.</p>
+
+<h4>updateTrail( &lt;id&gt;, &lt;references&gt;, &lt;options&gt; )</h4>
+<p>Change a trail. Passing null for the references changes only the options, and does not route the
+trail across the survey again - the colour, the width and whether it is visible are properties of what
+is already drawn.</p>
+
+<h4>setTrailProgress( &lt;id&gt;, &lt;value&gt; )</h4>
+<p>How much of a trail is drawn, as a fraction of its length. By length rather than by count of places,
+so that a playback moves at the speed the party did: an hour spent crossing one long pitch is one point
+of the log and a great deal of the cave.</p>
+<p>Whole segments are drawn or not drawn; the exact position between two stations is what a marker is
+for. It is separate from updateTrail() because a playback changes only this, and routing a trail across
+the survey on every frame of one would be the expensive half of the work done for nothing.</p>
+
+<h4>removeTrail( &lt;id&gt; )</h4>
+<p>Take a trail off the model. Returns whether there was one.</p>
+
+<h4>clearTrails()</h4>
+<p>Take every trail off the model.</p>
+
+<h4>getTrails()</h4>
+<p>An Array of the trail Objects described under addTrail(), one for each trail.</p>
+
 <h4>setLiveMarkerClusterLabel( &lt;function&gt; )</h4>
 <p>Set the function that labels a collapsed marker - the single marker drawn in place of the markers of
 one station. It is called with an Array of live marker Objects, one for each marker collapsed and in the
@@ -237,6 +292,16 @@ them back. Setting the property dispatches the change event, as the view setting
 model is loaded: the markers outlive the model they are displayed on, and whether they are labelled
 outlives it with them. It is not reported by getView() and is not kept by saveView().</p>
 <p><span>boolean</span> <span>default: true</span></p>
+
+<h4>liveMarkerMoveTime</h4>
+<p>How long a marker takes to travel between two stations, in milliseconds, where the move does not say.
+The default is 600. An application replaying a log faster than it happened sets this down: a move issued
+while one is in flight supersedes it rather than queueing, so a marker given six tenths of a second over
+every hop falls further behind the clock with each report and never arrives.</p>
+<p>A duration of zero places the marker rather than sending it, which is what scrubbing needs - dragging
+a clock across an evening asks for where the party was, not somewhere to set off towards. The duration
+may also be given per move, in the options of addLiveMarker() and moveLiveMarker(), and a move keeps the
+duration it was ordered with however this is changed afterwards.</p>
 
 <h4>liveMarkerLabelSize</h4>
 <p>The size the text of the labels is drawn at, in the unit the font sizes of the theme are given in.
