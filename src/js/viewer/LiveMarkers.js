@@ -1,4 +1,4 @@
-import { Box2, Group, Raycaster, Vector2, Vector3 } from '../Three';
+import { Box2, Color, Group, Raycaster, Vector2, Vector3 } from '../Three';
 import { FEATURE_LIVE_MARKERS } from '../core/constants';
 import { MutableGlyphString } from '../core/GlyphString';
 import { LabelBacking } from '../core/LabelBacking';
@@ -193,6 +193,13 @@ class LiveMarkers {
 		let group = null;
 		let labelMaterial = null;
 		let backingMaterial = null;
+
+		// a material per colour a heading is drawn in, built when a heading first needs one. The
+		// text of a label is one colour and its first line may be another - the marker's own -
+		// so there is no single material to draw a label with, and a colour an application stops
+		// using must not leave an atlas and a texture behind.
+
+		let headingMaterials = null;
 
 		// what a collapsed marker says, decided by the application. The number of markers
 		// collapsed is all the viewer knows to say of them.
@@ -636,17 +643,18 @@ class LiveMarkers {
 		// Nothing at all is built while the labels are turned off, so a marker that is not
 		// labelled holds no geometry for text that is not drawn.
 
-		function mountLabel ( object, lines ) {
+		function mountLabel ( object, lines, headingColor ) {
 
 			if ( ! labelsShown || lines.length === 0 ) return emptyBlock();
 
 			const atlas = labelMaterial.getAtlas();
 			const lineHeight = LINE_SPACING * atlas.fontSize;
 			const indent = ( POINT_INDICATOR_SIZE / 2 + LABEL_GAP ) * atlas.cellSize / labelMaterial.scaleFactor;
+			const heading = headingMaterial( headingColor );
 
 			const strings = lines.map( ( text, line ) => {
 
-				const glyph = new MutableGlyphString( ` ${text} `, labelMaterial, - line * lineHeight, indent );
+				const glyph = new MutableGlyphString( ` ${text} `, line === 0 ? heading : labelMaterial, - line * lineHeight, indent );
 
 				glyph.layers.set( FEATURE_LIVE_MARKERS );
 				glyph.renderOrder = LABEL_RENDER_ORDER;
@@ -820,11 +828,49 @@ class LiveMarkers {
 
 		}
 
+		// The material a label's first line is drawn with. A marker carrying a colour of its own
+		// has its first line drawn in it, so what the line names - the party, the team, whatever
+		// the application put first - is told apart from the lines under it and from the other
+		// markers on the model. Same font, same size, same atlas metrics as the body: only the
+		// colour differs, so the lines of one label still line up.
+		//
+		// A marker with no colour of its own has no heading colour either, and its first line is
+		// drawn like the rest.
+
+		function headingMaterial ( color ) {
+
+			if ( color === undefined || color === null ) return labelMaterial;
+			if ( ! cfg.themeValue( 'liveMarkers.labelHeadingFromMarker' ) ) return labelMaterial;
+
+			const key = '#' + new Color( color ).getHexString();
+
+			if ( headingMaterials === null ) headingMaterials = new Map();
+
+			let material = headingMaterials.get( key );
+
+			if ( material === undefined ) {
+
+				material = ctx.materials.getLabelMaterial( 'stations.default', labelSize, { color: key } );
+				headingMaterials.set( key, material );
+
+			}
+
+			return material;
+
+		}
+
 		function releaseLabelMaterial () {
 
 			ctx.materials.releaseLabelMaterial( labelMaterial );
 
 			labelMaterial = null;
+
+			if ( headingMaterials !== null ) {
+
+				headingMaterials.forEach( material => ctx.materials.releaseLabelMaterial( material ) );
+				headingMaterials = null;
+
+			}
 
 		}
 
@@ -852,7 +898,7 @@ class LiveMarkers {
 
 			object.addStatic( point );
 
-			const labelBlock = mountLabel( object, toLines( marker.label ) );
+			const labelBlock = mountLabel( object, toLines( marker.label ), marker.color );
 
 			labelBlock.strings.forEach( glyph => { glyph.liveMarker = marker; } );
 
@@ -963,7 +1009,7 @@ class LiveMarkers {
 
 			object.addStatic( point );
 
-			const labelBlock = mountLabel( object, lines );
+			const labelBlock = mountLabel( object, lines, color );
 
 			labelBlock.strings.forEach( glyph => { glyph.liveCluster = cluster; } );
 
@@ -1346,7 +1392,7 @@ class LiveMarkers {
 
 			if ( show && target.hoverBlock === null ) {
 
-				target.hoverBlock = mountLabel( target.object, hoverLines( target ) );
+				target.hoverBlock = mountLabel( target.object, hoverLines( target ), target.color );
 
 				target.hoverBlock.strings.forEach( glyph => { glyph.liveMarker = target; } );
 

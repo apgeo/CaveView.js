@@ -106,7 +106,11 @@ const defaultTheme = {
 		// Either may be given a colour instead, and then it is used exactly as written.
 		labelBackground: 'auto',
 		labelText: 'auto',
-		labelBackgroundOpacity: 0.6
+		labelBackgroundOpacity: 0.6,
+		// The first line of a label is drawn in the colour of the marker it belongs to, where the
+		// marker has one, so what that line names is told apart from the lines under it and from
+		// the other markers on the model. Off draws every line alike.
+		labelHeadingFromMarker: true
 	},
 	grid: {
 		base: 'gray'
