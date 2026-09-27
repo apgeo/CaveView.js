@@ -394,13 +394,20 @@ function Materials ( viewer ) {
 	//
 	// A size of null is the theme's, and is the material the labels of that kind share.
 
-	this.getLabelMaterial = function ( type, size = null ) {
+	// `overrides` replaces named members of the specification the theme would have given, for
+	// a caller that has worked one out rather than read it - a label whose colour is derived
+	// from what it will be drawn against cannot be named in the theme ahead of time. Anything
+	// not named there still comes from the theme, so the font and the angle of a kind of label
+	// stay the theme's however its colour was decided.
+
+	this.getLabelMaterial = function ( type, size = null, overrides = null ) {
 
 		const atlasSpec = {
 			color: cfg.themeColorCSS( `${type}.text` ),
 			background: cfg.themeValue( `${type}.background` ),
 			font: cfg.themeValue( `${type}.font` ),
-			size: size ?? cfg.themeValue( `${type}.fontsize` )
+			size: size ?? cfg.themeValue( `${type}.fontsize` ),
+			...( overrides ?? {} )
 		};
 
 		const rotation = cfg.themeValue( `${type}.angle`, 0 );

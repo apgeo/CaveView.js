@@ -101,7 +101,11 @@ const defaultTheme = {
 		background: 0x111111
 	},
 	liveMarkers: {
-		labelBackground: 'black',
+		// 'auto' derives the plate from the background the viewer is drawing on, and the
+		// writing from the plate, so a label has an edge to see whatever the background is.
+		// Either may be given a colour instead, and then it is used exactly as written.
+		labelBackground: 'auto',
+		labelText: 'auto',
 		labelBackgroundOpacity: 0.6
 	},
 	grid: {

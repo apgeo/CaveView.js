@@ -2,6 +2,7 @@ import { Box2, Group, Raycaster, Vector2, Vector3 } from '../Three';
 import { FEATURE_LIVE_MARKERS } from '../core/constants';
 import { MutableGlyphString } from '../core/GlyphString';
 import { LabelBacking } from '../core/LabelBacking';
+import { plateAgainst, inkOn } from '../core/labelContrast';
 import { maxGlyphAtlasFontSize } from '../materials/GlyphAtlas';
 import { LabelBackingMaterial } from '../materials/LabelBackingMaterial';
 import { TapGesture, pointerHovers } from '../ui/PointerGestures';
@@ -715,13 +716,36 @@ class LiveMarkers {
 		// material serves every label drawn: it is built when a label first needs it, and is
 		// freed when the model the labels were drawn on is cleared.
 
+		// The plate a label is written on, and the colour of the writing, decided together and
+		// in one place: derived from the background the viewer draws on unless the theme names
+		// a colour instead. Asked for together because they are one decision - a plate chosen
+		// to stand out from the background is no use with writing chosen to stand out from
+		// something else.
+
+		function labelColours () {
+
+			const namedPlate = cfg.themeValue( 'liveMarkers.labelBackground' );
+			const namedInk = cfg.themeValue( 'liveMarkers.labelText' );
+
+			const plate = namedPlate === 'auto'
+				? plateAgainst( cfg.themeColor( 'background' ) )
+				: cfg.themeColor( 'liveMarkers.labelBackground' );
+
+			const ink = namedInk === 'auto'
+				? inkOn( plate )
+				: cfg.themeColor( 'liveMarkers.labelText' );
+
+			return { plate, ink };
+
+		}
+
 		function getBackingMaterial () {
 
 			if ( backingMaterial === null ) {
 
 				backingMaterial = new LabelBackingMaterial(
 					labelMaterial,
-					cfg.themeColor( 'liveMarkers.labelBackground' ),
+					labelColours().plate,
 					cfg.themeValue( 'liveMarkers.labelBackgroundOpacity' )
 				);
 
@@ -789,7 +813,10 @@ class LiveMarkers {
 
 			if ( group === null || ! labelsShown ) return;
 
-			labelMaterial = ctx.materials.getLabelMaterial( 'stations.default', labelSize );
+			// The font and the angle stay the theme's; only the colour is the derived one, so a
+			// marker label still looks like the viewer's other labels.
+			labelMaterial = ctx.materials.getLabelMaterial( 'stations.default', labelSize,
+				{ color: '#' + labelColours().ink.getHexString() } );
 
 		}
 
