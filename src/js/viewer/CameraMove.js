@@ -25,9 +25,11 @@ class CameraMove {
 		let animationFunction = null;
 		let rafID = 0;
 
-		// while held, nothing moves the camera by animation: a capture session draws each
+		// while held, nothing moves the camera by animation - neither a move, nor an auto
+		// rotation, nor a turn to an azimuth or polar angle: a capture session draws each
 		// frame from the camera the application sets, and a move stepped by the animation
-		// frames in between would put the camera somewhere the frame did not ask for
+		// frames in between would put the camera somewhere the frame did not ask for, and
+		// hand the controls back to the pointer as it ended
 
 		let held = false;
 
@@ -372,7 +374,7 @@ class CameraMove {
 
 		this.setAzimuthAngle = function ( targetAngle ) {
 
-			if ( running || controls.autoRotate ) return this;
+			if ( running || held || controls.autoRotate ) return this;
 
 			let delta = ( controls.getAzimuthalAngle() - targetAngle );
 			const deltaSize = Math.abs( delta );
@@ -393,7 +395,7 @@ class CameraMove {
 
 		this.setPolarAngle = function ( targetAngle ) {
 
-			if ( running ) return this;
+			if ( running || held ) return this;
 
 			animationFunction = animatePolarMove;
 

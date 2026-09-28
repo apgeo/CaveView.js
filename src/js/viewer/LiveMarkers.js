@@ -234,6 +234,7 @@ class LiveMarkers {
 		// it was drawn.
 
 		let captureTarget = null;
+		let labelSizeBeforeCapture = null;
 
 		let hovered = null;
 		let tracking = false;
@@ -439,7 +440,13 @@ class LiveMarkers {
 
 		this.beginCapture = function ( width, height ) {
 
+			// the size the labels had before, which is the one they are given back: the default
+			// is worked out from the screen's density when the viewer is built and is not
+			// followed afterwards, so working it out again as the session ends could put the
+			// labels back at a size they did not have
+
 			captureTarget = { width: width, height: height };
+			labelSizeBeforeCapture = labelSize;
 
 			stopMoving();
 
@@ -455,7 +462,7 @@ class LiveMarkers {
 
 			captureTarget = null;
 
-			if ( ! labelSizeChosen ) labelSize = defaultLabelSize();
+			if ( ! labelSizeChosen ) labelSize = labelSizeBeforeCapture;
 
 			rebuildLabels();
 

@@ -281,7 +281,10 @@ application having to report the change.</p>
 <p>The direction the camera looks at the model from, as an Object with two properties in radians:
 <b>azimuth</b>, the angle about the vertical through the point the camera looks at, between -&pi; and
 &pi;; and <b>polar</b>, the angle from looking straight down, so that 0 is a plan view and &pi;/2 is
-level. An application that turns the view from where the reader left it starts from these.</p>
+level. An application that turns the view from where the reader left it starts from these. They are
+worked out from where the camera is when they are asked for, so they are right after the view has been
+moved by animation - to one of the toolbar's views, to a station, to the view a model is first shown in -
+and reading them changes nothing and draws nothing.</p>
 
 <h4>setCameraAngles( &lt;angles&gt; )</h4>
 <p>Turn the camera to an azimuth and a polar angle, as getCameraAngles() gives them, at once and without
@@ -312,14 +315,18 @@ begins: a frame of 1280 by 720 is taken from a container of 640 by 360, or of 12
 <p>While the session is open nothing is drawn except by captureFrame(), which draws at once and returns
 with the frame drawn. The pointer and the keyboard move nothing and reveal nothing; an automatic rotation
 is suspended, and resumed when the session ends; a camera move in flight ends where it was going, and no
-new one is animated - the camera is turned by captureFrame() and setCameraAngles() instead, and a focus
-call is refused. The live markers move only as the frames advance them: a move of a given duration
+new one is animated - the camera is turned by captureFrame() and setCameraAngles() instead, a focus call
+is refused, and setting azimuthAngle or polarAngle, which turn the camera by animation, does nothing. A
+station the pointer was over as the session began is let go and its name taken away. The live markers move only as the frames advance them: a move of a given duration
 arrives after exactly that many milliseconds of advancing, however they are divided between frames. The
 frames are opaque, on the background given or on the viewer's own. A resize of the window is carried out
-when the session ends, and getSnapshot() is refused while it is open.</p>
+when the session ends, and getSnapshot() is refused while it is open. A container restyled since the
+viewer was last resized - by the window being resized, or by resize() - has the viewer brought to its
+size as the session begins, so that the frames are not a stretched copy of the view it was sized for.</p>
 <p>The session is refused with an Error when no survey is loaded, when one is already open, when the size
 is not two even whole numbers of at least 16 pixels or is larger than the renderer can draw, and when the
-container is not displayed or its shape differs from the frame's by more than half a pixel of the page.</p>
+container is not displayed or its shape differs from the frame's by more than its width and height each
+being rounded to a whole pixel of the page accounts for - half a pixel along each side.</p>
 <h5>Parameters</h5>
 <dl>
 	<dt>options</dt><dd><span>Object</span>An Object with the properties width and height, the size of the frames in pixels, and background, an optional CSS colour the frames are drawn on.</dd>
@@ -345,7 +352,7 @@ pixels.</p>
 <h4>endCapture()</h4>
 <p>Close the capture session and put the viewer back exactly as it was when the session began - the size
 and density it draws at, its clear background, the controls, an automatic rotation, the clock the live
-markers move by, and the default size of their labels (a size the application set is kept) - then
+markers move by, and the size their labels had, when it is the default (a size the application set is kept) - then
 draw the view. A move of a marker still
 under way carries on by the animation frames from where the frames left it. A resize of the window made
 while the session was open is carried out now. It does nothing when no session is open, and so may be
@@ -407,6 +414,12 @@ therefore larger on the page than the labels of the model, which are given in th
 by the theme. An application that wants a fixed number of the screen's pixels says so -
 <i>viewer.liveMarkerLabelSize = 12</i> - and one that wants its markers labelled as the model is sets
 null.</p>
+<p>The default is the only size that follows a capture session: while one is open and no size has been
+set, the labels are drawn at 12 pixels of the page at the frame's density. Once a size has been set -
+null among them - it is the size in every frame, and a size of null is drawn from the material the
+model's labels share, which keeps the part of the view it has on the screen. The default is a number,
+never null, so an application that changes the size for a while and then wants the default back reads
+the property first and writes back what it read.</p>
 <p><span>number</span> or <span>null</span> <span>default: 12 * window.devicePixelRatio</span></p>
 
 <h4>liveMarkerLabelBacking</h4>
