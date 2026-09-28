@@ -352,7 +352,7 @@ pixels.</p>
 <h4>endCapture()</h4>
 <p>Close the capture session and put the viewer back exactly as it was when the session began - the size
 and density it draws at, its clear background, the controls, an automatic rotation, the clock the live
-markers move by, and the default size of their labels (a size the application set is kept) - then
+markers move by, and the size their labels had, when it is the default (a size the application set is kept) - then
 draw the view. A move of a marker still
 under way carries on by the animation frames from where the frames left it. A resize of the window made
 while the session was open is carried out now. It does nothing when no session is open, and so may be
@@ -414,6 +414,12 @@ therefore larger on the page than the labels of the model, which are given in th
 by the theme. An application that wants a fixed number of the screen's pixels says so -
 <i>viewer.liveMarkerLabelSize = 12</i> - and one that wants its markers labelled as the model is sets
 null.</p>
+<p>The default is the only size that follows a capture session: while one is open and no size has been
+set, the labels are drawn at 12 pixels of the page at the frame's density. Once a size has been set -
+null among them - it is the size in every frame, and a size of null is drawn from the material the
+model's labels share, which keeps the part of the view it has on the screen. The default is a number,
+never null, so an application that changes the size for a while and then wants the default back reads
+the property first and writes back what it read.</p>
 <p><span>number</span> or <span>null</span> <span>default: 12 * window.devicePixelRatio</span></p>
 
 <h4>liveMarkerLabelBacking</h4>
