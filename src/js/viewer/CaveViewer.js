@@ -1711,11 +1711,24 @@ class CaveViewer extends EventDispatcher {
 		// capture session is open, leaves it to the next captured frame. An angle not given
 		// is left as it is.
 
+		// the angles are worked out from where the camera is, not taken from the controls:
+		// those are the angles of the last change the controls made themselves, and a camera
+		// moved by an animation - to one of the toolbar's views, to a station, to the view a
+		// model is first shown in - leaves them where they were before the move
+
 		this.getCameraAngles = function () {
 
-			return { azimuth: normalAngle( controls.getAzimuthalAngle() ), polar: controls.getPolarAngle() };
+			return cameraAngles();
 
 		};
+
+		function cameraAngles () {
+
+			const spherical = controls.getCameraSpherical();
+
+			return { azimuth: normalAngle( spherical.theta ), polar: spherical.phi };
+
+		}
 
 		this.setCameraAngles = function ( angles = {} ) {
 
@@ -1938,10 +1951,12 @@ class CaveViewer extends EventDispatcher {
 
 			if ( into !== null ) into.drawImage( canvas, 0, 0, into.canvas.width, into.canvas.height );
 
+			const angles = cameraAngles();
+
 			return {
 				canvas: canvas,
-				azimuth: normalAngle( controls.getAzimuthalAngle() ),
-				polar: controls.getPolarAngle(),
+				azimuth: angles.azimuth,
+				polar: angles.polar,
 				moving: liveMarkers.isMoving()
 			};
 

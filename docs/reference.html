@@ -281,7 +281,10 @@ application having to report the change.</p>
 <p>The direction the camera looks at the model from, as an Object with two properties in radians:
 <b>azimuth</b>, the angle about the vertical through the point the camera looks at, between -&pi; and
 &pi;; and <b>polar</b>, the angle from looking straight down, so that 0 is a plan view and &pi;/2 is
-level. An application that turns the view from where the reader left it starts from these.</p>
+level. An application that turns the view from where the reader left it starts from these. They are
+worked out from where the camera is when they are asked for, so they are right after the view has been
+moved by animation - to one of the toolbar's views, to a station, to the view a model is first shown in -
+and reading them changes nothing and draws nothing.</p>
 
 <h4>setCameraAngles( &lt;angles&gt; )</h4>
 <p>Turn the camera to an azimuth and a polar angle, as getCameraAngles() gives them, at once and without

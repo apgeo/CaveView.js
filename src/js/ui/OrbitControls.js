@@ -75,6 +75,11 @@ class OrbitControls extends EventDispatcher {
 
 		const camera = cameraManager.activeCamera;
 
+		// turns an offset from the target into the frame the orbit is worked out in, where
+		// camera.up is the y axis
+
+		const orbitQuat = new Quaternion().setFromUnitVectors( camera.up, new Vector3( 0, 1, 0 ) );
+
 		this.target0 = this.target.clone();
 		this.position0 = camera.position.clone();
 		this.zoom0 = camera.zoom;
@@ -128,6 +133,23 @@ class OrbitControls extends EventDispatcher {
 		this.getAzimuthalAngle = function () {
 
 			return spherical.theta;
+
+		};
+
+		// The two angles above are the ones the last update() worked out, and a camera placed
+		// by anything else - a move animated to a view, among them - is not reflected in them
+		// until the next one. This works out where the camera is now, from the camera and the
+		// target, and changes nothing: an update() would signal a change, and take a step of
+		// an auto rotation. The offset is turned into the orbit's own frame as update() turns
+		// it, so the angles are the ones it would find.
+
+		this.getCameraSpherical = function ( result = new Spherical() ) {
+
+			const camera = cameraManager.activeCamera;
+
+			__v.copy( camera.position ).sub( scope.target ).applyQuaternion( orbitQuat );
+
+			return result.setFromVector3( __v );
 
 		};
 
@@ -185,10 +207,9 @@ class OrbitControls extends EventDispatcher {
 		this.update = function () {
 
 			const offset = new Vector3();
-			const up = cameraManager.activeCamera.up;
 
 			// so camera.up is the orbit axis
-			const quat = new Quaternion().setFromUnitVectors( up, new Vector3( 0, 1, 0 ) );
+			const quat = orbitQuat;
 			const quatInverse = quat.clone().invert();
 
 			const lastPosition = new Vector3();
