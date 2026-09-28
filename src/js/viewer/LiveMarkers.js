@@ -715,9 +715,13 @@ class LiveMarkers {
 			const indent = ( POINT_INDICATOR_SIZE / 2 + LABEL_GAP ) * atlas.cellSize / labelMaterial.scaleFactor;
 			const heading = headingMaterial( headingColor );
 
+			// the text is put in its composed form, in which an accented letter is the one
+			// character the atlas holds it as: a name typed as a letter followed by a
+			// combining accent would otherwise be drawn as the letter and the accent apart
+
 			const strings = lines.map( ( text, line ) => {
 
-				const glyph = new MutableGlyphString( ` ${text} `, line === 0 ? heading : labelMaterial, - line * lineHeight, indent );
+				const glyph = new MutableGlyphString( ` ${String( text ).normalize( 'NFC' )} `, line === 0 ? heading : labelMaterial, - line * lineHeight, indent );
 
 				glyph.layers.set( FEATURE_LIVE_MARKERS );
 				glyph.renderOrder = LABEL_RENDER_ORDER;
