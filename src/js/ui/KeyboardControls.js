@@ -33,7 +33,7 @@ function KeyboardControls ( viewer, fileSelector, avenControls ) {
 
 	function keyDown ( event ) {
 
-		if ( ! viewer.surveyLoaded || ! viewer.mouseOver ) return;
+		if ( ! viewer.surveyLoaded || ! viewer.mouseOver || viewer.capturing ) return;
 
 		event.preventDefault(); // enables F5, ctrl+<F5>, ctrl+<F> and other keys on the control's host page
 

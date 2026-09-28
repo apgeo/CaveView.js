@@ -3,13 +3,19 @@ import { Shaders } from './shaders/Shaders';
 
 class GlyphMaterial extends ShaderMaterial {
 
-	constructor ( ctx, glyphAtlas, rotation, viewer ) {
+	// `target` is the size, in device pixels, of a frame a capture session draws the text
+	// into, for a material built only for that frame: the text is drawn at its size in the
+	// pixels of the frame, and the cells of the atlas are that many of the frame's pixels
+	// wide - the container being scaled up to the frame as a screen of that density scales
+	// it. Without one the frame is the screen, as it always has been.
+
+	constructor ( ctx, glyphAtlas, rotation, viewer, target = null ) {
 
 		const uniforms = ctx.materials.uniforms;
 		const cellScale = glyphAtlas.cellScale;
 		const container = viewer.container;
 		const realPixels = glyphAtlas.cellSize * 2;
-		const pixelRatio = window.devicePixelRatio || 1;
+		const pixelRatio = ( target === null ) ? ( window.devicePixelRatio || 1 ) : target.width / container.clientWidth;
 
 		const cos = Math.cos( -rotation );
 		const sin = Math.sin( -rotation );
@@ -17,7 +23,9 @@ class GlyphMaterial extends ShaderMaterial {
 		const cosR = Math.cos( rotation );
 		const sinR = Math.sin( rotation );
 
-		const viewPort = new Vector2( Math.floor( pixelRatio * container.clientWidth ) / 2, Math.floor( pixelRatio * container.clientHeight ) / 2 );
+		const viewPort = ( target === null )
+			? new Vector2( Math.floor( pixelRatio * container.clientWidth ) / 2, Math.floor( pixelRatio * container.clientHeight ) / 2 )
+			: new Vector2( target.width / 2, target.height / 2 );
 
 		// the size of a cell of the atlas, as a fraction of the view: the height a glyph is
 		// drawn at, and the unit a string is placed and spaced in. It is set here as a resize
@@ -66,6 +74,13 @@ class GlyphMaterial extends ShaderMaterial {
 		const self = this;
 
 		function setScale ( value ) {
+
+			if ( target !== null ) {
+
+				value.set( realPixels / target.width, realPixels / target.height );
+				return;
+
+			}
 
 			value.set( realPixels / Math.floor( pixelRatio * container.clientWidth ), realPixels/ Math.floor( pixelRatio * container.clientHeight ) );
 

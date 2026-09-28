@@ -576,7 +576,10 @@ class PointerControls extends EventDispatcher {
 
 		function onPointerMove( event ) {
 
-			if ( event.target !== domElement ) return;
+			// a frame being captured shows what the application set up, and a pointer that
+			// happens to be over the viewer meanwhile reveals nothing
+
+			if ( event.target !== domElement || viewer.capturing ) return;
 
 			// a pointer that does not hover is dragging the model while it is down, which
 			// reveals nothing: what a hover would reveal, a tap of the same pointer does
@@ -600,6 +603,8 @@ class PointerControls extends EventDispatcher {
 		}
 
 		function onPointerDown ( event ) {
+
+			if ( viewer.capturing ) return;
 
 			if ( activePointerId !== null || event.target !== domElement ) {
 

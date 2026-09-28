@@ -81,6 +81,15 @@ function Materials ( viewer ) {
 			accuracy: { value: -1.0 },
 			target: { value: new Vector2() },
 			ringColor: { value: new Color( 0xff0000 ) },
+		},
+
+		// how many device pixels of what is drawn a device pixel of the screen stands for.
+		// It is one on the screen; a capture session drawing a frame larger than the screen
+		// shows the container at raises it, for what is sized in the pixels of the screen
+		// rather than in those of the page - see beginCapture().
+
+		points: {
+			pointScale: { value: 1.0 }
 		}
 
 	};
@@ -393,6 +402,13 @@ function Materials ( viewer ) {
 	// The caller frees them with releaseLabelMaterial() when it stops drawing at that size.
 	//
 	// A size of null is the theme's, and is the material the labels of that kind share.
+	//
+	// `target` is the frame a capture session draws, in device pixels, for a label of a size
+	// the application gave: that size is a number of pixels of whatever the label is drawn
+	// into, and a frame captured at twice the density of the screen draws it in twice as many
+	// of the screen's. A label of the theme's size is shared with the model's own labels and
+	// keeps the part of the view it takes on the screen, so it is drawn from the material it
+	// is always drawn from.
 
 	// `overrides` replaces named members of the specification the theme would have given, for
 	// a caller that has worked one out rather than read it - a label whose colour is derived
@@ -400,7 +416,7 @@ function Materials ( viewer ) {
 	// not named there still comes from the theme, so the font and the angle of a kind of label
 	// stay the theme's however its colour was decided.
 
-	this.getLabelMaterial = function ( type, size = null, overrides = null ) {
+	this.getLabelMaterial = function ( type, size = null, overrides = null, target = null ) {
 
 		const atlasSpec = {
 			color: cfg.themeColorCSS( `${type}.text` ),
@@ -414,7 +430,7 @@ function Materials ( viewer ) {
 
 		if ( size === null ) return this.getGlyphMaterial( atlasSpec, rotation );
 
-		const material = new GlyphMaterial( ctx, new GlyphAtlas( atlasSpec ), rotation, viewer );
+		const material = new GlyphMaterial( ctx, new GlyphAtlas( atlasSpec ), rotation, viewer, target );
 
 		material.side = viewer.hasModel ? BackSide : FrontSide;
 

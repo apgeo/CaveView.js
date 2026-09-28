@@ -219,6 +219,22 @@ class LiveMarkers {
 		let labelSize = defaultLabelSize();
 		let labelBacking = true;
 
+		// whether the application has chosen the size. A size it has not chosen is the default,
+		// which is stated in the pixels of the page and so follows the density of whatever the
+		// labels are drawn into - a capture at twice the width of the page draws it twice the
+		// number of pixels, as a screen of twice the density does.
+
+		let labelSizeChosen = false;
+
+		// the frame a capture session draws, in device pixels, while there is one - see
+		// beginCapture(). The text of a label is drawn at its size in the pixels of that frame
+		// rather than of the screen, and the marker clock is the capture's: a move advances
+		// only by the milliseconds each captured frame asks for, never by the time between
+		// animation frames, so that a frame is the same whatever the browser was doing while
+		// it was drawn.
+
+		let captureTarget = null;
+
 		let hovered = null;
 		let tracking = false;
 
@@ -416,6 +432,51 @@ class LiveMarkers {
 
 		};
 
+		// a capture session: the labels are drawn at their size in the pixels of the frame the
+		// session draws, and the markers move only when advance() is called. A move under way
+		// as the session begins is taken up by the capture's clock where the animation left
+		// it, and one still under way as it ends is handed back to the animation frames.
+
+		this.beginCapture = function ( width, height ) {
+
+			captureTarget = { width: width, height: height };
+
+			stopMoving();
+
+			if ( ! labelSizeChosen ) labelSize = Math.min( LABEL_SIZE * width / container.clientWidth, maxGlyphAtlasFontSize );
+
+			rebuildLabels();
+
+		};
+
+		this.endCapture = function () {
+
+			if ( captureTarget === null ) return;
+
+			captureTarget = null;
+
+			if ( ! labelSizeChosen ) labelSize = defaultLabelSize();
+
+			rebuildLabels();
+
+			if ( isMoving() ) startMoving();
+
+		};
+
+		// runs the markers' moves on by a number of milliseconds, as that much time passing
+		// between two animation frames would, and says whether any marker is still between
+		// stations
+
+		this.advance = function ( ms ) {
+
+			if ( ms > 0 ) step( ms );
+
+			return isMoving();
+
+		};
+
+		this.isMoving = isMoving;
+
 		// display what a marker has to say without the pointer being on it.
 		//
 		// A marker reveals its second line when it is pointed at, and an application that
@@ -523,6 +584,8 @@ class LiveMarkers {
 				}
 
 			}
+
+			labelSizeChosen = true;
 
 			if ( size === labelSize ) return;
 
@@ -824,7 +887,7 @@ class LiveMarkers {
 			// The font and the angle stay the theme's; only the colour is the derived one, so a
 			// marker label still looks like the viewer's other labels.
 			labelMaterial = ctx.materials.getLabelMaterial( 'stations.default', labelSize,
-				{ color: '#' + labelColours().ink.getHexString() } );
+				{ color: '#' + labelColours().ink.getHexString() }, captureTarget );
 
 		}
 
@@ -850,7 +913,7 @@ class LiveMarkers {
 
 			if ( material === undefined ) {
 
-				material = ctx.materials.getLabelMaterial( 'stations.default', labelSize, { color: key } );
+				material = ctx.materials.getLabelMaterial( 'stations.default', labelSize, { color: key }, captureTarget );
 				headingMaterials.set( key, material );
 
 			}
@@ -1287,7 +1350,7 @@ class LiveMarkers {
 
 		function startMoving () {
 
-			if ( rafID !== 0 ) return;
+			if ( rafID !== 0 || captureTarget !== null ) return;
 
 			lastTime = 0;
 			rafID = window.requestAnimationFrame( animate );
@@ -1313,6 +1376,40 @@ class LiveMarkers {
 
 			lastTime = time;
 
+			const moving = step( elapsed );
+
+			viewer.renderView();
+
+			if ( moving ) {
+
+				rafID = window.requestAnimationFrame( animate );
+
+			} else {
+
+				lastTime = 0;
+
+			}
+
+		}
+
+		function isMoving () {
+
+			for ( const marker of markers.values() ) {
+
+				if ( marker.from !== null ) return true;
+
+			}
+
+			return false;
+
+		}
+
+		// the markers' moves run on by a number of milliseconds: what one animation frame
+		// does, and what a captured frame asks for. It draws nothing - the caller does - and
+		// says whether any marker is still between stations.
+
+		function step ( elapsed ) {
+
 			let moving = false;
 			let arrived = false;
 
@@ -1325,6 +1422,13 @@ class LiveMarkers {
 				// number of milliseconds for both
 
 				marker.t = Math.min( 1, marker.t + elapsed / ( marker.moveTime ?? moveTime ) );
+
+				// a move is complete once its duration has been run through, however the
+				// milliseconds were divided up: a thirtieth of a second added thirty times
+				// falls short of one by a rounding error, and would leave the marker a frame
+				// late at a station it had in fact reached
+
+				if ( 1 - marker.t < 1e-9 ) marker.t = 1;
 
 				// whatever is drawn for the marker moves. A group travelling together is
 				// drawn as a single marker, which each of them places at the one position
@@ -1352,17 +1456,7 @@ class LiveMarkers {
 
 			if ( arrived ) draw();
 
-			viewer.renderView();
-
-			if ( moving ) {
-
-				rafID = window.requestAnimationFrame( animate );
-
-			} else {
-
-				lastTime = 0;
-
-			}
+			return moving;
 
 		}
 
@@ -1408,6 +1502,11 @@ class LiveMarkers {
 		}
 
 		function hoverAt ( x, y, pointerType ) {
+
+			// a frame being captured is the application's to decide, and a pointer that
+			// happens to be over the viewer while it is captured reveals nothing
+
+			if ( captureTarget !== null ) return;
 
 			// a pointer that is not a mouse is a finger, or a pen used as one: it is aimed
 			// by covering what it is aimed at, and reaches a larger target more reliably
@@ -1544,7 +1643,7 @@ class LiveMarkers {
 
 			if ( ! pointerHovers( event.pointerType ) ) return;
 
-			if ( hovered === null ) return;
+			if ( hovered === null || captureTarget !== null ) return;
 
 			showHoverLabel( hovered, false );
 
