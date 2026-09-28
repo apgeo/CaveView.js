@@ -488,6 +488,17 @@ class PointerControls extends EventDispatcher {
 
 		}
 
+		// the station the pointer is over is let go, and its name label closed, as the
+		// pointer moving off it would do
+
+		this.endPointerHover = function () {
+
+			endHover();
+
+			if ( closeHoverLabel() ) viewer.renderView();
+
+		};
+
 		function endHover () {
 
 			if ( hoverStation === null ) return;
@@ -590,7 +601,10 @@ class PointerControls extends EventDispatcher {
 
 			setTimeout( () => {
 
-				if ( performance.now() - lastPointerOver <= 250 ) return;
+				// the hover was ended as the capture session began, and nothing is revealed
+				// or taken away while it is open
+
+				if ( viewer.capturing || performance.now() - lastPointerOver <= 250 ) return;
 
 				// the pointer has left the station - returning to it is a new hover
 

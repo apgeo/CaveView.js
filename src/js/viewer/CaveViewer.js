@@ -1854,19 +1854,33 @@ class CaveViewer extends EventDispatcher {
 
 			if ( cw === 0 || ch === 0 ) throw new Error( 'a capture session needs a container that is displayed' );
 
-			// the container is sized to the frame's shape in whole pixels of the page, so one
-			// of its sides may be off the frame's shape by up to half a pixel
+			// the container's width and height are each rounded to a whole pixel of the page,
+			// so a container of exactly the frame's shape can be off it by half a pixel on each
+			// side: measured along the shorter side, by half a pixel of its own and the other
+			// side's half pixel scaled down to it
 
-			const offShape = Math.min(
-				Math.abs( ch - cw * height / width ),
-				Math.abs( cw - ch * width / height )
-			);
+			const shortSide = Math.min( width, height ) / Math.max( width, height );
 
-			if ( offShape > 0.5 + 1e-9 ) {
+			const offShape = ( width >= height )
+				? Math.abs( ch - cw * height / width )
+				: Math.abs( cw - ch * width / height );
+
+			if ( offShape > 0.5 * ( 1 + shortSide ) + 1e-9 ) {
 
 				throw new Error( `a capture of ${width} by ${height} needs a container of that shape, not one of ${cw} by ${ch}` );
 
 			}
+
+			// everything a frame is drawn from - the camera's shape, the resolution lines are
+			// drawn at, the size of the labels, the indicators - was sized at the last resize,
+			// which the viewer carries out when the window is resized or it is told to. A
+			// container restyled since, without the viewer being told, would be captured as a
+			// stretched copy of the old view, so the viewer is brought to the container's size
+			// first.
+
+			const laidOut = renderer.getSize( new Vector2() );
+
+			if ( laidOut.x !== cw || laidOut.y !== ch ) onResize();
 
 			const background = ( options.background === undefined || options.background === null ) ? null : new Color( options.background );
 			const scale = width / cw;
@@ -1892,6 +1906,12 @@ class CaveViewer extends EventDispatcher {
 			settlePendingMove( new Error( 'cancelled' ) );
 			cameraMove.cancel();
 			cameraMove.hold( true );
+
+			// a station the pointer was over is let go: its name would otherwise be drawn in
+			// the frames until the pointer's own timer took it away, at a frame decided by the
+			// clock rather than by the frame's place in the capture
+
+			pointerControls.endPointerHover();
 
 			capture.enabled = controls.enabled;
 			controls.enabled = false;

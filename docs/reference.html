@@ -315,14 +315,18 @@ begins: a frame of 1280 by 720 is taken from a container of 640 by 360, or of 12
 <p>While the session is open nothing is drawn except by captureFrame(), which draws at once and returns
 with the frame drawn. The pointer and the keyboard move nothing and reveal nothing; an automatic rotation
 is suspended, and resumed when the session ends; a camera move in flight ends where it was going, and no
-new one is animated - the camera is turned by captureFrame() and setCameraAngles() instead, and a focus
-call is refused. The live markers move only as the frames advance them: a move of a given duration
+new one is animated - the camera is turned by captureFrame() and setCameraAngles() instead, a focus call
+is refused, and setting azimuthAngle or polarAngle, which turn the camera by animation, does nothing. A
+station the pointer was over as the session began is let go and its name taken away. The live markers move only as the frames advance them: a move of a given duration
 arrives after exactly that many milliseconds of advancing, however they are divided between frames. The
 frames are opaque, on the background given or on the viewer's own. A resize of the window is carried out
-when the session ends, and getSnapshot() is refused while it is open.</p>
+when the session ends, and getSnapshot() is refused while it is open. A container restyled since the
+viewer was last resized - by the window being resized, or by resize() - has the viewer brought to its
+size as the session begins, so that the frames are not a stretched copy of the view it was sized for.</p>
 <p>The session is refused with an Error when no survey is loaded, when one is already open, when the size
 is not two even whole numbers of at least 16 pixels or is larger than the renderer can draw, and when the
-container is not displayed or its shape differs from the frame's by more than half a pixel of the page.</p>
+container is not displayed or its shape differs from the frame's by more than its width and height each
+being rounded to a whole pixel of the page accounts for - half a pixel along each side.</p>
 <h5>Parameters</h5>
 <dl>
 	<dt>options</dt><dd><span>Object</span>An Object with the properties width and height, the size of the frames in pixels, and background, an optional CSS colour the frames are drawn on.</dd>
