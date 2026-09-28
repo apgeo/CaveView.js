@@ -6,7 +6,31 @@ import { CanvasTexture, LinearFilter } from '../Three';
 
 const ATLAS_SIZE = 1024;
 
-const GLYPHS = '\u202f\u00B0\u2610 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%,.-_/()[]\'"';
+// the glyphs every atlas is drawn with. A glyph not among them is added to the atlas the
+// first time a string asks for it, while there is a cell left for it, so the set is what
+// is certain to be drawn however full the atlas is: the letters of the names people and
+// places are given across Europe - the accented letters of Latin-1 and the common ones of
+// Latin Extended-A, and the Romanian letters with a comma below as well as the cedilla
+// forms they are often typed as. Each is a single precomposed character, which is how a
+// label's text is put before it is drawn.
+//
+// The set stays under the 256 cells an atlas of the largest text has, so that it does not
+// lower the largest size text can be drawn at, and leaves room there for a few glyphs from
+// outside it.
+
+const BASE_GLYPHS = '\u202f\u00B0\u2610 ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%,.-_/()[]\'"';
+
+const LATIN_1_LETTERS = 'ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ';
+
+const LATIN_EXTENDED_LETTERS = 'ĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĢģĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž';
+
+const COMMA_BELOW_LETTERS = 'ȘșȚț';
+
+const GLYPHS = BASE_GLYPHS + LATIN_1_LETTERS + LATIN_EXTENDED_LETTERS + COMMA_BELOW_LETTERS;
+
+// what is drawn for a glyph there is no cell left for: the empty box, which every atlas holds
+
+const MISSING_GLYPH = '\u2610';
 
 function cellSizeForFont ( fontSize ) {
 
@@ -164,8 +188,15 @@ class GlyphAtlas {
 
 				if ( glyphCount + 1 > divisions * divisions ) {
 
+					// the string is still drawn, with a box where this glyph would be, and a
+					// glyph found missing once is not reported again
+
 					console.warn( `too many glyphs for atlas when adding [${glyph}]` );
-					return;
+
+					glyphData = map[ MISSING_GLYPH ];
+					map[ glyph ] = glyphData;
+
+					return glyphData;
 
 				}
 
