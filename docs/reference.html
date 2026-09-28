@@ -277,6 +277,80 @@ application having to report the change.</p>
 	<dt>function</dt><dd><span>function</span>A function taking an Array of live marker Objects and returning a string.</dd>
 </dl>
 
+<h4>getCameraAngles()</h4>
+<p>The direction the camera looks at the model from, as an Object with two properties in radians:
+<b>azimuth</b>, the angle about the vertical through the point the camera looks at, between -&pi; and
+&pi;; and <b>polar</b>, the angle from looking straight down, so that 0 is a plan view and &pi;/2 is
+level. An application that turns the view from where the reader left it starts from these.</p>
+
+<h4>setCameraAngles( &lt;angles&gt; )</h4>
+<p>Turn the camera to an azimuth and a polar angle, as getCameraAngles() gives them, at once and without
+animating the move. Either may be left out, and is then left as it is. The camera stays at the distance
+it is from the point it looks at, and a polar angle beyond the limits the viewer keeps the camera within
+is taken to the limit. A camera move in flight is ended first; an automatic rotation carries on from the
+new direction. The view is drawn once - or, while a capture session is open, not at all, the next
+captured frame being the one that shows it.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>angles</dt><dd><span>Object</span>An Object with the properties azimuth and polar, each a finite number of radians or absent.</dd>
+</dl>
+
+<h4>beginCapture( &lt;options&gt; )</h4>
+<p>Open a capture session: the view is drawn into frames of a size given in pixels, one at a time and
+only when captureFrame() asks, for an application that records the viewer - a movie of it, whose every
+frame must be what its place in the movie says rather than whatever the browser was doing while it was
+drawn. Returns an Object with the width and height of the frames, in pixels.</p>
+<p>A frame is what the container shows, drawn at the density width / container width, as a screen of
+that density would draw it: what is sized in the pixels of the page - the dot of a live marker and the
+gap before its label, the width of the lines, the dots of the entrances, the indicators - is that many
+times as many pixels of the frame, and what is sized in the pixels of the screen - the text of the
+model's labels, the dots of the stations, a popup - keeps the part of the view it has on the screen. The
+text of the live markers is drawn at liveMarkerLabelSize in the pixels of the frame, since that is the
+unit the application gives it in; its default, 12 pixels of the page, is twelve times the density. The
+frames have the shape of the container, which the application sizes to the frame before the session
+begins: a frame of 1280 by 720 is taken from a container of 640 by 360, or of 1280 by 720 itself.</p>
+<p>While the session is open nothing is drawn except by captureFrame(), which draws at once and returns
+with the frame drawn. The pointer and the keyboard move nothing and reveal nothing; an automatic rotation
+is suspended, and resumed when the session ends; a camera move in flight ends where it was going, and no
+new one is animated - the camera is turned by captureFrame() and setCameraAngles() instead, and a focus
+call is refused. The live markers move only as the frames advance them: a move of a given duration
+arrives after exactly that many milliseconds of advancing, however they are divided between frames. The
+frames are opaque, on the background given or on the viewer's own. A resize of the window is carried out
+when the session ends, and getSnapshot() is refused while it is open.</p>
+<p>The session is refused with an Error when no survey is loaded, when one is already open, when the size
+is not two even whole numbers of at least 16 pixels or is larger than the renderer can draw, and when the
+container is not displayed or its shape differs from the frame's by more than half a pixel of the page.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>options</dt><dd><span>Object</span>An Object with the properties width and height, the size of the frames in pixels, and background, an optional CSS colour the frames are drawn on.</dd>
+</dl>
+
+<h4>captureFrame( &lt;options&gt; )</h4>
+<p>Draw one frame of an open capture session. The live markers are first advanced by the milliseconds
+asked for and the camera turned to the angles asked for, both as they are set rather than by
+animation, and the frame is then drawn once. Returns an Object with the properties <b>canvas</b>, the
+viewer's own canvas holding the frame; <b>azimuth</b> and <b>polar</b>, the direction the frame was
+drawn from; and <b>moving</b>, whether a live marker is still between stations.</p>
+<p>The canvas does not keep what is drawn on it beyond the task that drew it, so a frame is copied out
+before the caller's code yields - by drawImage(), by a VideoFrame built from the canvas, or by passing a
+2D context as <b>into</b>, which has the frame drawn into it, scaled to its canvas, before captureFrame()
+returns. The same state draws the same frame: capturing twice without changing anything draws the same
+pixels.</p>
+<p>Refused with an Error when no session is open, or when advance is negative or not a number.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>options</dt><dd><span>Object</span>An optional Object with the properties azimuth and polar (radians, as setCameraAngles() takes them; absent leaves the angle as it is), advance (milliseconds the live markers move on by before the frame is drawn; default 0) and into (a CanvasRenderingContext2D the frame is drawn into).</dd>
+</dl>
+
+<h4>endCapture()</h4>
+<p>Close the capture session and put the viewer back exactly as it was when the session began - the size
+and density it draws at, its clear background, the controls, an automatic rotation, the clock the live
+markers move by, and the default size of their labels (a size the application set is kept) - then
+draw the view. A move of a marker still
+under way carries on by the animation frames from where the frames left it. A resize of the window made
+while the session was open is carried out now. It does nothing when no session is open, and so may be
+called more than once, and after dispose().</p>
+
 <h4>dispose()</h4>
 <p>Free used memory including GPU and Javascript heap allocations.</p>
 
@@ -292,6 +366,10 @@ them back. Setting the property dispatches the change event, as the view setting
 model is loaded: the markers outlive the model they are displayed on, and whether they are labelled
 outlives it with them. It is not reported by getView() and is not kept by saveView().</p>
 <p><span>boolean</span> <span>default: true</span></p>
+
+<h4>capturing</h4>
+<p>Whether a capture session is open - see beginCapture(). Read only.</p>
+<p><span>boolean</span></p>
 
 <h4>liveMarkerMoveTime</h4>
 <p>How long a marker takes to travel between two stations, in milliseconds, where the move does not say.

@@ -25,6 +25,18 @@ class CameraMove {
 		let animationFunction = null;
 		let rafID = 0;
 
+		// while held, nothing moves the camera by animation: a capture session draws each
+		// frame from the camera the application sets, and a move stepped by the animation
+		// frames in between would put the camera somewhere the frame did not ask for
+
+		let held = false;
+
+		this.hold = function ( hold ) {
+
+			held = !! hold;
+
+		};
+
 		function getCardinalAxis ( targetAxis ) {
 
 			cameraManager.activeCamera.getWorldDirection( __v1 );
@@ -236,7 +248,7 @@ class CameraMove {
 
 		this.start = function ( timed ) {
 
-			if ( running || skipNext ) return;
+			if ( running || skipNext || held ) return;
 
 			if ( timed ) {
 
@@ -393,7 +405,7 @@ class CameraMove {
 
 			if ( state ) {
 
-				if ( running ) return;
+				if ( running || held ) return;
 
 				controls.autoRotate = true;
 

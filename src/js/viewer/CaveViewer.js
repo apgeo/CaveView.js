@@ -1,4 +1,4 @@
-import { EventDispatcher, FogExp2, Raycaster, Scene, Vector2, Vector3, WebGLRenderer, LinearSRGBColorSpace } from '../Three';
+import { Color, EventDispatcher, FogExp2, Raycaster, Scene, Vector2, Vector3, WebGLRenderer, LinearSRGBColorSpace } from '../Three';
 import {
 	FACE_SCRAPS, FACE_WALLS, FACE_MODEL, FEATURE_BOX, FEATURE_ENTRANCES, FEATURE_ENTRANCE_DOTS, FEATURE_GRID, FEATURE_STATIONS, FEATURE_TERRAIN, FEATURE_TRACES,
 	LABEL_STATION, LABEL_STATION_COMMENT, LEG_CAVE, LEG_SPLAY, LEG_DUPLICATE, LEG_SURFACE, LM_NONE, LM_SINGLE, MOUSE_MODE_TRACE_EDIT, SURVEY_WARNINGS,
@@ -63,6 +63,11 @@ class CaveViewer extends EventDispatcher {
 		const materials = new Materials( this );
 
 		ctx.materials = materials;
+
+		// the capture session open, if any - see beginCapture(). It is declared ahead of the
+		// renderer because the renderer is set up by functions that consult it.
+
+		let capture = null;
 
 		let renderer = new WebGLRenderer( { antialias: true, alpha: true } );
 
@@ -412,8 +417,24 @@ class CaveViewer extends EventDispatcher {
 			},
 
 			'autoRotate': {
-				get() { return controls.autoRotate; },
-				set: stateSetter( x => cameraMove.setAutoRotate( !! x ), 'autoRotate' )
+
+				// an auto rotation asked for during a capture session is the one resumed when
+				// it ends: while it is open the camera moves only as the frames ask
+
+				get() { return ( capture === null ) ? controls.autoRotate : capture.autoRotate; },
+				set: stateSetter( x => {
+
+					if ( capture === null ) {
+
+						cameraMove.setAutoRotate( !! x );
+
+					} else {
+
+						capture.autoRotate = !! x;
+
+					}
+
+				}, 'autoRotate' )
 			},
 
 			'wheelTilt': {
@@ -506,7 +527,22 @@ class CaveViewer extends EventDispatcher {
 		cfg.addEventListener( 'colors', () => {
 
 			container.style.backgroundColor = cfg.themeColorCSS( 'background' );
-			renderer.setClearColor( cfg.themeColor( 'background' ), 0.0 );
+
+			if ( capture === null ) {
+
+				renderer.setClearColor( cfg.themeColor( 'background' ), 0.0 );
+
+			} else {
+
+				// the frames of a capture stay opaque, on the background they were asked
+				// for or on the new one, and the viewer is left on the new one when it ends
+
+				capture.clearColor.copy( cfg.themeColor( 'background' ) );
+				capture.clearAlpha = 0.0;
+
+				if ( capture.background === null ) renderer.setClearColor( cfg.themeColor( 'background' ), 1.0 );
+
+			}
 
 			if ( survey ) survey.refreshColors();
 
@@ -592,7 +628,19 @@ class CaveViewer extends EventDispatcher {
 		function updatePixelRatio() {
 
 			const pr = window.devicePixelRatio;
-			renderer.setPixelRatio( pr );
+
+			// the renderer draws at the capture's density while a session is open, and is
+			// returned to the screen's - the new one - when it ends
+
+			if ( capture === null ) {
+
+				renderer.setPixelRatio( pr );
+
+			} else {
+
+				capture.pixelRatioChanged = true;
+
+			}
 
 			matchMedia( `(resolution: ${pr}dppx)` ).addEventListener( 'change', updatePixelRatio, { once: true } );
 
@@ -869,6 +917,16 @@ class CaveViewer extends EventDispatcher {
 
 		function onResize () {
 
+			// the size a capture session draws at was fixed when it began, from the size the
+			// container had then: a resize while it is open is carried out when it ends
+
+			if ( capture !== null ) {
+
+				capture.resizePending = true;
+				return;
+
+			}
+
 			// adjust the renderer to the new canvas size
 			const w = container.clientWidth;
 			const h = container.clientHeight;
@@ -1103,6 +1161,12 @@ class CaveViewer extends EventDispatcher {
 
 			if ( controls.autoRotate && ! autorotate ) return;
 
+			// while a capture session is open the one frame drawn is the one captureFrame()
+			// asks for: anything else would be drawn over the frame being captured, and the
+			// state a frame is drawn from is the application's to settle before asking
+
+			if ( capture !== null && ! capture.drawing ) return;
+
 			renderer.clear();
 
 			if ( survey !== null ) {
@@ -1259,6 +1323,12 @@ class CaveViewer extends EventDispatcher {
 		}
 
 		function runCameraMove ( moveFunction ) {
+
+			if ( capture !== null ) {
+
+				return Promise.reject( new Error( 'the camera cannot be moved while a capture session is open' ) );
+
+			}
 
 			// an auto rotation, or a move already in flight, stops a new move being
 			// prepared, and an auto rotation never ends by itself. Both are stopped
@@ -1629,9 +1699,291 @@ class CaveViewer extends EventDispatcher {
 
 		this.getSnapshot = function ( exportSize, lineScale ) {
 
+			if ( capture !== null ) throw new Error( 'a snapshot cannot be taken while a capture session is open' );
+
 			return new Snapshot( ctx, renderer ).getSnapshot( exportSize, lineScale );
 
 		};
+
+		// The camera's direction about the point it looks at: the azimuth about the vertical,
+		// and the polar angle from looking straight down (0 is a plan view). Setting them
+		// moves the camera at once, with no animation, and draws the view once - or, while a
+		// capture session is open, leaves it to the next captured frame. An angle not given
+		// is left as it is.
+
+		this.getCameraAngles = function () {
+
+			return { azimuth: normalAngle( controls.getAzimuthalAngle() ), polar: controls.getPolarAngle() };
+
+		};
+
+		this.setCameraAngles = function ( angles = {} ) {
+
+			const azimuth = angleOption( angles, 'azimuth' );
+			const polar = angleOption( angles, 'polar' );
+
+			if ( capture === null ) {
+
+				// a move in flight would carry on from wherever these put the camera, and a
+				// focus call waiting on it is told it will not arrive
+
+				if ( cameraMove.isRunning() && ! controls.autoRotate ) {
+
+					settlePendingMove( new Error( 'superseded' ) );
+					cameraMove.cancel();
+
+				}
+
+			}
+
+			const required = renderRequired;
+
+			renderRequired = false;
+			setAngles( azimuth, polar );
+			renderRequired = required;
+
+			if ( capture === null ) renderView( true );
+
+		};
+
+		function normalAngle ( a ) {
+
+			return Math.atan2( Math.sin( a ), Math.cos( a ) );
+
+		}
+
+		function angleOption ( options, name ) {
+
+			const value = options[ name ];
+
+			if ( value === undefined || value === null ) return undefined;
+
+			if ( typeof value !== 'number' || ! isFinite( value ) ) throw new Error( `the camera ${name} must be a finite number of radians` );
+
+			return value;
+
+		}
+
+		// each rotation is applied as the controls apply a drag of the pointer, and each
+		// signals a change of the camera that is drawn - unless drawing is held off, as the
+		// callers here hold it off, so that both are drawn as one
+
+		function setAngles ( azimuth, polar ) {
+
+			if ( azimuth === undefined && polar === undefined ) return;
+
+			// the angles the controls hold are those of the last change they made, and a
+			// camera placed by anything else - the view a model is first shown in, among
+			// them - is not reflected in them until they are next updated. The rotations
+			// below are differences from those angles, so they are brought up to date first;
+			// an auto rotation would take a step of its own in the update, and is left to
+			// the angles it keeps up to date itself.
+
+			if ( ! controls.autoRotate ) controls.update();
+
+			if ( polar !== undefined ) controls.rotateUp( controls.getPolarAngle() - polar );
+			if ( azimuth !== undefined ) controls.rotateLeft( controls.getAzimuthalAngle() - azimuth );
+
+		}
+
+		// A capture session draws the view into frames of a size given in pixels, one frame
+		// at a time and only when asked, for an application recording the viewer - a movie of
+		// it, where each frame must be exactly what its place in the movie says and never what
+		// the browser happened to be doing while it was drawn.
+		//
+		// A frame is what the container shows, at the density width / container width: every
+		// size given in the pixels of the page (a marker's dot, the gap before its label, the
+		// width of a line, an entrance's dot, the indicators) is that many times as many pixels
+		// of the frame, as it is on a screen of that density, and what is sized in the pixels
+		// of the screen (the text of the model's labels, a station's dot, a popup) keeps the
+		// part of the view it takes on the screen. The text of the live markers is the
+		// exception, and is drawn at its size in the pixels of the frame, which is the unit
+		// the application gives it in (liveMarkerLabelSize); its default of 12 pixels of the
+		// page is 12 times that density. The frame must have the container's shape: the
+		// application sizes the container to it before the session begins.
+		//
+		// While a session is open, nothing is drawn except by captureFrame(), which draws
+		// synchronously; the pointer and the keyboard move nothing; an auto rotation is
+		// suspended and a camera move in flight ends where it was going; and the live markers
+		// move only when a frame asks them to advance, by the milliseconds it names, so that a
+		// move of a given duration arrives after exactly that much advancing. Frames are
+		// opaque. endCapture() puts everything back as it was.
+
+		const MIN_CAPTURE_SIZE = 16;
+
+		this.beginCapture = function ( options = {} ) {
+
+			if ( renderer === null ) throw new Error( 'a capture session cannot begin: the viewer has been disposed' );
+			if ( capture !== null ) throw new Error( 'a capture session is already open' );
+			if ( survey === null ) throw new Error( 'a capture session needs a loaded survey' );
+
+			const width = options.width;
+			const height = options.height;
+
+			const sizeOk = ( n ) => Number.isInteger( n ) && n >= MIN_CAPTURE_SIZE && n % 2 === 0;
+
+			if ( ! sizeOk( width ) || ! sizeOk( height ) ) {
+
+				throw new Error( `a capture size must be two even whole numbers of pixels of at least ${MIN_CAPTURE_SIZE}, not ${width} by ${height}` );
+
+			}
+
+			const maxSize = self.maxSnapshotSize;
+
+			if ( width > maxSize || height > maxSize ) {
+
+				throw new Error( `a capture of ${width} by ${height} is larger than the ${maxSize} pixels this renderer can draw` );
+
+			}
+
+			const cw = container.clientWidth;
+			const ch = container.clientHeight;
+
+			if ( cw === 0 || ch === 0 ) throw new Error( 'a capture session needs a container that is displayed' );
+
+			// the container is sized to the frame's shape in whole pixels of the page, so one
+			// of its sides may be off the frame's shape by up to half a pixel
+
+			const offShape = Math.min(
+				Math.abs( ch - cw * height / width ),
+				Math.abs( cw - ch * width / height )
+			);
+
+			if ( offShape > 0.5 + 1e-9 ) {
+
+				throw new Error( `a capture of ${width} by ${height} needs a container of that shape, not one of ${cw} by ${ch}` );
+
+			}
+
+			const background = ( options.background === undefined || options.background === null ) ? null : new Color( options.background );
+			const scale = width / cw;
+
+			capture = {
+				width: width,
+				height: height,
+				background: background,
+				drawing: false,
+				resizePending: false,
+				pixelRatioChanged: false,
+				pixelRatio: renderer.getPixelRatio(),
+				size: renderer.getSize( new Vector2() ),
+				clearColor: renderer.getClearColor( new Color() ),
+				clearAlpha: renderer.getClearAlpha(),
+				autoRotate: controls.autoRotate,
+				enabled: true
+			};
+
+			// an auto rotation, or a move in flight, is ended: a move at the place it was
+			// going to, which is where a focus call waiting on it is told it did not get
+
+			settlePendingMove( new Error( 'cancelled' ) );
+			cameraMove.cancel();
+			cameraMove.hold( true );
+
+			capture.enabled = controls.enabled;
+			controls.enabled = false;
+
+			// the drawing buffer is exactly the frame. The renderer is told a size in the
+			// pixels of the page a quarter of a pixel of the frame larger than the frame
+			// divided by the density, so that the whole pixels it takes of the product are
+			// the frame's whatever the rounding of the division.
+
+			renderer.setPixelRatio( scale );
+			renderer.setSize( ( width + 0.25 ) / scale, ( height + 0.25 ) / scale, false );
+			renderer.setClearColor( background ?? cfg.themeColor( 'background' ), 1.0 );
+
+			materials.uniforms.points.pointScale.value = scale / capture.pixelRatio;
+
+			liveMarkers.beginCapture( width, height );
+
+			return { width: renderer.domElement.width, height: renderer.domElement.height };
+
+		};
+
+		this.captureFrame = function ( options = {} ) {
+
+			if ( capture === null ) throw new Error( 'captureFrame() needs an open capture session - see beginCapture()' );
+
+			const advance = options.advance ?? 0;
+			const azimuth = angleOption( options, 'azimuth' );
+			const polar = angleOption( options, 'polar' );
+			const into = options.into ?? null;
+
+			if ( typeof advance !== 'number' || ! isFinite( advance ) || advance < 0 ) {
+
+				throw new Error( 'a captured frame advances the markers by a number of milliseconds of at least 0' );
+
+			}
+
+			if ( advance > 0 ) liveMarkers.advance( advance );
+
+			setAngles( azimuth, polar );
+
+			capture.drawing = true;
+
+			try {
+
+				renderView( true );
+
+			} finally {
+
+				capture.drawing = false;
+
+			}
+
+			// the drawing buffer is not preserved, so what was drawn is copied out now, in
+			// the task that drew it
+
+			const canvas = renderer.domElement;
+
+			if ( into !== null ) into.drawImage( canvas, 0, 0, into.canvas.width, into.canvas.height );
+
+			return {
+				canvas: canvas,
+				azimuth: normalAngle( controls.getAzimuthalAngle() ),
+				polar: controls.getPolarAngle(),
+				moving: liveMarkers.isMoving()
+			};
+
+		};
+
+		this.endCapture = function () {
+
+			if ( capture === null || renderer === null ) return;
+
+			const saved = capture;
+
+			capture = null;
+
+			renderer.setPixelRatio( saved.pixelRatioChanged ? window.devicePixelRatio : saved.pixelRatio );
+			renderer.setSize( saved.size.x, saved.size.y, false );
+			renderer.setClearColor( saved.clearColor, saved.clearAlpha );
+
+			materials.uniforms.points.pointScale.value = 1.0;
+
+			liveMarkers.endCapture();
+
+			cameraMove.hold( false );
+
+			controls.enabled = saved.enabled;
+
+			if ( saved.autoRotate ) cameraMove.setAutoRotate( true );
+
+			if ( saved.resizePending ) {
+
+				onResize();
+
+			} else {
+
+				renderView();
+
+			}
+
+		};
+
+		Object.defineProperty( this, 'capturing', {
+			get() { return capture !== null; }
+		} );
 
 		this.forEachStation = function ( callback ) {
 
@@ -1647,6 +1999,11 @@ class CaveViewer extends EventDispatcher {
 		};
 
 		this.dispose = function () {
+
+			// a capture session open as the viewer is disposed ends with it: there is nothing
+			// left to restore, and endCapture() called afterwards has nothing to do
+
+			capture = null;
 
 			this.dispatchEvent( { type: 'dispose' } );
 

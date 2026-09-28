@@ -23,7 +23,7 @@ class Snapshot {
 			renderer.setClearAlpha( 1.0 );
 
 			// reset camera and materials using renderer size/resolution
-			viewer.dispatchEvent( { type: 'resized', name: 'rts', 'width': newWidth, 'height': newHeight, lineScale: lineScale } );
+			viewer.dispatchEvent( { type: 'resized', name: 'rts', 'width': newWidth, 'height': newHeight, lineScale: lineScale, snapshot: true } );
 
 			viewer.renderView();
 
@@ -33,6 +33,15 @@ class Snapshot {
 
 			// restore renderer to normal render size and target
 			viewer.resetRenderer();
+
+			// and what was sized to the snapshot - the camera, the lines, the indicators and
+			// the scales - to the container again, the lines at the width they were drawn at
+			// before it rather than at the one the snapshot's size gave them. Setting the size
+			// of the renderer cleared what the screen showed, so the view is drawn again.
+
+			viewer.dispatchEvent( { type: 'resized', name: 'rts', 'width': container.clientWidth, 'height': container.clientHeight, restored: true } );
+
+			viewer.renderView();
 
 			return canvas.toDataURL();
 

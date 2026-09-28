@@ -17,13 +17,20 @@ class ExtendedPointsMaterial extends PointsMaterial {
 		this.transparent = true; // to ensure points rendered over lines.
 		this.vertexColors = true;
 
+		// a station's dot is sized in the pixels of the screen, which a capture drawing the
+		// view at a greater density than the screen's scales, so that the dot keeps the part
+		// of the view it has on the screen
+
+		const pointScale = ctx.materials.uniforms.points.pointScale;
+
 		this.onBeforeCompile = function ( shader ) {
 
 			const vertexShader = shader.vertexShader
-				.replace( '#include <common>', '\nattribute float pSize;\n\n$&' )
-				.replace( '\tgl_PointSize = size;', '\tgl_PointSize = pSize;' );
+				.replace( '#include <common>', '\nattribute float pSize;\nuniform float pointScale;\n\n$&' )
+				.replace( '\tgl_PointSize = size;', '\tgl_PointSize = pSize * pointScale;' );
 
 			shader.vertexShader = vertexShader;
+			shader.uniforms.pointScale = pointScale;
 
 		};
 
