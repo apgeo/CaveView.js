@@ -210,7 +210,26 @@ class Line2Material extends ShaderMaterial {
 
 		} );
 
+		// a snapshot sizes the lines to the image it draws and then puts the view back as it
+		// was, which is the width the lines had before it - a width chosen for them among
+		// them - and not the one the size of the view would give them
+
+		let widthBeforeSnapshot = null;
+
 		this.onResize = ( e ) => {
+
+			if ( e.restored && widthBeforeSnapshot !== null ) {
+
+				this.resolution = new Vector2( e.width, e.height );
+				this.linewidth = widthBeforeSnapshot;
+
+				widthBeforeSnapshot = null;
+
+				return;
+
+			}
+
+			if ( e.snapshot && widthBeforeSnapshot === null ) widthBeforeSnapshot = this.linewidth;
 
 			const lineScale = e.lineScale ? e.lineScale : 1;
 
