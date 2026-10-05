@@ -399,6 +399,8 @@ class CaveViewer extends EventDispatcher {
 
 			'maxSnapshotSize': {
 				get() {
+					if ( renderer === null ) return 0; // disposed - see renderView()
+
 					const context = renderer.getContext();
 					return context.getParameter( context.MAX_RENDERBUFFER_SIZE );
 				}
@@ -514,6 +516,8 @@ class CaveViewer extends EventDispatcher {
 
 		function resetRenderer () {
 
+			if ( renderer === null ) return; // disposed - see renderView()
+
 			renderer.setSize( container.clientWidth, container.clientHeight );
 			renderer.setPixelRatio( window.devicePixelRatio );
 			renderer.setClearColor( cfg.themeColor( 'background' ), 0.0 );
@@ -523,6 +527,10 @@ class CaveViewer extends EventDispatcher {
 		}
 
 		function updatePixelRatio() {
+
+			// the media query this listens to fires after dispose() as readily as before it
+
+			if ( renderer === null ) return;
 
 			const pr = window.devicePixelRatio;
 			renderer.setPixelRatio( pr );
@@ -798,6 +806,8 @@ class CaveViewer extends EventDispatcher {
 
 		function onResize () {
 
+			if ( renderer === null ) return; // disposed - see renderView()
+
 			// adjust the renderer to the new canvas size
 			const w = container.clientWidth;
 			const h = container.clientHeight;
@@ -817,6 +827,8 @@ class CaveViewer extends EventDispatcher {
 		};
 
 		this.clearView = function () {
+
+			if ( renderer === null ) return; // disposed - see renderView()
 
 			// clear the current cave model, and clear the screen
 			renderer.clear();
@@ -1025,7 +1037,12 @@ class CaveViewer extends EventDispatcher {
 
 		function renderView ( autorotate = false ) {
 
-			if ( ! renderRequired || renderer.xr.isPresenting ) return;
+			// a disposed viewer has nothing to draw with. A host does not always make
+			// dispose() its last call: a resize observer, an animation frame or a late
+			// event handler of its own can still ask for a frame, and that is nothing to
+			// do rather than an exception.
+
+			if ( renderer === null || ! renderRequired || renderer.xr.isPresenting ) return;
 
 			// ignore render requests if we are autorotating so don't need
 			// extra render calls
@@ -1164,6 +1181,8 @@ class CaveViewer extends EventDispatcher {
 
 		this.getSnapshot = function ( exportSize, lineScale ) {
 
+			if ( renderer === null ) throw new Error( 'a snapshot cannot be taken: the viewer has been disposed' );
+
 			return new Snapshot( ctx, renderer ).getSnapshot( exportSize, lineScale );
 
 		};
@@ -1182,6 +1201,10 @@ class CaveViewer extends EventDispatcher {
 		};
 
 		this.dispose = function () {
+
+			// a second call has nothing left to let go of
+
+			if ( renderer === null ) return;
 
 			this.dispatchEvent( { type: 'dispose' } );
 

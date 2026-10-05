@@ -42,7 +42,9 @@
 </dl>
 
 <h4>dispose()</h4>
-<p>Free used memory including GPU and Javascript heap allocations.</p>
+<p>Free used memory including GPU and Javascript heap allocations. Once disposed, a viewer does nothing:
+renderView(), resize(), resetRenderer(), clearView() and a further dispose() return without effect, and
+getSnapshot() throws an Error saying so.</p>
 
 <h2>CaveViewUI Object</h2>
 
