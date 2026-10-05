@@ -27,6 +27,28 @@ function clampedInc( value, inc ) {
 
 }
 
+// whether a key event belongs to a field the host page is typing into
+
+function isTextInput ( element ) {
+
+	if ( ! element || ! element.tagName ) return false;
+
+	switch ( element.tagName ) {
+
+	case 'INPUT':
+	case 'TEXTAREA':
+	case 'SELECT':
+
+		return true;
+
+	default:
+
+		return element.isContentEditable === true;
+
+	}
+
+}
+
 function KeyboardControls ( viewer, fileSelector, avenControls ) {
 
 	document.addEventListener( 'keydown', keyDown );
@@ -34,6 +56,12 @@ function KeyboardControls ( viewer, fileSelector, avenControls ) {
 	function keyDown ( event ) {
 
 		if ( ! viewer.surveyLoaded || ! viewer.mouseOver ) return;
+
+		// a key typed into a text field of the host page is the field's, whether or not
+		// the pointer happens to rest over the model: handling it here would cancel the
+		// keystroke and leave the field without the character
+
+		if ( isTextInput( event.target ) ) return;
 
 		event.preventDefault(); // enables F5, ctrl+<F5>, ctrl+<F> and other keys on the control's host page
 
