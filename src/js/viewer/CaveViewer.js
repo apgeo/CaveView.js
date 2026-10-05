@@ -40,6 +40,12 @@ class CaveViewer extends EventDispatcher {
 
 		const cfg = new Cfg( configuration );
 
+		// the element put into fullscreen when the viewer's fullscreen is asked for: the
+		// container itself unless the configuration names another, which a host uses to
+		// take controls of its own around the viewer into fullscreen with it
+
+		const fullscreenElement = resolveFullscreenElement( cfg.value( 'fullscreenElement', null ) );
+
 		// target with css for fullscreen on small screen devices
 		container.classList.add( 'cv-container' );
 		container.style.backgroundColor = cfg.themeColorCSS( 'background' );
@@ -387,6 +393,10 @@ class CaveViewer extends EventDispatcher {
 				set: setFullscreen
 			},
 
+			'fullscreenElement': {
+				get() { return fullscreenElement; }
+			},
+
 			'fog': {
 				get() { return useFog; },
 				set: stateSetter( setFog, 'fog' ),
@@ -431,8 +441,8 @@ class CaveViewer extends EventDispatcher {
 		container.addEventListener( 'pointerover', onPointerOver );
 		container.addEventListener( 'pointerleave', onPointerLeave );
 
-		container.addEventListener( 'fullscreenchange', onFullscreenChange );
-		container.addEventListener( 'webkitfullscreenchange', onFullscreenChange );
+		fullscreenElement.addEventListener( 'fullscreenchange', onFullscreenChange );
+		fullscreenElement.addEventListener( 'webkitfullscreenchange', onFullscreenChange );
 
 		this.addEventListener( 'change', viewChanged );
 
@@ -531,7 +541,32 @@ class CaveViewer extends EventDispatcher {
 
 		}
 
+		function resolveFullscreenElement ( option ) {
+
+			if ( option === null || option === undefined ) return container;
+
+			const element = ( typeof option === 'string' ) ? document.getElementById( option ) : option;
+
+			if ( ! element || ! ( element instanceof Element ) ) {
+
+				console.warn( 'CaveView: the fullscreenElement option names no element - the container is used' );
+				return container;
+
+			}
+
+			return element;
+
+		}
+
 		function isFullscreen () {
+
+			// the document says which element is in fullscreen where the API exists. The
+			// comparison of the container with the window is kept only for a browser
+			// without it: on its own it could not tell a container the host had sized to
+			// the window from one in fullscreen.
+
+			if ( 'fullscreenElement' in document ) return document.fullscreenElement === fullscreenElement;
+			if ( 'webkitFullscreenElement' in document ) return document.webkitFullscreenElement === fullscreenElement;
 
 			return (
 				window.innerHeight === container.clientHeight &&
@@ -542,13 +577,13 @@ class CaveViewer extends EventDispatcher {
 
 		function onFullscreenChange () {
 
-			if ( document.fullscreenElement || document.webkitFullscreenElement ) {
+			if ( isFullscreen() ) {
 
-				container.classList.add( 'toggle-fullscreen' );
+				fullscreenElement.classList.add( 'toggle-fullscreen' );
 
 			} else {
 
-				container.classList.remove( 'toggle-fullscreen' );
+				fullscreenElement.classList.remove( 'toggle-fullscreen' );
 
 			}
 
@@ -563,21 +598,21 @@ class CaveViewer extends EventDispatcher {
 
 			if ( targetState ) {
 
-				container.classList.add( 'toggle-fullscreen' );
+				fullscreenElement.classList.add( 'toggle-fullscreen' );
 
 				if ( document.fullscreenElement === null ) {
 
-					container.requestFullscreen();
+					fullscreenElement.requestFullscreen();
 
 				} else if ( document.webkitFullscreenElement === null) {
 
-					container.webkitRequestFullscreen();
+					fullscreenElement.webkitRequestFullscreen();
 
 				}
 
 			} else {
 
-				container.classList.remove( 'toggle-fullscreen' );
+				fullscreenElement.classList.remove( 'toggle-fullscreen' );
 
 				if ( document.fullscreenElement ) {
 
@@ -1203,8 +1238,8 @@ class CaveViewer extends EventDispatcher {
 			container.removeEventListener( 'pointerover', onPointerOver );
 			container.removeEventListener( 'pointerleave', onPointerLeave );
 
-			container.removeEventListener( 'fullscreenchange', onFullscreenChange );
-			container.removeEventListener( 'webkitfullscreenchange', onFullscreenChange );
+			fullscreenElement.removeEventListener( 'fullscreenchange', onFullscreenChange );
+			fullscreenElement.removeEventListener( 'webkitfullscreenchange', onFullscreenChange );
 
 			renderer.clear();
 			renderer.dispose();
