@@ -60,7 +60,7 @@ selection made elsewhere.</p>
 	<dt>options</dt><dd><span>Object</span>An object defined below (optional).</dd>
 </dl>
 
-<h4>focusSurvey( &lt;reference&gt; )</h4>
+<h4>focusSurvey( &lt;reference&gt;, &lt;options&gt; )</h4>
 <p>Select a section of the survey, and move the camera to frame it.</p>
 <p>Returns a Promise, resolved when the camera has finished moving. The Promise is rejected if no model
 is loaded, if the reference does not identify a section of the loaded model, or if the move is abandoned
@@ -68,6 +68,7 @@ before it finishes - superseded by a later focus call, or cancelled by a selecti
 <h5>Parameters</h5>
 <dl>
 	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the survey section.</dd>
+	<dt>options</dt><dd><span>Object</span>An object with the animate property of the focusStation options Object (optional).</dd>
 </dl>
 
 <h4>highlightStation( &lt;reference&gt; )</h4>
@@ -181,6 +182,11 @@ displayed while measuring between stations is not suppressed.</p>
 	<dd><span>boolean</span>highlight the station <span>default: true</span>. Set to false to remove an existing highlight. (optional).</dd>
 	<dt>popup</dt>
 	<dd><span>boolean</span>display the popup for the station. Set to false to close an open popup. If not set, an open popup is left as it is <span>default: unset</span>. (optional).</dd>
+	<dt>animate</dt>
+	<dd><span>boolean</span>animate the move even for a reader who has asked the system for reduced motion. Where the
+	prefers-reduced-motion media query matches, every camera move - a focus, a change of view, a turn to an
+	azimuth or polar angle - otherwise arrives in a single frame, and an auto rotation is not started; the
+	viewer's read only reducedMotion property reports the preference <span>default: false</span>. (optional).</dd>
 </dl>
 
 <h4>view Object</h4>

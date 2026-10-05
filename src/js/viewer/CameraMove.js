@@ -25,6 +25,18 @@ class CameraMove {
 		let animationFunction = null;
 		let rafID = 0;
 
+		// a reader who has asked the system for less motion is taken to the end of a move
+		// in a single frame rather than flown there, unless the caller insists on the
+		// animation, and is not auto rotated at all
+
+		let reducedMotion = false;
+
+		this.setReducedMotion = function ( state ) {
+
+			reducedMotion = !! state;
+
+		};
+
 		function getCardinalAxis ( targetAxis ) {
 
 			cameraManager.activeCamera.getWorldDirection( __v1 );
@@ -193,9 +205,11 @@ class CameraMove {
 
 		};
 
-		this.start = function ( timed ) {
+		this.start = function ( timed, forceAnimation ) {
 
 			if ( running || skipNext ) return;
+
+			if ( reducedMotion && forceAnimation !== true ) timed = false;
 
 			if ( timed ) {
 
@@ -302,7 +316,7 @@ class CameraMove {
 
 		function setAngleCommon ( deltaIn ) {
 
-			frameCount = Math.max( 1, Math.round( Math.abs( deltaIn ) * 90 / Math.PI ) );
+			frameCount = reducedMotion ? 1 : Math.max( 1, Math.round( Math.abs( deltaIn ) * 90 / Math.PI ) );
 			delta = deltaIn / frameCount;
 			running = true;
 
@@ -352,7 +366,7 @@ class CameraMove {
 
 			if ( state ) {
 
-				if ( running ) return;
+				if ( running || reducedMotion ) return;
 
 				controls.autoRotate = true;
 
