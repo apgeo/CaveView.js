@@ -186,6 +186,7 @@
 		"title": "Help",
 		"header_svx": "Key commands (survex)",
 		"header_native": "Key commands (native)",
+		"version": "CaveView %{version}",
 		"shading": {
 			"header": "Shading",
 			"height": "height",

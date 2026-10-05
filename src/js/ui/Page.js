@@ -22,10 +22,10 @@ class Page {
 
 	}
 
-	i18n ( text ) {
+	i18n ( text, interpolation ) {
 
 		const cfg = this.frame.ctx.cfg;
-		const tr = cfg.i18n( this.x18nPrefix + text );
+		const tr = cfg.i18n( this.x18nPrefix + text, interpolation );
 
 		return ( tr === undefined ) ? text : tr;
 

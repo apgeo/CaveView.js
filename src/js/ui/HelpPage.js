@@ -1,4 +1,5 @@
 import { Page } from './Page';
+import { VERSION } from '../core/constants';
 
 class HelpPage extends Page {
 
@@ -146,6 +147,8 @@ class HelpPage extends Page {
 			this.appendChild( dl );
 
 		}
+
+		this.addText( this.i18n( 'version', { version: VERSION } ) );
 
 		function _addKey( key, description ) {
 

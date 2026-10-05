@@ -257,7 +257,8 @@
 		},
 		"title": "Ajutor",
 		"header_svx": "Comenzi taste (survex)",
-		"header_native": "Comenzi taste (native)"
+		"header_native": "Comenzi taste (native)",
+		"version": "CaveView %{version}"
 	},
 	"hud": {
 		"height": "înalțime",
