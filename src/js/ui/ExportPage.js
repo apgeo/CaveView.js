@@ -14,7 +14,9 @@ class ExportPage extends Page {
 		const sizes = [];
 		let mss = viewer.maxSnapshotSize;
 
-		do { sizes.push( mss ); } while ( (mss /= 2) > 512 );
+		sizes.push( mss );
+
+		while ( ( mss /= 2 ) > 512 ) sizes.push( mss );
 
 		const scales = [ 1, 2, 3, 4, 5, 6 ];
 

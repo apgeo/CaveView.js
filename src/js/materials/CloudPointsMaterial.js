@@ -2,17 +2,17 @@ import { Color, PointsMaterial, Vector3 } from '../Three';
 
 class CloudPointsMaterial extends PointsMaterial {
 
-	constructor ( ctx ) {
+	constructor () {
 
 		super();
 
-//		this.map = textureCache.getTexture( 'disc' );
+		// this.map = textureCache.getTexture( 'disc' );
 		this.color = new Color( 0xffffff );
 		this.opacity = 1.0;
 		this.alphaTest = 0.8;
 		this.size = 0.1;
-//		this.sizeAttenuation = false;
-//		this.transparent = true; // to ensure points rendered over lines.
+		// this.sizeAttenuation = false;
+		// this.transparent = true; // to ensure points rendered over lines.
 		this.vertexColors = true;
 
 		this.onBeforeCompile = function ( shader ) {

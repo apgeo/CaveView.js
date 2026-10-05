@@ -48,7 +48,7 @@ class SurveyDataCollector {
 
 				return definition ? definition : null;
 
-			} catch ( e ) {
+			} catch {
 
 				console.warn( 'CRS lookup failed' );
 				return null;
@@ -60,8 +60,8 @@ class SurveyDataCollector {
 		console.log( `looking up CRS code EPSG: ${code}` );
 
 		return fetch( `https://epsg.io/${code}.proj4` )
-		.then( response => response.ok ? response.text() : null )
-		.catch( function () { console.warn( 'CRS lookup failed' ); return null; } );
+			.then( response => response.ok ? response.text() : null )
+			.catch( function () { console.warn( 'CRS lookup failed' ); return null; } );
 
 
 	}
@@ -128,7 +128,7 @@ class SurveyDataCollector {
 						} else {
 
 							const buffer = await fetch( cfg.value( 'surveyDirectory', '' ) + gridfile )
-							.then( response => response.ok ? response.arrayBuffer() : null );
+								.then( response => response.ok ? response.arrayBuffer() : null );
 
 							if ( buffer === null ) {
 

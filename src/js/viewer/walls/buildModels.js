@@ -18,7 +18,7 @@ function buildModels ( surveyData, survey ) {
 	} else {
 
 		console.error( 'point clouds not supported' );
-/*
+		/*
 		const m = new Points( new BufferGeometry(), new CloudPointsMaterial() );
 
 		console.log( 'no indices: assuming point cloud' );

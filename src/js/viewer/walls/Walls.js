@@ -46,7 +46,7 @@ class Walls extends Mesh {
 
 		geometry.clearGroups();
 
-		this.visible = true && this.ready;
+		this.visible = this.ready;
 
 		if ( idSet.length > 0 && indexRuns ) {
 

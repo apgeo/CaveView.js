@@ -483,7 +483,7 @@ class Page {
 
 		let oldSlide = this.slide;
 
-		let redraw; // eslint-disable-line no-unused-vars
+		let redraw;
 
 		newSlide.classList.add( 'slide' );
 		newSlide.style.zIndex = 200 - depth;
@@ -503,7 +503,7 @@ class Page {
 			oldSlide.addEventListener( 'transitionend', afterSlideOut );
 			oldSlide.classList.add( 'slide-out' );
 
-			redraw = oldSlide.clientHeight; /* lgtm[js/unused-local-variable] */ // eslint-disable-line no-unused-vars
+			redraw = oldSlide.clientHeight; /* lgtm[js/unused-local-variable] */
 
 		} else if ( depth < this.slideDepth ) {
 
@@ -563,7 +563,7 @@ class Page {
 
 		const div = document.createElement( 'div' );
 		const input = document.createElement( 'input' );
-		const id = 'cv-' + frame.getSeq();
+		const id = 'cv-' + this.frame.getSeq();
 
 		let value;
 

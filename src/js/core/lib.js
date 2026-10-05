@@ -21,9 +21,9 @@ function hydrateGeometry( bufferGeometry, data ) {
 
 	// assemble BufferGeometry from binary buffer objects transfered from worker
 
-	for ( let attributeName in attributes ) {
+	for ( const attributeName in attributes ) {
 
-		let attribute = attributes[ attributeName ];
+		const attribute = attributes[ attributeName ];
 		bufferGeometry.setAttribute( attributeName, new Float32BufferAttribute( attribute.array.buffer, attribute.itemSize ) );
 
 	}

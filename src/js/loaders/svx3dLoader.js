@@ -354,7 +354,7 @@ class Svx3dLoader extends FileLoader{
 				l.getInt32( 8, true ) / 100
 			);
 
-			const key = String.fromCharCode.apply( null, bytes.subarray( pos, pos + 12 ) );
+			const key = String.fromCharCode.apply( null, data.subarray( pos, pos + 12 ) );
 
 			pos += 12;
 
