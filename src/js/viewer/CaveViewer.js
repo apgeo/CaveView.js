@@ -111,6 +111,24 @@ class CaveViewer extends EventDispatcher {
 		const cameraMove = new CameraMove( controls, onCameraMoved );
 		this.cameraMove = cameraMove;
 
+		// a reader who has asked the system for less motion - the prefers-reduced-motion
+		// media query - is taken to the end of each camera move in one frame rather than
+		// flown there, and is not auto rotated. The query is watched, so a change of the
+		// setting while the viewer is displayed is honoured.
+
+		const motionQuery = ( typeof window.matchMedia === 'function' ) ? window.matchMedia( '(prefers-reduced-motion: reduce)' ) : null;
+
+		if ( motionQuery !== null ) {
+
+			cameraMove.setReducedMotion( motionQuery.matches );
+			motionQuery.addEventListener( 'change', onMotionPreference );
+
+		}
+
+		Object.defineProperty( this, 'reducedMotion', {
+			get() { return motionQuery !== null && motionQuery.matches; }
+		} );
+
 		const moveEndEvent = { type: 'moved', cameraManager: cameraManager };
 		const pointerControls = new PointerControls( ctx, renderer.domElement );
 		const liveMarkers = new LiveMarkers( ctx, renderer.domElement );
@@ -561,6 +579,16 @@ class CaveViewer extends EventDispatcher {
 			renderView();
 
 		} );
+
+		function onMotionPreference ( event ) {
+
+			cameraMove.setReducedMotion( event.matches );
+
+			// a rotation under way is the motion the reader has just asked to be spared
+
+			if ( event.matches && controls.autoRotate ) self.autoRotate = false;
+
+		}
 
 		function onPointerOver () { mouseOver = true; }
 
@@ -1465,6 +1493,7 @@ class CaveViewer extends EventDispatcher {
 
 			const highlight = ( options?.highlight !== false );
 			const popup = options?.popup;
+			const animate = ( options?.animate === true );
 
 			// keepView: centre the station without turning the model, so a reader who has
 			// chosen a view keeps looking from that direction. Off by default, so every
@@ -1497,7 +1526,7 @@ class CaveViewer extends EventDispatcher {
 
 				if ( popup !== undefined ) self.popup = popup ? node : survey.surveyTree;
 
-				cameraMove.start( true );
+				cameraMove.start( true, animate );
 
 			} ).then( () => {
 
@@ -1515,7 +1544,7 @@ class CaveViewer extends EventDispatcher {
 
 		};
 
-		this.focusSurvey = function ( ref ) {
+		this.focusSurvey = function ( ref, options ) {
 
 			if ( survey === null ) return Promise.reject( new Error( 'No survey loaded' ) );
 
@@ -1531,7 +1560,7 @@ class CaveViewer extends EventDispatcher {
 
 				selectSection( node );
 
-				cameraMove.start( true );
+				cameraMove.start( true, options?.animate === true );
 
 			} );
 
@@ -2109,6 +2138,8 @@ class CaveViewer extends EventDispatcher {
 			ctx.workerPools = null;
 			ctx.materials = null;
 			ctx.container = null;
+
+			if ( motionQuery !== null ) motionQuery.removeEventListener( 'change', onMotionPreference );
 
 			window.removeEventListener( 'resize', onResize );
 
