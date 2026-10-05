@@ -359,7 +359,9 @@ while the session was open is carried out now. It does nothing when no session i
 called more than once, and after dispose().</p>
 
 <h4>dispose()</h4>
-<p>Free used memory including GPU and Javascript heap allocations.</p>
+<p>Free used memory including GPU and Javascript heap allocations. Once disposed, a viewer does nothing:
+renderView(), resize(), resetRenderer(), clearView() and a further dispose() return without effect, and
+getSnapshot() throws an Error saying so.</p>
 
 <h3>Properties</h3>
 
