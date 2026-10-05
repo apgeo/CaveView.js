@@ -1,4 +1,4 @@
-import { Box2, Color, Group, Raycaster, Vector2, Vector3 } from '../Three';
+import { Box2, Box3, Color, Group, Raycaster, Vector2, Vector3 } from '../Three';
 import { FEATURE_LIVE_MARKERS } from '../core/constants';
 import { MutableGlyphString } from '../core/GlyphString';
 import { LabelBacking } from '../core/LabelBacking';
@@ -409,6 +409,42 @@ class LiveMarkers {
 			markers.forEach( marker => list.push( describe( marker ) ) );
 
 			return list;
+
+		};
+
+		// the smallest box about the markers now displayed, where they are drawn at this
+		// moment and in the coordinates of the scene, for a camera move to frame them.
+		// null where no marker is displayed: none is resolved, or no model is loaded.
+
+		this.getBounds = function () {
+
+			if ( survey === null ) return null;
+
+			let box = null;
+
+			markers.forEach( marker => {
+
+				const position = currentPosition( marker );
+
+				if ( position === null ) return;
+
+				// copied first: a marker at its station is positioned by the station itself
+
+				const point = survey.getWorldPosition( new Vector3().copy( position ) );
+
+				if ( box === null ) {
+
+					box = new Box3( point.clone(), point.clone() );
+
+				} else {
+
+					box.expandByPoint( point );
+
+				}
+
+			} );
+
+			return box;
 
 		};
 

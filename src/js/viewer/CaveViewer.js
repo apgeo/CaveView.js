@@ -1726,6 +1726,51 @@ class CaveViewer extends EventDispatcher {
 
 		};
 
+		// move the camera to take in every marker now displayed - a party spread through
+		// the model, or the one place they are all standing - as focusSurvey() takes in a
+		// section: from the nearest cardinal direction, and animated unless the reader
+		// prefers otherwise. Returns false and leaves the camera as it is when no marker is
+		// displayed, so a host can call it on every update without asking first; otherwise
+		// true, and the end of the move is signalled by the 'moved' event like any other.
+
+		this.frameLiveMarkers = function ( options = {} ) {
+
+			if ( survey === null || capture !== null ) return false;
+
+			const margin = options.margin ?? 0.05;
+
+			if ( typeof margin !== 'number' || ! ( margin >= 0 ) ) {
+
+				throw new Error( 'the margin about the markers is a fraction of the model\'s extent of at least 0' );
+
+			}
+
+			const box = liveMarkers.getBounds();
+
+			if ( box === null ) return false;
+
+			// a single marker, or markers standing together, give a box with no size, and
+			// markers at the edge of their box would be at the edge of the view: the box is
+			// grown by a fraction of the model's extent on every side
+
+			const extent = survey.getWorldBoundingBox().getSize( __v );
+
+			box.expandByScalar( margin * Math.max( extent.x, extent.y, extent.z ) );
+
+			// as a focus call does: a move in flight, and a focus call waiting on it, give way
+
+			settlePendingMove( new Error( 'superseded' ) );
+
+			if ( self.autoRotate ) self.autoRotate = false;
+
+			cameraMove.cancel();
+			cameraMove.prepare( box );
+			cameraMove.start( true, options.animate === true );
+
+			return true;
+
+		};
+
 		// the way somebody went, over the loaded model: an ordered list of station
 		// references drawn as the route the survey joins them by, rather than as straight
 		// lines between them. Like the markers above, a trail is the application's and is

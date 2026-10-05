@@ -215,6 +215,27 @@ An identifier naming no marker returns null.</p>
 <h4>clearLiveMarkerReveal()</h4>
 <p>Take off whatever revealLiveMarker() revealed, or whatever the pointer is revealing.</p>
 
+<h4>frameLiveMarkers( &lt;options&gt; )</h4>
+<p>Move the camera to take in every marker that is displayed - a party spread through the model, or the
+one place they are all standing - as focusSurvey() takes in a section: from the nearest cardinal direction,
+and animated unless the reader has asked the system for reduced motion. A margin, a fraction of the
+model's extent, is kept on every side, so the markers are not pressed against the edge of the view and a
+single marker has a box to fit. The markers are framed where they are drawn at that moment, part of the
+way through a move included.</p>
+<p>Returns false, and leaves the camera where it is, when no marker is displayed - every marker is
+unresolved, or no model is loaded - so it may be called on every update without asking first. Otherwise
+returns true, and the end of the move is signalled by the moved event, as for every move. It cannot be
+called while a capture session is open, and returns false then.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>options</dt><dd><span>Object</span>An object with the properties below (optional).</dd>
+</dl>
+<h5>options properties</h5>
+<dl>
+	<dt>margin</dt><dd><span>number</span>The margin kept about the markers, as a fraction of the model's extent <span>default: 0.05</span>. (optional).</dd>
+	<dt>animate</dt><dd><span>boolean</span>Animate the move even for a reader who has asked for reduced motion, as the focusStation() option does <span>default: false</span>. (optional).</dd>
+</dl>
+
 <h4>addTrail( &lt;id&gt;, &lt;references&gt;, &lt;options&gt; )</h4>
 <p>Draw the way somebody went: an ordered list of station references, drawn as the route the cave legs
 join them by rather than as straight lines between them. Two stations forty metres apart in space can be
