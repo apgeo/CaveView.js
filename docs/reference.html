@@ -88,7 +88,8 @@ stationLabelOver view setting, as the station name label does - and when a stati
 focusStation() with the popup option set to true. The strip is HTML placed over the model rather than
 drawn into it as the popups are, as an image cannot be drawn into a popup.</p>
 <p>Only the URLs of the images are held. They are fetched by the browser as any other image of the page
-is, and with the same credentials.</p>
+is, and with the same credentials. A thumbnail whose image fails to load is taken out of the strip, and
+the strip is closed when none is left; the failure is reported by the mediaError event.</p>
 <p>The strip follows the station as the view is moved, and is displayed only while the station itself is
 in view: moving the view off the station takes the strip off the screen with it, and moving the station
 back into view brings it back. It is removed altogether when the pointer leaves the station, when
@@ -140,6 +141,18 @@ station select event is.</p>
 	<dt>station</dt><dd><span>Object</span>A Station object for the station the strip is displayed for.</dd>
 	<dt>entry</dt><dd><span>Object</span>The media entry Object of the thumbnail clicked.</dd>
 	<dt>handled</dt><dd><span>boolean</span>Set to true by a listener to suppress the built in image popup <span>default: false</span>.</dd>
+</dl>
+
+<h4>mediaError</h4>
+<p>Dispatched when the image of a thumbnail displayed by setStationMedia() fails to load, as the thumbnail
+is taken out of the strip. A listener that reports the failure itself sets the handled property of the
+event; a warning naming the URL is otherwise written to the console.</p>
+<h5>Properties</h5>
+<dl>
+	<dt>station</dt><dd><span>Object</span>A Station object for the station the strip is displayed for.</dd>
+	<dt>entry</dt><dd><span>Object</span>The media entry Object of the thumbnail.</dd>
+	<dt>url</dt><dd><span>string</span>The URL that failed to load, as the entry gave it.</dd>
+	<dt>handled</dt><dd><span>boolean</span>Set to true by a listener to suppress the console warning <span>default: false</span>.</dd>
 </dl>
 
 <h2>CaveViewUI Object</h2>

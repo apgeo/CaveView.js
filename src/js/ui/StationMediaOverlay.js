@@ -212,6 +212,10 @@ class StationMediaOverlay {
 
 				thumbnail.mediaIndex = index;
 
+				// an image that cannot be fetched has nothing to display - see onThumbnailError()
+
+				thumbnail.addEventListener( 'error', onThumbnailError, { once: true } );
+
 				item.appendChild( thumbnail );
 
 				if ( entry.caption !== undefined ) {
@@ -301,6 +305,54 @@ class StationMediaOverlay {
 			pointerOver = false;
 
 			if ( hoverEnded ) hide();
+
+		}
+
+		// a thumbnail whose image failed to load - a URL that no longer resolves, a server
+		// answering 404 - would otherwise stay in the strip as a broken image, and a strip
+		// of nothing but broken images would stay open over the model. The thumbnail is
+		// taken out, the strip measured and placed again for what is left, and closed when
+		// nothing is. The application is told by a mediaError event, and on the console
+		// where no listener handles the event.
+
+		function onThumbnailError ( event ) {
+
+			const thumbnail = event.target;
+			const item = thumbnail.parentNode;
+
+			// the strip may have been built again, for another station, since the image
+			// was asked for
+
+			if ( item === null || ! strip.contains( item ) || station === null ) return;
+
+			const entry = entries[ thumbnail.mediaIndex ];
+			const url = entry.thumbnailUrl ?? entry.url;
+
+			const mediaEvent = {
+				type: 'mediaError',
+				station: station,
+				entry: entry,
+				url: url,
+				handled: false
+			};
+
+			viewer.dispatchEvent( mediaEvent );
+
+			if ( ! mediaEvent.handled ) console.warn( `CaveView: station media failed to load: ${url}` );
+
+			item.remove();
+
+			if ( strip.childElementCount === 0 ) {
+
+				hide();
+				return;
+
+			}
+
+			stripWidth = strip.offsetWidth;
+			stripHeight = strip.offsetHeight;
+
+			place();
 
 		}
 
