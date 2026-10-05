@@ -8,7 +8,7 @@
     "graph": "rollup -c rollup.graph.mjs | dot -Tpdf > graph.pdf",
     "build-babel": "rollup -c rollup-babel.config.mjs",
     "lint": "eslint src",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node test/smoke.mjs"
   },
   "repository": {
     "type": "git",
