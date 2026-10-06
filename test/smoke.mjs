@@ -9,7 +9,7 @@
 // motion, reads English and is allowed fullscreen. The second prefers reduced motion, reads
 // Romanian from a catalogue that arrives late, and is refused fullscreen - which is where
 // the behaviours a preference, a slow network and a refusal bring out are asserted, and
-// where the viewer is disposed while it is still loading.
+// where the viewer is disposed while it is still loading and while it is covering the page.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -73,7 +73,9 @@ const types = {
 // than inside it, and that element is the one put into fullscreen. Below it are the host's
 // own controls: the fields a key belongs to, and a chooser and a tick box that take no text.
 // The class the viewer sets on the fullscreen element covers the page, as a host's stylesheet
-// has it do for a browser that refuses fullscreen.
+// has it do for a browser that refuses fullscreen. One button of the host's stays above
+// whatever is covering the page: a press on it runs what the test last gave it to run, as
+// something the reader did - which is what the browser asks before it grants fullscreen.
 
 const pageHtml = `<!doctype html>
 <html><head><meta charset="utf-8">
@@ -86,6 +88,7 @@ const pageHtml = `<!doctype html>
 	#wrap.toggle-fullscreen { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 100; }
 	#host { margin-top: 8px; }
 	#editable { display: inline-block; min-width: 80px; background: #fff; }
+	#hostact { position: fixed; right: 0; bottom: 0; z-index: 1000; }
 </style>
 </head>
 <body>
@@ -97,6 +100,7 @@ const pageHtml = `<!doctype html>
 <select id="chooser"><option>a</option><option>b</option></select>
 <input id="tick" type="checkbox">
 <button id="hostfs" type="button" onclick="document.documentElement.requestFullscreen()">host fullscreen</button>
+<button id="hostact" type="button" onclick="smoke.act()">host action</button>
 </div>
 <script src="/CaveView/js/CaveView2.min.js"></script>
 </body></html>`;
@@ -196,11 +200,16 @@ function instrument () {
 
 	Object.defineProperty( navigator, 'onLine', { get: () => false } );
 
-	const smoke = { rejections: 0, keys: [] };
+	const smoke = { rejections: 0, keys: [], fullscreenChanges: 0, act: () => {} };
 
 	window.smoke = smoke;
 
 	window.addEventListener( 'unhandledrejection', () => { smoke.rejections++; } );
+
+	// a fullscreen that is granted and left again at once is over before the test could
+	// look: the changes are counted as the document hears of them
+
+	document.addEventListener( 'fullscreenchange', () => { smoke.fullscreenChanges++; } );
 
 	// the viewer listens on the document, which a key reaches before it reaches the window
 
@@ -405,6 +414,60 @@ function clearOfPanel ( page ) {
 
 }
 
+// the middle of a control of the side panel that is displayed with nothing over it: the one
+// on the page already open if there is one, and otherwise each tab is opened in turn until
+// one displays it
+
+async function panelControl ( page, selector ) {
+
+	const find = () => page.evaluate( selector => {
+
+		for ( const control of document.querySelectorAll( selector ) ) {
+
+			const rect = control.getBoundingClientRect();
+
+			if ( rect.width === 0 || rect.height === 0 ) continue;
+
+			const centre = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+
+			if ( document.elementFromPoint( centre.x, centre.y ) === control ) return centre;
+
+		}
+
+		return null;
+
+	}, selector );
+
+	let centre = await find();
+
+	const tabs = page.locator( '.cv-tab-box > *' );
+	const tabCount = await tabs.count();
+
+	for ( let i = 0; i < tabCount && centre === null; i++ ) {
+
+		const tabBox = await tabs.nth( i ).boundingBox();
+
+		if ( tabBox === null ) continue;
+
+		await page.mouse.click( tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2 );
+		await page.waitForTimeout( 700 );
+
+		centre = await find();
+
+	}
+
+	return centre;
+
+}
+
+// the fullscreen changes the document has heard of, and a wait for it to have heard of a
+// number more - which gives up quietly, so that what failed to happen is asserted rather
+// than thrown
+
+const fullscreenChanges = page => page.evaluate( () => smoke.fullscreenChanges );
+
+const fullscreenChangesFrom = ( page, count, more ) => page.waitForFunction( target => smoke.fullscreenChanges >= target, count + more, { timeout: 8000 } ).catch( () => {} );
+
 const fullscreenState = page => page.evaluate( () => {
 
 	const wrap = document.getElementById( 'wrap' );
@@ -492,6 +555,28 @@ try {
 	check( 'addLiveMarker() / moveLiveMarker() / removeLiveMarker() round-trip', markers.added && markers.listed === 1 && markers.moved && markers.removed === true && markers.left === 0 );
 	check( 'frameLiveMarkers() returns true with a marker placed and the camera moves', markers.framed === true && markers.arrived, `target moved ${markers.targetMoved.toFixed( 1 )} units` );
 	check( 'frameLiveMarkers() signals its end also when the camera already takes the markers in', markers.framedAgain === true && markers.arrivedAgain );
+
+	// a framing that has no move to make owes its signal as it returns, and the host goes
+	// straight on to fly somewhere else: the signal owed is given first, and is not taken
+	// for the end of the flight
+
+	const overtaken = await page.evaluate( async ( { far, leg } ) => {
+
+		viewer.addLiveMarker( 'smoke', far, { label: 'smoke' } );
+		viewer.frameLiveMarkers();
+
+		await smoke.heard( viewer, 'moved', 30000 );
+
+		const framed = viewer.frameLiveMarkers();
+		const flight = await smoke.focus( viewer, leg.start );
+
+		viewer.removeLiveMarker( 'smoke' );
+
+		return { framed, flight };
+
+	}, loaded );
+
+	check( 'a focus started in the turn of a framing is flown, with the framing\'s signal given before it', overtaken.framed === true && overtaken.flight.ok && overtaken.flight.frames > 1 && overtaken.flight.moves === 2, `${overtaken.flight.frames} frames, ${overtaken.flight.moves} moved` );
 
 	// a trail along two connected stations
 
@@ -642,50 +727,35 @@ try {
 
 	check( 'a key pressed over the model after the toolbar\'s chooser was used drives the viewer', chosen.shading === chosen.survey && afterChooser.active.startsWith( 'SELECT' ) && afterChooser.ownToolbar && afterChooser.mouseOver === true && afterChooser.shading === afterChooser.length, `focus on ${afterChooser.active}` );
 
-	// and the same after a setting of the side panel: each tab is opened in turn until one
-	// displays a tick box, which is pressed twice so that the setting is left as it was
+	// the keys the chooser is stepped with are still its own: the focus on it and the
+	// pointer on the model, an arrow moves it to its next entry, and the viewer follows
 
-	let ticked = false;
+	const stepKey = await page.evaluate( () => {
 
-	const tabs = page.locator( '.cv-tab-box > *' );
-	const tabCount = await tabs.count();
+		const select = document.querySelector( '.cv-toolbar select' );
 
-	for ( let i = 0; i < tabCount && ! ticked; i++ ) {
+		smoke.keys.length = 0;
 
-		const tabBox = await tabs.nth( i ).boundingBox();
+		return ( select.selectedIndex < select.options.length - 1 ) ? 'ArrowDown' : 'ArrowUp';
 
-		if ( tabBox === null ) continue;
+	} );
 
-		await page.mouse.click( tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2 );
-		await page.waitForTimeout( 700 );
+	await page.keyboard.press( stepKey );
 
-		const boxes = page.locator( '#scene input[type=checkbox]' );
-		const boxCount = await boxes.count();
+	const stepped = await page.evaluate( () => ( { chosen: Number( document.querySelector( '.cv-toolbar select' ).value ), shading: viewer.shadingMode, keys: smoke.keys.slice() } ) );
 
-		for ( let j = 0; j < boxCount && ! ticked; j++ ) {
+	check( 'an arrow key pressed then is left to the chooser, which moves to its next entry', stepped.keys.length === 1 && stepped.keys[ 0 ].cancelled === false && stepped.chosen !== afterChooser.length && stepped.shading === stepped.chosen, `${stepKey} cancelled: ${stepped.keys.length === 1 && stepped.keys[ 0 ].cancelled}` );
 
-			const box = await boxes.nth( j ).boundingBox();
+	// and the same after a setting of the side panel: a tick box, which is pressed twice
+	// so that the setting is left as it was
 
-			if ( box === null || box.width === 0 ) continue;
+	const tickBox = await panelControl( page, '#scene input[type=checkbox]' );
+	const ticked = ( tickBox !== null );
 
-			const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	if ( ticked ) {
 
-			const onTop = await page.evaluate( ( { x, y } ) => {
-
-				const element = document.elementFromPoint( x, y );
-
-				return element !== null && element.tagName === 'INPUT' && element.type === 'checkbox';
-
-			}, centre );
-
-			if ( ! onTop ) continue;
-
-			await page.mouse.click( centre.x, centre.y );
-			await page.mouse.click( centre.x, centre.y );
-
-			ticked = true;
-
-		}
+		await page.mouse.click( tickBox.x, tickBox.y );
+		await page.mouse.click( tickBox.x, tickBox.y );
 
 	}
 
@@ -696,6 +766,46 @@ try {
 	const afterTick = await keyState();
 
 	check( 'a key pressed over the model after a tick box of the side panel was used drives the viewer', ticked && afterTick.active === 'INPUT:checkbox' && afterTick.inContainer && afterTick.mouseOver === true && afterTick.shading === afterTick.length, `focus on ${afterTick.active}` );
+
+	// a slider of the side panel, pressed and with the pointer left on it, is moved along
+	// its range by an arrow. Whichever setting it is, is put back afterwards.
+
+	const settings = await page.evaluate( () => ( { zScale: viewer.zScale, linewidth: viewer.linewidth, autoRotateSpeed: viewer.autoRotateSpeed } ) );
+	const slider = await panelControl( page, '#scene input[type=range]' );
+
+	let slid = { found: false, active: '', inContainer: false, mouseOver: false, from: 0, to: 0, keys: [] };
+
+	if ( slider !== null ) {
+
+		await page.mouse.click( slider.x, slider.y );
+
+		const from = await page.evaluate( () => { smoke.keys.length = 0; return Number( document.activeElement.value ); } );
+
+		await page.keyboard.press( 'ArrowRight' );
+
+		slid = await page.evaluate( ( { from, settings } ) => {
+
+			const active = document.activeElement;
+
+			const result = {
+				found: true,
+				active: active.tagName + ':' + active.type,
+				inContainer: viewer.container.contains( active ),
+				mouseOver: viewer.mouseOver,
+				from,
+				to: Number( active.value ),
+				keys: smoke.keys.slice()
+			};
+
+			Object.assign( viewer, settings );
+
+			return result;
+
+		}, { from, settings } );
+
+	}
+
+	check( 'an arrow key pressed on a slider of the side panel is left to it, and moves it', slid.found && slid.active === 'INPUT:range' && slid.inContainer && slid.mouseOver === true && slid.keys.length === 1 && slid.keys[ 0 ].cancelled === false && slid.to > slid.from, `from ${slid.from} to ${slid.to}` );
 
 	await page.evaluate( () => { document.activeElement.blur(); } );
 
@@ -745,12 +855,92 @@ try {
 
 	} );
 
-	await page.evaluate( () => document.exitFullscreen() );
+	await page.evaluate( () => document.exitFullscreen() ).catch( () => {} );
 	await page.waitForFunction( () => document.fullscreenElement === null, null, { timeout: 15000 } ).catch( () => {} );
 
 	check( 'a request made while another element is in fullscreen leaves the page as it is', hostFullscreen.before && ! hostFullscreen.marked && hostFullscreen.state === false );
 
-	// dispose, and the calls a host may still make afterwards
+	// refused once - as a request made with no press behind it is - the class is all there
+	// is; the host then obtains fullscreen for the element itself, and from there on it is
+	// the document that says whether the viewer is fullscreen
+
+	const refusedOnce = await page.evaluate( async () => {
+
+		const wrap = document.getElementById( 'wrap' );
+
+		wrap.requestFullscreen = () => Promise.reject( new TypeError( 'refused' ) );
+
+		viewer.fullscreen = true;
+
+		await smoke.sleep( 200 );
+
+		delete wrap.requestFullscreen;
+
+		smoke.act = () => { wrap.requestFullscreen(); };
+
+		return { marked: wrap.classList.contains( 'toggle-fullscreen' ), state: viewer.fullscreen, anything: document.fullscreenElement !== null };
+
+	} );
+
+	await press( page, '#hostact' );
+	await page.waitForFunction( () => document.fullscreenElement !== null, null, { timeout: 15000 } ).catch( () => {} );
+
+	const takenOver = await fullscreenState( page );
+
+	await page.evaluate( () => document.exitFullscreen() ).catch( () => {} );
+	await page.waitForFunction( () => document.fullscreenElement === null, null, { timeout: 15000 } ).catch( () => {} );
+	await page.waitForTimeout( 300 );
+
+	const takenOverLeft = await fullscreenState( page );
+
+	check( 'a fullscreen the host obtains after the viewer was refused takes over from the class, and leaving it leaves nothing', refusedOnce.marked && refusedOnce.state === true && ! refusedOnce.anything && takenOver.element && takenOver.state === true && ! takenOverLeft.anything && ! takenOverLeft.marked && takenOverLeft.state === false && takenOverLeft.pressed === 'false', `refused: marked ${refusedOnce.marked}; granted: ${takenOver.element}; left: marked ${takenOverLeft.marked}, fullscreen ${takenOverLeft.state}` );
+
+	// a request taken back in the turn that made it, before the browser can have answered:
+	// the class goes at once, and the fullscreen the browser grants all the same is left
+
+	let changes = await fullscreenChanges( page );
+
+	await page.evaluate( () => { smoke.act = () => { viewer.fullscreen = true; viewer.fullscreen = false; }; } );
+	await press( page, '#hostact' );
+	await fullscreenChangesFrom( page, changes, 2 );
+	await page.waitForTimeout( 300 );
+
+	const takenBack = await fullscreenState( page );
+
+	check( 'a request taken back before the browser answered leaves no class, and the fullscreen granted to it is left again', ! takenBack.anything && ! takenBack.marked && takenBack.state === false && takenBack.pressed === 'false', `in fullscreen: ${takenBack.anything}, marked ${takenBack.marked}, fullscreen ${takenBack.state}` );
+
+	if ( takenBack.anything ) {
+
+		// left for the steps that follow, where the viewer did not leave it
+
+		await page.evaluate( () => document.exitFullscreen() ).catch( () => {} );
+		await page.waitForFunction( () => document.fullscreenElement === null, null, { timeout: 15000 } ).catch( () => {} );
+		await page.evaluate( () => { viewer.fullscreen = false; } );
+
+	}
+
+	// and a viewer disposed in the turn of its request: nothing is left covering the page,
+	// and nothing is left in a fullscreen there is no viewer to leave
+
+	changes = await fullscreenChanges( page );
+
+	await page.evaluate( () => { smoke.act = () => { viewer.fullscreen = true; viewer.dispose(); }; } );
+	await press( page, '#hostact' );
+	await fullscreenChangesFrom( page, changes, 2 );
+	await page.waitForTimeout( 300 );
+
+	const disposedAsking = await page.evaluate( () => ( { anything: document.fullscreenElement !== null, marked: document.getElementById( 'wrap' ).classList.contains( 'toggle-fullscreen' ) } ) );
+
+	check( 'a viewer disposed before the browser answered its request leaves no class and no fullscreen', ! disposedAsking.anything && ! disposedAsking.marked, `in fullscreen: ${disposedAsking.anything}, marked ${disposedAsking.marked}` );
+
+	if ( disposedAsking.anything ) {
+
+		await page.evaluate( () => document.exitFullscreen() ).catch( () => {} );
+		await page.waitForFunction( () => document.fullscreenElement === null, null, { timeout: 15000 } ).catch( () => {} );
+
+	}
+
+	// the calls a host may still make of a viewer that has been disposed
 
 	const disposed = await page.evaluate( () => {
 
@@ -933,13 +1123,48 @@ try {
 
 	check( 'where the browser refuses fullscreen the button covers the page with the class, says so, and uncovers it again', refusedBefore.enabled === false && ! refusedOn.anything && refusedOn.marked && refusedOn.covering && refusedOn.state === true && refusedOn.pressed === 'true' && ! refusedOff.marked && ! refusedOff.covering && refusedOff.state === false && refusedOff.pressed === 'false' && refusedOff.rejections === refusedBefore.rejections, `after one press: marked ${refusedOn.marked}, fullscreen ${refusedOn.state}; after two: marked ${refusedOff.marked}; unhandled rejections: ${refusedOff.rejections - refusedBefore.rejections}` );
 
-	// a disposed viewer, and a change of language made by the next one on the page
+	// the same request taken back in the turn that made it: the refusal has not arrived,
+	// and the class has to go all the same
+
+	const flipped = await page2.evaluate( async () => {
+
+		viewer.fullscreen = true;
+		viewer.fullscreen = false;
+
+		await smoke.sleep( 500 );
+
+	} ).then( () => fullscreenState( page2 ) );
+
+	check( 'where it will be refused, a request taken back before the refusal arrives leaves no class', ! flipped.marked && flipped.state === false && flipped.pressed === 'false' && flipped.rejections === refusedBefore.rejections, `marked ${flipped.marked}, fullscreen ${flipped.state}` );
+
+	if ( flipped.marked ) await page2.evaluate( () => { viewer.fullscreen = false; } );
+
+	// covering the page by its class, the viewer is disposed: the class goes with it
+
+	await press( page2, '.cv-toolbar-fullscreen' );
+	await page2.waitForTimeout( 500 );
+
+	const coveringThenDisposed = await fullscreenState( page2 );
+
+	const uncovered = await page2.evaluate( () => {
+
+		ui.dispose();
+
+		return ! document.getElementById( 'wrap' ).classList.contains( 'toggle-fullscreen' );
+
+	} );
+
+	check( 'dispose() takes off the class that was covering the page for a viewer refused fullscreen', coveringThenDisposed.marked && coveringThenDisposed.state === true && uncovered, `marked before: ${coveringThenDisposed.marked}, after: ${! uncovered}` );
+
+	// that disposed viewer, and a change of language made by the next one on the page
 
 	const errorsBefore = seen2.pageErrors.length;
 
 	await page2.evaluate( async () => {
 
-		ui.dispose();
+		// what follows needs the page uncovered, whether or not the viewer saw to it
+
+		document.getElementById( 'wrap' ).classList.remove( 'toggle-fullscreen' );
 
 		window.smoke.lookups = 0;
 		window.smoke.disposedInLookup = false;
@@ -1021,9 +1246,26 @@ try {
 
 	check( 'a load that completes after dispose() ends silently: no alert, no rejection, no model', lookedUp.renamed && lookedUp.lookups === 1 && lookedUp.disposed && lookedUp.caves === 0 && lookupDialogs === 0 && lookedUp.rejections === rejectionsBefore && seen2.pageErrors.length === errorsBeforeLoads, `dialogs: ${lookupDialogs}, unhandled rejections: ${lookedUp.rejections - rejectionsBefore}` );
 
-	// disposed before its survey has been fetched at all
+	// disposed before its survey has been fetched at all. The survey is held back for a
+	// moment on its way, so that the request is still open when the viewer is disposed:
+	// it is aborted then, where it would otherwise be left to complete for nobody.
 
 	const dialogsBeforeAbort = seen2.dialogs.length;
+
+	const surveyRequests = { asked: 0, completed: 0 };
+	const isSurvey = url => new URL( url ).pathname === '/surveys/' + SURVEY;
+	const onRequestFinished = request => { if ( isSurvey( request.url() ) ) surveyRequests.completed++; };
+
+	page2.on( 'requestfinished', onRequestFinished );
+
+	await page2.route( url => isSurvey( url.href ), async route => {
+
+		surveyRequests.asked++;
+
+		await new Promise( resolve => setTimeout( resolve, 500 ) );
+		await route.continue().catch( () => {} );
+
+	} );
 
 	const aborted = await page2.evaluate( async ( { survey } ) => {
 
@@ -1046,6 +1288,82 @@ try {
 	const abortDialogs = seen2.dialogs.length - dialogsBeforeAbort;
 
 	check( 'a load given up by dispose() before the survey was fetched ends silently too', aborted.caves === 0 && abortDialogs === 0 && aborted.rejections === rejectionsBefore && seen2.pageErrors.length === errorsBeforeLoads, `dialogs: ${abortDialogs}, unhandled rejections: ${aborted.rejections - rejectionsBefore}` );
+
+	page2.off( 'requestfinished', onRequestFinished );
+
+	await page2.unroute( url => isSurvey( url.href ) ).catch( () => {} );
+
+	check( 'and its request for the survey is aborted rather than left to complete', surveyRequests.asked <= 1 && surveyRequests.completed === 0, `asked: ${surveyRequests.asked}, completed: ${surveyRequests.completed}` );
+
+	// a toolbar the host keeps beside the viewer, whose own container is what goes
+	// fullscreen: refused, the container covers the page by its class and would cover the
+	// bar with it, so the bar is taken into the container for as long as that lasts
+
+	await page2.evaluate( () => {
+
+		window.viewer = new CV2.CaveViewer( 'scene', { home: '/CaveView/', surveyDirectory: '/surveys/', language: 'en' } );
+		window.toolbar = new CV2.CaveViewToolbar( window.viewer, 'bar', { buttons: [ 'fullscreen' ] } );
+
+	} );
+
+	const besideState = () => page2.evaluate( () => {
+
+		const scene = document.getElementById( 'scene' );
+		const button = document.querySelector( '.cv-toolbar-fullscreen' );
+		const rect = button.getBoundingClientRect();
+		const top = document.elementFromPoint( rect.left + rect.width / 2, rect.top + rect.height / 2 );
+
+		return {
+			marked: scene.classList.contains( 'toggle-fullscreen' ),
+			covering: Math.round( scene.getBoundingClientRect().width ) === window.innerWidth,
+			state: viewer.fullscreen,
+			pressed: button.getAttribute( 'aria-pressed' ),
+			inContainer: scene.contains( button ),
+			inBar: document.getElementById( 'bar' ).contains( button ),
+			reachable: top !== null && button.contains( top )
+		};
+
+	} );
+
+	const besideBefore = await besideState();
+
+	await press( page2, '.cv-toolbar-fullscreen' );
+	await page2.waitForTimeout( 500 );
+
+	const besideOn = await besideState();
+
+	// pressed where the button now is - or, under the container, where it no longer is
+
+	await press( page2, '.cv-toolbar-fullscreen' );
+	await page2.waitForTimeout( 500 );
+
+	const besideOff = await besideState();
+
+	check( 'a toolbar beside a container that covers the page by its class is taken into it, and its button uncovers the page', besideBefore.inBar && ! besideBefore.inContainer && besideOn.marked && besideOn.covering && besideOn.state === true && besideOn.pressed === 'true' && besideOn.inContainer && besideOn.reachable && ! besideOff.marked && ! besideOff.covering && besideOff.state === false && besideOff.pressed === 'false' && besideOff.inBar && ! besideOff.inContainer, `covering: bar in the container ${besideOn.inContainer}, button reachable ${besideOn.reachable}; after the second press: marked ${besideOff.marked}` );
+
+	// and that viewer disposed in the turn of a request the browser is about to refuse
+
+	const disposedRefused = await page2.evaluate( async () => {
+
+		const scene = document.getElementById( 'scene' );
+
+		scene.classList.remove( 'toggle-fullscreen' );
+
+		if ( viewer.fullscreen ) viewer.fullscreen = false;
+
+		viewer.fullscreen = true;
+
+		const marked = scene.classList.contains( 'toggle-fullscreen' );
+
+		viewer.dispose();
+
+		await smoke.sleep( 500 );
+
+		return { marked, left: scene.classList.contains( 'toggle-fullscreen' ), rejections: smoke.rejections };
+
+	} );
+
+	check( 'a viewer disposed before the refusal of its request arrives leaves no class', disposedRefused.marked && ! disposedRefused.left && disposedRefused.rejections === rejectionsBefore, `marked at the request: ${disposedRefused.marked}, after the dispose: ${disposedRefused.left}` );
 
 	const rejections2 = await page2.evaluate( () => smoke.rejections );
 
@@ -1073,11 +1391,11 @@ const consoleErrors = seenByPage.flatMap( each => each.consoleErrors );
 const resourceErrors = consoleErrors.filter( e => /Failed to load resource/.test( e ) ).length;
 const refusalReports = consoleErrors.filter( e => /Permissions policy violation: fullscreen/.test( e ) ).length;
 
-// what the console held besides the two errors the test brings about itself, so that one
+// what the console held besides the errors the test brings about itself, so that one
 // nobody expected is read rather than counted
 
 consoleErrors.filter( e => ! /Failed to load resource|Permissions policy violation: fullscreen/.test( e ) ).forEach( e => console.log( `# console error: ${e.slice( 0, 200 )}` ) );
 
-console.log( `# ${passed + failed} assertions, ${passed} passed, ${failed} failed, in ${elapsed} s (console errors: ${consoleErrors.length}, of which ${resourceErrors} from the missing image asked for and ${refusalReports} the browser's own report of the fullscreen it refused)` );
+console.log( `# ${passed + failed} assertions, ${passed} passed, ${failed} failed, in ${elapsed} s (console errors: ${consoleErrors.length}, of which ${resourceErrors} from the missing image asked for and ${refusalReports} the browser's own reports of a fullscreen it refused)` );
 
 process.exit( failed === 0 ? 0 : 1 );

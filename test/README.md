@@ -21,6 +21,9 @@ allowed fullscreen. It asserts that:
   several animation frames, and signals one `moved` event;
 - a live marker can be added, moved, framed and removed, and `frameLiveMarkers()` signals
   its end again when called with the camera already where it left it;
+- a `focusStation()` started in the same turn as such a framing is flown over several
+  frames, and hears two `moved` events: the framing's, given before the flight begins,
+  and its own;
 - a trail along two connected stations has a length;
 - a station media image which 404s is reported by `mediaError` and its thumbnail removed;
 - a capture returns a frame of the requested size;
@@ -29,10 +32,20 @@ allowed fullscreen. It asserts that:
   viewer, and a key pressed in a chooser or a tick box of the host page is not cancelled;
 - a key drives the viewer again after the toolbar's shading chooser was used with the
   mouse, and after a tick box of the side panel was, the focus still being on each;
+- an arrow key is not cancelled and steps the control it is pressed in: the toolbar's
+  chooser with the pointer back on the model, and a slider of the side panel with the
+  pointer left on it;
 - the toolbar's rotate button starts and stops an auto rotation and shows which;
 - the `fullscreenElement` option is reported by the getter, the toolbar's button puts that
   element into fullscreen and takes it out again, and a request made while another
   element is in fullscreen leaves the page as it is;
+- after a request that was refused (the element's `requestFullscreen` made to reject,
+  once), a fullscreen the host obtains for the element takes over from the class, and
+  leaving it leaves no class and `fullscreen` false;
+- `fullscreen` set to true and to false in one turn, by a press, leaves no class, and the
+  fullscreen the browser grants to the request is left again;
+- a viewer disposed in the turn of its request, by a press, leaves no class and no
+  fullscreen;
 - `renderView()` and the other entry points do not throw after `dispose()`, and
   `getSnapshot()` throws an Error saying the viewer was disposed.
 
@@ -54,12 +67,21 @@ to (a `Permissions-Policy` header). It asserts that:
 - where fullscreen is refused, one press of the toolbar's button sets the class on the
   fullscreen element, `fullscreen` reads true and the button shows pressed; a second
   press takes the class off; and no rejection is left unhandled;
+- there, `fullscreen` set to true and to false in one turn leaves no class, and a viewer
+  disposed while its class is covering the page takes the class off;
 - a viewer that was disposed raises no error when the next viewer on the page changes
   the language;
 - a viewer disposed while its survey's coordinate system is being looked up (a
   `crsLookup` that answers after the dispose, for `docs/surveys/P8_Master.3d` renamed to
   a system the viewer has to ask about), and one disposed before its survey was fetched,
-  both end with no alert, no unhandled rejection, no uncaught error and no `newCave`.
+  both end with no alert, no unhandled rejection, no uncaught error and no `newCave`;
+- the request for the survey of the second of those, held back on its way so that it is
+  open at the dispose, is aborted and never completes;
+- a toolbar built beside a viewer whose own container is the fullscreen element is taken
+  into the container when a refused request leaves it covering the page, its button can
+  be pressed there and uncovers the page, and the bar is then back where it was;
+- that viewer, disposed in the turn of a request the browser goes on to refuse, leaves
+  no class.
 
 The last assertion is that neither page raised an uncaught error, left a rejection
 unhandled or opened a dialog.
@@ -86,7 +108,7 @@ well under a minute on a machine with no GPU.
 
 The output is one line per assertion (`ok` or `FAIL`), then a summary line with the counts
 and the time taken. The summary counts the errors the browser's console held: the test
-brings two about itself - the image that is not there, and the browser's own report of
-the fullscreen it refused - and any other is printed on a line of its own above the
+brings two kinds about itself - the image that is not there, and the browser's own report
+of each fullscreen it refused - and any other is printed on a line of its own above the
 summary. The exit code is 0 when every assertion passed, 1 when any failed, and 2 when
 the test could not run at all (no bundle, no catalogue, or no Playwright).
