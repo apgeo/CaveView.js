@@ -1,6 +1,7 @@
 // A file of a source is named by a File, or by an object: { name } for a file fetched by
 // name, { file } for a File. The object may also carry a label, which gives the file a
-// survey of its own in the survey tree - see describeFile() below.
+// survey of its own in the survey tree - see describeFile() below - and, with a label, a
+// color: the colour that survey is drawn in where the model is coloured by survey.
 
 function describeFile ( file ) {
 

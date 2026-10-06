@@ -1275,11 +1275,31 @@ class Survey extends Object3D {
 
 	}
 
-	setLegColourBySurvey ( mesh, filterConnected ) {
+	// the section whose parts are each given a colour where the model is coloured by
+	// survey: the selected one, or the first below it that has more than one part
+
+	getSurveyColourTop () {
 
 		let node = this.selection.getNode();
 
 		while ( node.children.length === 1 ) node = node.children[ 0 ];
+
+		return node;
+
+	}
+
+	// the colour a section is drawn in where the model is coloured by survey, or undefined
+	// for one outside the part of the survey that is coloured
+
+	getSectionColour ( node ) {
+
+		return this.ctx.surveyColourMapper.getColourMap( this.getSurveyColourTop() )[ node.id ];
+
+	}
+
+	setLegColourBySurvey ( mesh, filterConnected ) {
+
+		const node = this.getSurveyColourTop();
 
 		__set.clear();
 		node.getSubtreeIds( __set );

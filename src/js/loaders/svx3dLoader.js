@@ -65,6 +65,10 @@ class Svx3dLoader extends FileLoader{
 
 		this.fileNode = ( fileLabel === null ) ? null : surveyTree.addById( fileLabel, surveyTree.maxId + 1 );
 
+		// the colour the file is drawn in where the model is coloured by survey
+
+		if ( this.fileNode !== null && this.file.color ) this.fileNode.colour = this.file.color;
+
 		return surveyDataCollector.setCRS( sourceCRS ).then( () => this.parse2() );
 
 		function readLF () { // read until Line feed

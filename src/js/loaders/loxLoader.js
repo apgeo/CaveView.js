@@ -44,6 +44,7 @@ class loxLoader extends FileLoader {
 		// a file given a label keeps its surveys in a survey of that name - see readSurvey()
 
 		const fileLabel = this.file.label ?? null;
+		const fileColour = this.file.color ?? null;
 
 		let fileNode = null;
 
@@ -225,6 +226,8 @@ class loxLoader extends FileLoader {
 
 				fileNode = surveyTree.addById( fileLabel, m_id + idOffset );
 				parentNode = fileNode;
+
+				if ( fileColour !== null ) fileNode.colour = fileColour;
 
 			}
 

@@ -1595,6 +1595,37 @@ class CaveViewer extends EventDispatcher {
 
 		}
 
+		// a section of the survey named by a reference, or null where it names a station
+		// or nothing at all
+
+		function getSectionByRef ( ref ) {
+
+			const node = getNodeByRef( ref );
+
+			return ( node === null || node.isStation() ) ? null : node;
+
+		}
+
+		// The colour a section of the survey is drawn in where the model is coloured by
+		// survey, as a CSS colour: the one given with the file the section came from,
+		// where one was given, and otherwise the one the viewer chose for it - so that an
+		// application naming the parts of a model beside it names each by the colour it is
+		// drawn in, whoever chose it. Null with no survey loaded, for a reference that names
+		// no section, and for a section outside the part of the survey that is selected,
+		// which is drawn in the colour of what is not selected.
+
+		this.getSectionColor = function ( ref ) {
+
+			const node = getSectionByRef( ref );
+
+			if ( node === null ) return null;
+
+			const colour = survey.getSectionColour( node );
+
+			return ( colour === undefined ) ? null : '#' + colour.getHexString();
+
+		};
+
 		// settle the move a focus call is waiting on, if any. Cancelling a move ends it
 		// at its own target, signalling an end that cannot be told from an arrival, so a
 		// move that is abandoned part way is settled before anything cancels it.

@@ -3,11 +3,22 @@ function SurveyColourMapper ( ctx ) {
 	let map = [];
 	let selectedSection = 0;
 
-	this.getColour = function ( surveyId ) {
+	this.getColour = function ( section ) {
 
-		const surveyColours = ctx.materials.colourCache.getColorSet( 'survey' );
+		const colourCache = ctx.materials.colourCache;
 
-		return surveyColours[ surveyId % surveyColours.length ];
+		// a colour given to a section - to the survey of a file with a label - is the
+		// colour of everything in that section, at whatever depth the tree is coloured
+
+		for ( let node = section; node !== null && node !== undefined; node = node.parent ) {
+
+			if ( node.colour !== undefined ) return colourCache.getColour( node.colour );
+
+		}
+
+		const surveyColours = colourCache.getColorSet( 'survey' );
+
+		return surveyColours[ section.id % surveyColours.length ];
 
 	};
 
@@ -27,7 +38,7 @@ function SurveyColourMapper ( ctx ) {
 		// map each child id _and_ all its lower level survey ids to the same colour
 
 		let subTree = selectedSection;
-		let colour = this.getColour( selectedSection.id );
+		let colour = this.getColour( selectedSection );
 
 		_addMapping( subTree );
 
@@ -45,7 +56,7 @@ function SurveyColourMapper ( ctx ) {
 
 			const node = children[ i ];
 
-			colour = this.getColour( node.id );
+			colour = this.getColour( node );
 
 			node.traverse( _addMapping );
 

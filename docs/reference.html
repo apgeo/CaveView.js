@@ -85,6 +85,19 @@ loaded or the reference does not identify a station of the loaded model.</p>
 <h4>clearHighlight()</h4>
 <p>Remove the highlight applied by highlightStation() or focusStation().</p>
 
+<h4>getSectionColor( &lt;reference&gt; )</h4>
+<p>The colour a section of the survey is drawn in where the model is shaded by section of survey
+(CV2.SHADING_SURVEY), as a CSS colour (<i>#1f78b4</i>): the colour given with the file it came from, where
+one was given, and otherwise the one the viewer chose. An application that names the parts of a model
+beside it - a legend - asks rather than repeating how the viewer chooses.</p>
+<p>Returns null if no model is loaded, if the reference does not identify a section of the loaded model,
+and for a section outside the part of the survey that is selected, which is drawn in the colour of what
+is not selected.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the survey section.</dd>
+</dl>
+
 <h4>setStationMedia( &lt;source&gt; )</h4>
 <p>Supply images to be displayed for stations. A strip of thumbnails is displayed over the model next to
 the station when the pointer comes to rest on a station that has images - which requires the
@@ -706,6 +719,10 @@ was. A Compass .plt file takes no label.</p>
 	<dd><span>string</span>The name of the survey the file's own surveys are placed in: a text of at least one character
 	with no full stop in it, since a path is its names joined by full stops. Any other value is refused with an Error
 	as the call is made. The files displayed together are each given a label of their own (optional).</dd>
+	<dt>color</dt>
+	<dd><span>string</span>The colour the survey of the label is drawn in where the model is shaded by section of survey
+	(CV2.SHADING_SURVEY), as a CSS colour, with everything in that survey whichever section of the tree is being looked
+	at. Used only with a label. Without it the viewer chooses, and getSectionColor() says what it chose (optional).</dd>
 </dl>
 
 <h4>focusStation options Object</h4>
