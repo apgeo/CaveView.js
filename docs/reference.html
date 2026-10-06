@@ -224,7 +224,9 @@ single marker has a box to fit. The markers are framed where they are drawn at t
 way through a move included.</p>
 <p>Returns false, and leaves the camera where it is, when no marker is displayed - every marker is
 unresolved, or no model is loaded - so it may be called on every update without asking first. Otherwise
-returns true, and the end of the move is signalled by the moved event, as for every move. It cannot be
+returns true, and the end of the move is signalled by the moved event, as for every move - always after
+the call has returned, so that a host may call and then listen: also for a reader given the move in a
+single frame, and where the camera already took the markers in and had no move to make. It cannot be
 called while a capture session is open, and returns false then.</p>
 <h5>Parameters</h5>
 <dl>

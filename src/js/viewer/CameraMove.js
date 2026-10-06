@@ -499,6 +499,13 @@ class CameraMove {
 
 				zoom = Math.min( hRatio, vRatio ) * 1 / 1.1;
 
+				// a box with no size across the view - a single point, or several at one
+				// place - fits at any zoom at all, and the ratios above say so by being
+				// infinite. A camera moved towards an infinite zoom is left with one that is
+				// not a number, from which no later move recovers: it keeps the zoom it has.
+
+				if ( ! Number.isFinite( zoom ) ) zoom = camera.zoom;
+
 			}
 
 			return { zoom: zoom, elevation: elevation };
