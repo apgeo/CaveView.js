@@ -1614,6 +1614,75 @@ class CaveViewer extends EventDispatcher {
 		// no section, and for a section outside the part of the survey that is selected,
 		// which is drawn in the colour of what is not selected.
 
+		// Hide a section of the survey, or show it again: its legs, its stations and
+		// their labels, its entrances, and its walls, with those of every section within
+		// it. A section is named by a reference, as a station is. A section is drawn when
+		// neither it nor a section it lies within is hidden. Returns false, and changes
+		// nothing, with no survey loaded or for a reference that names no section. A
+		// change is signalled by a 'change' event named 'hiddenSections'.
+
+		this.setSectionVisible = function ( ref, visible ) {
+
+			const node = getSectionByRef( ref );
+
+			if ( node === null || node === survey.surveyTree.root ) return false;
+
+			if ( survey.setSectionVisibility( node, visible !== false ) ) hiddenSectionsChanged();
+
+			return true;
+
+		};
+
+		// show every hidden section again, or - given a reference to a section - every
+		// one that is that section or lies within it
+
+		this.showAllSections = function ( ref ) {
+
+			if ( survey === null ) return false;
+
+			let top;
+
+			if ( ref !== undefined && ref !== null ) {
+
+				top = getSectionByRef( ref );
+
+				if ( top === null ) return false;
+
+			}
+
+			if ( survey.showSections( top ) ) hiddenSectionsChanged();
+
+			return true;
+
+		};
+
+		// the sections that are hidden, each as the names on its path from the top of the
+		// tree - which is a reference to it
+
+		this.getHiddenSections = function () {
+
+			if ( survey === null ) return [];
+
+			return survey.getHiddenSections().map( node => {
+
+				const names = [];
+
+				for ( let n = node; n !== null && n.parent !== null; n = n.parent ) names.unshift( n.name );
+
+				return names;
+
+			} );
+
+		};
+
+		function hiddenSectionsChanged () {
+
+			self.dispatchEvent( { type: 'change', name: 'hiddenSections' } );
+
+			renderView();
+
+		}
+
 		this.getSectionColor = function ( ref ) {
 
 			const node = getSectionByRef( ref );

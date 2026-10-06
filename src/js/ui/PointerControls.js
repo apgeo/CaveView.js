@@ -378,7 +378,10 @@ class PointerControls extends EventDispatcher {
 		function checkLegIntersects ( event ) {
 
 			const legs = survey.features.get( LEG_CAVE );
-			const legIntersect = raycaster.intersectObject( legs, false )[ 0 ];
+			// the nearest leg under the pointer that is drawn: one of a section that is
+			// hidden is not there to be pointed at
+
+			const legIntersect = raycaster.intersectObject( legs, false ).find( hit => ! legs.isLegHidden( hit.faceIndex ) );
 
 			let legIndex = null;
 			let segment = null;

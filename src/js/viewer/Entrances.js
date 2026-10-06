@@ -67,6 +67,11 @@ class Entrances extends ClusterMarkers {
 
 			if ( ! ( ( node.ownType ?? node.type ) & STATION_ENTRANCE ) ) return;
 
+			// the entrances of a section that is hidden are neither marked nor counted
+			// among those drawn as one where they stand close together
+
+			if ( survey.hiddenIds.has( node.parent.id ) ) return;
+
 			if ( node.next ) {
 
 				let next = node.next;

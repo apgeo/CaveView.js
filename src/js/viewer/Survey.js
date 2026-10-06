@@ -50,6 +50,14 @@ class Survey extends Object3D {
 		this.hideMode = false;
 		this.ctx = ctx;
 
+		// the sections an application has hidden, and the identifiers of every section
+		// that is therefore not drawn - each of those and all the sections within it. The
+		// second is the one set everything drawn by section consults: it is filled again,
+		// never replaced, when the first changes - see setSectionVisibility().
+
+		this.hiddenSections = new Set();
+		this.hiddenIds = new Set();
+
 		// objects targeted by raycasters and objects with variable LOD
 
 		this.pointTargets = [];
@@ -927,6 +935,111 @@ class Survey extends Object3D {
 				break;
 
 			}
+
+		}
+
+	}
+
+	// Hide a section of the survey, or show it again: its legs of every kind, its
+	// stations and their labels, its entrances, and its walls and scraps, with those of
+	// every section within it. A section is drawn when neither it nor a section it lies
+	// within is hidden, so showing a section that was hidden by one above it changes
+	// nothing that is drawn. Returns whether anything changed.
+
+	setSectionVisibility ( node, visible ) {
+
+		const hidden = this.hiddenSections;
+
+		if ( hidden.has( node ) !== visible ) return false;
+
+		if ( visible ) {
+
+			hidden.delete( node );
+
+		} else {
+
+			hidden.add( node );
+
+		}
+
+		this.applyHiddenSections();
+
+		return true;
+
+	}
+
+	// show every hidden section again, or every one that is the section given or lies
+	// within it. Returns whether anything changed.
+
+	showSections ( top ) {
+
+		const hidden = this.hiddenSections;
+
+		let changed = false;
+
+		hidden.forEach( node => {
+
+			if ( top !== undefined ) {
+
+				let within = node;
+
+				while ( within !== null && within !== top ) within = within.parent;
+
+				if ( within === null ) return;
+
+			}
+
+			hidden.delete( node );
+			changed = true;
+
+		} );
+
+		if ( changed ) this.applyHiddenSections();
+
+		return changed;
+
+	}
+
+	getHiddenSections () {
+
+		return Array.from( this.hiddenSections );
+
+	}
+
+	applyHiddenSections () {
+
+		const hiddenIds = this.hiddenIds;
+
+		hiddenIds.clear();
+
+		this.hiddenSections.forEach( node => node.getSubtreeIds( hiddenIds ) );
+
+		[ LEG_CAVE, LEG_SPLAY, LEG_SURFACE, LEG_DUPLICATE ].forEach( tag => this.getFeature( tag )?.updateHide() );
+
+		// the stations are sized, and left out, as a selection sizes them
+
+		if ( this.stations !== null && this.stations.count() > 0 ) this.stations.selectStations( this.selection );
+
+		// the walls and the scraps are drawn by the shading in force, which leaves out the
+		// runs of what is hidden
+
+		this.setShadingMode( this.caveShading );
+
+		// the entrances are built again from those that are left: where they stand close
+		// together they are drawn as one that says how many they are
+
+		const terrain = this.terrain;
+
+		this.removeFeature( this.entrances );
+		this.entrances = null;
+
+		this.loadEntrances();
+
+		this.entrances.setSelection( this.selection );
+
+		if ( terrain !== null && ! terrain.isFlat && this.hasFeature( FEATURE_ENTRANCES ) ) {
+
+			this.entrances.addHeightProvider( terrain.getHeight.bind( terrain ) );
 
 		}
 

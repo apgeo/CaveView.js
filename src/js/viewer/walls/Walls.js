@@ -87,11 +87,59 @@ class Walls extends Mesh {
 
 			geometry.addGroup( start, count, lastMaterial );
 
+		} else if ( this.hasHiddenRuns() ) {
+
+			// drawn run by run, the runs of the sections that are hidden being left out:
+			// a mesh with a list of materials draws its groups and nothing else
+
+			const hiddenIds = this.ctx.survey.hiddenIds;
+
+			this.material = [ selectedMaterial ];
+
+			let start = 0;
+			let count = 0;
+
+			for ( let run = 0, l = indexRuns.length; run < l; run++ ) {
+
+				const indexRun = indexRuns[ run ];
+
+				if ( hiddenIds.has( indexRun.survey ) ) continue;
+
+				if ( count > 0 && indexRun.start === start + count ) {
+
+					count += indexRun.count;
+
+				} else {
+
+					if ( count > 0 ) geometry.addGroup( start, count, 0 );
+
+					start = indexRun.start;
+					count = indexRun.count;
+
+				}
+
+			}
+
+			if ( count > 0 ) geometry.addGroup( start, count, 0 );
+
 		} else {
 
 			this.material = selectedMaterial;
 
 		}
+
+	}
+
+	// whether any of the runs the mesh is made of belongs to a section that is hidden
+
+	hasHiddenRuns () {
+
+		const hiddenIds = this.ctx.survey?.hiddenIds;
+		const indexRuns = this.indexRuns;
+
+		if ( hiddenIds === undefined || hiddenIds.size === 0 || ! indexRuns ) return false;
+
+		return indexRuns.some( indexRun => hiddenIds.has( indexRun.survey ) );
 
 	}
 
@@ -218,6 +266,18 @@ class Walls extends Mesh {
 
 			this.flatGeometry = geometry;
 			this.geometry = this.indexedGeometry;
+
+		}
+
+		// the groups the mesh is drawn by are those of the geometry displayed until now:
+		// each vertex of the flat geometry stands for one index of the other, so a group
+		// is the same range of either
+
+		if ( this.geometry !== geometry ) {
+
+			this.geometry.clearGroups();
+
+			geometry.groups.forEach( group => this.geometry.addGroup( group.start, group.count, group.materialIndex ) );
 
 		}
 

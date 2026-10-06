@@ -88,7 +88,13 @@ class Stations extends Points {
 
 		const ssThresholdSq = this.ssThresholdSq;
 
+		const hiddenIds = this.survey.hiddenIds;
+
 		for ( const node of searchNodes ) {
+
+			// the stations of a section that is hidden are not there to be pointed at
+
+			if ( hiddenIds.has( node.id ) ) continue;
 
 			const vertices = node.children;
 
@@ -166,6 +172,7 @@ class Stations extends Points {
 	isStationVisible ( node ) {
 
 		return ( this.selection.contains( node.parent.id ) &&
+			! this.survey.hiddenIds.has( node.parent.id ) &&
 			( node.connections > 0 || this.splaysVisible )
 		);
 
@@ -244,6 +251,7 @@ class Stations extends Points {
 		const splaySize = this.splaysVisible ? 6.0 : 0.0;
 		const idSet = selection.getIds();
 		const isEmpty = selection.isEmpty();
+		const hiddenIds = this.survey.hiddenIds;
 
 		for ( let i = 0; i < l; i++ ) {
 
@@ -251,7 +259,10 @@ class Stations extends Points {
 
 			let size = 8;
 
-			if ( isEmpty || idSet.has( node.parent.id ) ) {
+			// the stations of a section that is hidden are left out as those outside the
+			// selection are
+
+			if ( ( isEmpty || idSet.has( node.parent.id ) ) && ! hiddenIds.has( node.parent.id ) ) {
 
 				if ( node.type & STATION_ENTRANCE ) {
 
@@ -305,10 +316,15 @@ class Stations extends Points {
 		const pSize = this.geometry.getAttribute( 'pSize' );
 		const l = vertices.length;
 		const selection = this.selection;
+		const hiddenIds = this.survey.hiddenIds;
 
 		for ( let i = 0; i < l; i++ ) {
 
 			const node = vertices[ i ];
+
+			// the end of a splay in a section that is hidden stays hidden
+
+			if ( splaySize !== 0 && hiddenIds.has( node.parent.id ) ) continue;
 
 			if ( node.connections === 0 && ( splaySize === 0 || selection.contains( node.id ) ) ) {
 

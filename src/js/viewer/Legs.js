@@ -24,6 +24,13 @@ class Legs extends LineSegments2 {
 		this.scale.set( 1, 1, 1 );
 		this.pathsSet = false;
 
+		// what is keeping legs from being drawn: the legs that lie within walls, where
+		// those are asked to be left out, and the legs of sections that are hidden. Which
+		// legs the second leaves out is kept, for a pointer that must not find them.
+
+		this.hideWalled = false;
+		this.sectionHidden = null;
+
 	}
 
 	addLegs ( survey, vertices, legRuns ) {
@@ -158,6 +165,10 @@ class Legs extends LineSegments2 {
 
 		this.addLegs( survey, newVertices, newLegRuns );
 
+		// what was left out of the legs there were says nothing of the legs there are now
+
+		this.updateHide();
+
 		return true;
 
 	}
@@ -251,12 +262,38 @@ class Legs extends LineSegments2 {
 
 	hide ( mode ) {
 
-		if ( mode ) {
+		this.hideWalled = !! mode;
+		this.updateHide();
 
-			const vertices = this.legVertices;
-			const legCount = vertices.length / 2;
+	}
 
-			const hide = new Float32Array( legCount );
+	// the legs that are not drawn are marked in an attribute of the geometry, one value to
+	// a leg, which the shader discards by. It is worked out again from everything that
+	// leaves a leg out whenever any of it changes: the legs within walls, and the legs of
+	// the sections of the survey that are hidden - see Survey.setSectionVisibility().
+
+	updateHide () {
+
+		const geometry = this.geometry;
+		const vertices = this.legVertices;
+		const legRuns = this.legRuns;
+		const legCount = vertices.length / 2;
+
+		const hiddenIds = this.ctx.survey?.hiddenIds;
+		const sections = ( hiddenIds !== undefined && hiddenIds.size > 0 && legRuns !== undefined );
+
+		this.sectionHidden = null;
+
+		if ( ! sections && ! this.hideWalled ) {
+
+			geometry.clearHide();
+			return;
+
+		}
+
+		const hide = new Float32Array( legCount );
+
+		if ( this.hideWalled ) {
 
 			for ( let i = 0; i < legCount; i++ ) {
 
@@ -267,13 +304,53 @@ class Legs extends LineSegments2 {
 
 			}
 
-			this.geometry.setHide( hide );
+		}
+
+		if ( sections ) {
+
+			const sectionHidden = new Uint8Array( legCount );
+
+			for ( let run = 0, l = legRuns.length; run < l; run++ ) {
+
+				const legRun = legRuns[ run ];
+
+				if ( ! hiddenIds.has( legRun.survey ) ) continue;
+
+				// a run is of vertices, two to a leg
+
+				hide.fill( 1, legRun.start / 2, legRun.end / 2 );
+				sectionHidden.fill( 1, legRun.start / 2, legRun.end / 2 );
+
+			}
+
+			this.sectionHidden = sectionHidden;
+
+		}
+
+		// the attribute there is serves while it is the right length, and is written to
+		// rather than replaced: a section is hidden and shown again far more often than
+		// the legs themselves change
+
+		const attribute = geometry.getAttribute( 'instanceHideVertex' );
+
+		if ( attribute !== undefined && attribute.count === legCount ) {
+
+			attribute.array.set( hide );
+			attribute.needsUpdate = true;
 
 		} else {
 
-			this.geometry.clearHide();
+			geometry.setHide( hide );
 
 		}
+
+	}
+
+	// whether a leg is one of a section that is hidden
+
+	isLegHidden ( legIndex ) {
+
+		return this.sectionHidden !== null && this.sectionHidden[ legIndex ] === 1;
 
 	}
 

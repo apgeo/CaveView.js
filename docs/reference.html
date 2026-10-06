@@ -85,6 +85,38 @@ loaded or the reference does not identify a station of the loaded model.</p>
 <h4>clearHighlight()</h4>
 <p>Remove the highlight applied by highlightStation() or focusStation().</p>
 
+<h4>setSectionVisible( &lt;reference&gt;, &lt;visible&gt; )</h4>
+<p>Hide a section of the survey, or show it again: its legs of every kind, its stations and their labels,
+its entrances, and its walls and scraps, together with those of every section within it. The rest of the
+model is left as it is, and so is the view. A station or a leg of a hidden section is not found by the
+pointer. With a label on each of the files displayed together - see the file description Object - the
+survey of a label is such a section, and one file is hidden while the others stay.</p>
+<p>A section is drawn when neither it nor a section it lies within is hidden: showing a section that was
+hidden by one above it changes nothing that is drawn until that one is shown as well. What is hidden is
+kept when the model is cut to a section, and forgotten when another model is loaded.</p>
+<p>Returns true where the reference identifies a section of the loaded model, whether or not it was
+hidden already, and false - changing nothing - where it does not, or no model is loaded. A change
+dispatches the change event with the name <i>hiddenSections</i>.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the survey section.</dd>
+	<dt>visible</dt><dd><span>boolean</span>false to hide the section, true to show it again.</dd>
+</dl>
+
+<h4>showAllSections( &lt;reference&gt; )</h4>
+<p>Show every hidden section again - or, given a reference, every hidden section that is the section it
+names or lies within it. Returns false, changing nothing, where a reference is given that does not
+identify a section of the loaded model, or no model is loaded.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of a survey section (optional).</dd>
+</dl>
+
+<h4>getHiddenSections()</h4>
+<p>The sections hidden by setSectionVisible(), as an Array with an entry for each: an Array of the names
+on its path from the top of the survey tree, which is a reference to it. Empty when nothing is hidden or
+no model is loaded.</p>
+
 <h4>getSectionColor( &lt;reference&gt; )</h4>
 <p>The colour a section of the survey is drawn in where the model is shaded by section of survey
 (CV2.SHADING_SURVEY), as a CSS colour (<i>#1f78b4</i>): the colour given with the file it came from, where
