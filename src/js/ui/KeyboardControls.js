@@ -70,11 +70,12 @@ function KeyboardControls ( viewer, fileSelector, avenControls ) {
 	document.addEventListener( 'keydown', keyDown );
 
 	// the controls that are part of the viewer: those of the side panel, which is
-	// displayed in the viewer's container
+	// displayed in the viewer's container, and those of a toolbar, which the host may
+	// have placed in an element of its own outside it
 
 	function isOwnControl ( element ) {
 
-		return viewer.container.contains( element );
+		return viewer.container.contains( element ) || element.closest( '.cv-toolbar' ) !== null;
 
 	}
 
