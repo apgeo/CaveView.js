@@ -260,6 +260,12 @@ class CaveViewToolbar {
 		viewer.addEventListener( 'clear', onModelChange );
 		viewer.addEventListener( 'dispose', dispose );
 
+		// the names of the shading modes are read from the catalogue of the interface's
+		// language, which is fetched as the viewer is created and may well arrive after the
+		// toolbar has been built - and which another viewer of the page may change
+
+		addListener( cfg, 'change', onConfigurationChange );
+
 		// the fullscreen events reach the document whichever element was displayed
 
 		addListener( document, 'fullscreenchange', onFullscreenChange );
@@ -480,6 +486,17 @@ class CaveViewToolbar {
 
 			buildShadingOptions();
 			refresh();
+
+		}
+
+		function onConfigurationChange ( event ) {
+
+			if ( event.name !== 'language' ) return;
+
+			// the list is written again in the new language, and shows the mode it showed
+
+			buildShadingOptions();
+			refresh( 'shadingMode' );
 
 		}
 
