@@ -1714,6 +1714,34 @@ class CaveViewer extends EventDispatcher {
 
 		}
 
+		// The extent of a section of the survey: the least box that holds its stations,
+		// as { min, max } with an x, y and z each, in the coordinates the survey was made
+		// in - those the coordinates() of a station are given in. With a label on each
+		// file of a source it is the extent of each file, from which an application can
+		// tell two files that lie over one another from two whose coordinates have nothing
+		// to do with each other. Null with no survey loaded, for a reference that names no
+		// section, and for a section with no station in it.
+
+		this.getSectionBounds = function ( ref ) {
+
+			const node = getSectionByRef( ref );
+
+			if ( node === null || node.boundingBox.isEmpty() ) return null;
+
+			// two corners of a box in the coordinates of the display are not quite the
+			// least and the greatest of it in those of the survey, where the one is a
+			// projection of the other
+
+			const a = survey.getGeographicalPosition( node.boundingBox.min );
+			const b = survey.getGeographicalPosition( node.boundingBox.max );
+
+			return {
+				min: { x: Math.min( a.x, b.x ), y: Math.min( a.y, b.y ), z: Math.min( a.z, b.z ) },
+				max: { x: Math.max( a.x, b.x ), y: Math.max( a.y, b.y ), z: Math.max( a.z, b.z ) }
+			};
+
+		};
+
 		this.getSectionColor = function ( ref ) {
 
 			const node = getSectionByRef( ref );

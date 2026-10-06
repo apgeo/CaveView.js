@@ -117,6 +117,21 @@ identify a section of the loaded model, or no model is loaded.</p>
 on its path from the top of the survey tree, which is a reference to it. Empty when nothing is hidden or
 no model is loaded.</p>
 
+<h4>getSectionBounds( &lt;reference&gt; )</h4>
+<p>The extent of a section of the survey: the least box that holds its stations, as an Object with the
+properties <b>min</b> and <b>max</b>, each an Object with an x, a y and a z, in the coordinates the survey
+was made in - those the coordinates() of a Station object are given in.</p>
+<p>Files displayed together are each drawn in the coordinates they were made in. With a label on each -
+see the file description Object - this is the extent of each file, and an application can tell two files
+that lie over one another from two whose coordinates have nothing to do with each other: one made about a
+point of its own and one in a national grid are drawn kilometres apart.</p>
+<p>Returns null if no model is loaded, if the reference does not identify a section of the loaded model,
+and for a section with no station in it.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the survey section.</dd>
+</dl>
+
 <h4>getSectionColor( &lt;reference&gt; )</h4>
 <p>The colour a section of the survey is drawn in where the model is shaded by section of survey
 (CV2.SHADING_SURVEY), as a CSS colour (<i>#1f78b4</i>): the colour given with the file it came from, where
