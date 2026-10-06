@@ -27,19 +27,26 @@ function clampedInc( value, inc ) {
 
 }
 
-// whether a key event belongs to a field the host page is typing into
+// the kinds of input element that take no typed text: a key pressed in one of them is not
+// a character on its way into a field
 
-function isTextInput ( element ) {
+const untypedInputs = new Set( [ 'checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'color', 'file', 'image' ] );
+
+// whether a key event belongs to a field that is being typed into
+
+function isTextEntry ( element ) {
 
 	if ( ! element || ! element.tagName ) return false;
 
 	switch ( element.tagName ) {
 
-	case 'INPUT':
 	case 'TEXTAREA':
-	case 'SELECT':
 
 		return true;
+
+	case 'INPUT':
+
+		return ! untypedInputs.has( element.type );
 
 	default:
 
@@ -49,19 +56,47 @@ function isTextInput ( element ) {
 
 }
 
+// whether it belongs to a chooser, a tick box, a slider or the like: a control that takes
+// no text and still has uses of its own for a key
+
+function isFormControl ( element ) {
+
+	return !! element && ( element.tagName === 'SELECT' || element.tagName === 'INPUT' );
+
+}
+
 function KeyboardControls ( viewer, fileSelector, avenControls ) {
 
 	document.addEventListener( 'keydown', keyDown );
+
+	// the controls that are part of the viewer: those of the side panel, which is
+	// displayed in the viewer's container
+
+	function isOwnControl ( element ) {
+
+		return viewer.container.contains( element );
+
+	}
 
 	function keyDown ( event ) {
 
 		if ( ! viewer.surveyLoaded || ! viewer.mouseOver || viewer.capturing ) return;
 
-		// a key typed into a text field of the host page is the field's, whether or not
-		// the pointer happens to rest over the model: handling it here would cancel the
-		// keystroke and leave the field without the character
+		const target = event.target;
 
-		if ( isTextInput( event.target ) ) return;
+		// a key typed into a text field is the field's, whether or not the pointer
+		// happens to rest over the model: handling it here would cancel the keystroke
+		// and leave the field without the character
+
+		if ( isTextEntry( target ) ) return;
+
+		// a chooser or a tick box of the host page keeps its keys as well. One of the
+		// viewer's own does not: it keeps the focus after it has been used, and a press
+		// on the model does not take the focus from it, so leaving it its keys would
+		// leave the viewer without any of its own for as long as the reader stayed on
+		// the model
+
+		if ( isFormControl( target ) && ! isOwnControl( target ) ) return;
 
 		event.preventDefault(); // enables F5, ctrl+<F5>, ctrl+<F> and other keys on the control's host page
 
