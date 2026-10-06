@@ -111,7 +111,7 @@ function CaveViewUI ( viewer ) {
 
 	this.loadCaves = function ( files ) {
 
-		fileSelector.selectSource( new ModelSource.makeModelSourceFiles( files ) );
+		fileSelector.selectSource( ModelSource.makeModelSourceFiles( files ) );
 
 	};
 
