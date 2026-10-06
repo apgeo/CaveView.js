@@ -65,6 +65,22 @@ function isFormControl ( element ) {
 
 }
 
+// the keys a chooser is stepped with from one entry to the next, and a slider along its
+// range. The viewer has no use of its own for any of them.
+
+const steppingKeys = new Set( [ 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown' ] );
+
+// whether a key is one the control it was pressed in is stepped with: a tick box and a
+// button are not stepped at all
+
+function isSteppingKey ( element, key ) {
+
+	if ( ! steppingKeys.has( key ) ) return false;
+
+	return element.tagName === 'SELECT' || element.type === 'range' || element.type === 'radio';
+
+}
+
 function KeyboardControls ( viewer, fileSelector, avenControls ) {
 
 	document.addEventListener( 'keydown', keyDown );
@@ -95,9 +111,11 @@ function KeyboardControls ( viewer, fileSelector, avenControls ) {
 		// viewer's own does not: it keeps the focus after it has been used, and a press
 		// on the model does not take the focus from it, so leaving it its keys would
 		// leave the viewer without any of its own for as long as the reader stayed on
-		// the model
+		// the model. What it does keep are the keys it is stepped with, which the
+		// viewer does nothing with and would only cancel: a slider of the side panel
+		// or the toolbar's chooser, once pressed, is still worked with the arrows.
 
-		if ( isFormControl( target ) && ! isOwnControl( target ) ) return;
+		if ( isFormControl( target ) && ( ! isOwnControl( target ) || isSteppingKey( target, event.key ) ) ) return;
 
 		event.preventDefault(); // enables F5, ctrl+<F5>, ctrl+<F> and other keys on the control's host page
 
