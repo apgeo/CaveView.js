@@ -18,6 +18,15 @@ class WorkerPool {
 
 		const activeWorkers = this.activeWorkers;
 
+		// a worker that is ended never reports back, and it is on reporting back that the
+		// turn it was taking is returned. The turns are counted for the whole page - every
+		// pool of every viewer on it - so one kept by a worker that no longer exists is a
+		// turn fewer for all of them, for as long as the page lives: they are returned here.
+
+		let returned = activeWorkers.size;
+
+		WorkerPool.activeWorkerCount -= returned;
+
 		activeWorkers.forEach( worker => worker.terminate() );
 		activeWorkers.clear();
 
@@ -27,6 +36,18 @@ class WorkerPool {
 		// remove all the saved workers onmessage handlers to remove references to callbacks
 		// which may enclose objects and prevent GC
 		this.workers.forEach( w => { w.onmessage = null; } );
+
+		// work of the other pools that was waiting for a turn has those that were returned
+
+		const pendingWork = WorkerPool.pendingWork;
+
+		while ( returned-- > 0 && pendingWork.length > 0 ) {
+
+			const pending = pendingWork.shift();
+
+			pending.pool.queueWork( pending.message, pending.callback );
+
+		}
 
 	}
 
