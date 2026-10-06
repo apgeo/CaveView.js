@@ -709,30 +709,86 @@ class CaveViewer extends EventDispatcher {
 
 		}
 
-		// true while the class alone is displaying the viewer large: the browser was asked
-		// for fullscreen and refused - in a frame that is not allowed it, say - and what the
-		// stylesheet does with the class is all there is. The document then names no
-		// fullscreen element, so nothing but this says that the next request is the one
-		// to undo it.
+		// true while the class alone is displaying the viewer large: from the moment the
+		// viewer sets it, which is before the browser is asked for anything, until the
+		// document names a fullscreen element. Where the browser refuses - in a frame that
+		// is not allowed fullscreen, say - it never does, and what the stylesheet does with
+		// the class is all there is. Until the document speaks nothing but this says that
+		// the element is covering the page, and that the next request to leave, or a
+		// dispose, is what has to uncover it - whether or not the browser has answered yet.
 
 		let fullscreenByClassOnly = false;
 
-		function setFullscreenByClassOnly ( state ) {
+		// what has become of a request the browser has yet to answer. It answers some time
+		// after the call that asked has returned, and by then the host may have taken the
+		// request back or disposed the viewer: a fullscreen granted to a request that
+		// nobody is waiting for any more is left again as it arrives.
 
-			fullscreenByClassOnly = state;
+		const REQUEST_NONE = 0;
+		const REQUEST_ASKED = 1;
+		const REQUEST_TAKEN_BACK = 2;
+
+		let fullscreenRequest = REQUEST_NONE;
+
+		function reportFullscreen () {
 
 			onResize();
 			self.dispatchEvent( { type: 'change', name: 'fullscreen' } );
 
 		}
 
+		function stopListeningForFullscreen () {
+
+			fullscreenElement.removeEventListener( 'fullscreenchange', onFullscreenChange );
+			fullscreenElement.removeEventListener( 'webkitfullscreenchange', onFullscreenChange );
+
+		}
+
+		function exitFullscreen () {
+
+			if ( document.fullscreenElement ) {
+
+				document.exitFullscreen();
+
+			} else if ( document.webkitFullscreenElement ) {
+
+				if ( document.webkitExitFullscreen ) {
+
+					document.webkitExitFullscreen();
+
+				} else if ( document.webkitCancelFullScreen ) {
+
+					document.webkitCancelFullScreen();
+
+				}
+
+			}
+
+		}
+
 		function onFullscreenRefused () {
 
-			// disposed, or taken out of the state again, while the browser was deciding
+			fullscreenRequest = REQUEST_NONE;
 
-			if ( renderer === null || ! fullscreenElement.classList.contains( 'toggle-fullscreen' ) ) return;
+			// disposed while the browser was deciding: this was the answer the listeners
+			// were kept for - see dispose()
 
-			if ( ! isFullscreen() ) setFullscreenByClassOnly( true );
+			if ( renderer === null ) {
+
+				stopListeningForFullscreen();
+				return;
+
+			}
+
+			// taken out of the state again meanwhile, or in a fullscreen that came some
+			// other way
+
+			if ( ! fullscreenByClassOnly ) return;
+
+			// the class stays, and is now known to be all there will be: the size and the
+			// state are reported as a change of fullscreen would have reported them
+
+			reportFullscreen();
 
 		}
 
@@ -757,10 +813,38 @@ class CaveViewer extends EventDispatcher {
 
 		function onFullscreenChange () {
 
-			// a fullscreen that did come after all - the host asked for it itself, say - is
-			// the document's to report from here on
+			const large = document.fullscreenElement ?? document.webkitFullscreenElement ?? null;
 
-			if ( ( document.fullscreenElement ?? document.webkitFullscreenElement ?? null ) !== null ) fullscreenByClassOnly = false;
+			if ( large === fullscreenElement && fullscreenRequest !== REQUEST_NONE ) {
+
+				// the browser's answer to the viewer's own request
+
+				const takenBack = ( fullscreenRequest === REQUEST_TAKEN_BACK );
+
+				fullscreenRequest = REQUEST_NONE;
+
+				if ( renderer === null ) stopListeningForFullscreen();
+
+				if ( takenBack ) {
+
+					// granted after the host had taken the request back, or disposed the
+					// viewer: nobody is left who wants it, or who could leave it later
+
+					exitFullscreen();
+					return;
+
+				}
+
+			}
+
+			// disposed, and still listening only for that answer
+
+			if ( renderer === null ) return;
+
+			// a fullscreen that did come - asked for by the viewer, or by the host itself
+			// after the viewer was refused - is the document's to report from here on
+
+			if ( large !== null ) fullscreenByClassOnly = false;
 
 			if ( isFullscreen() ) {
 
@@ -772,8 +856,7 @@ class CaveViewer extends EventDispatcher {
 
 			}
 
-			onResize();
-			self.dispatchEvent( { type: 'change', name: 'fullscreen' } );
+			reportFullscreen();
 
 		}
 
@@ -789,7 +872,22 @@ class CaveViewer extends EventDispatcher {
 
 				if ( ( document.fullscreenElement ?? document.webkitFullscreenElement ?? null ) !== null ) return;
 
+				// the class is set before the browser is asked, and counts as covering the
+				// page from here: a stylesheet that displays the element large by the class
+				// already does, whatever the browser goes on to answer
+
 				fullscreenElement.classList.add( 'toggle-fullscreen' );
+				fullscreenByClassOnly = true;
+
+				if ( fullscreenRequest !== REQUEST_NONE ) {
+
+					// taken back and asked for again before the browser had answered the
+					// first time: that answer serves
+
+					fullscreenRequest = REQUEST_ASKED;
+					return;
+
+				}
 
 				if ( document.fullscreenElement === null ) {
 
@@ -797,7 +895,12 @@ class CaveViewer extends EventDispatcher {
 
 					const request = fullscreenElement.requestFullscreen();
 
-					if ( request !== undefined ) request.catch( onFullscreenRefused );
+					if ( request !== undefined ) {
+
+						fullscreenRequest = REQUEST_ASKED;
+						request.catch( onFullscreenRefused );
+
+					}
 
 				} else if ( document.webkitFullscreenElement === null) {
 
@@ -812,30 +915,19 @@ class CaveViewer extends EventDispatcher {
 				if ( fullscreenByClassOnly ) {
 
 					// there is no fullscreen to leave, and so no event to come: the size
-					// and the state are reported from here
+					// and the state are reported from here. A request still with the
+					// browser is taken back, so that what it may yet grant is not kept.
 
-					setFullscreenByClassOnly( false );
+					fullscreenByClassOnly = false;
+
+					if ( fullscreenRequest === REQUEST_ASKED ) fullscreenRequest = REQUEST_TAKEN_BACK;
+
+					reportFullscreen();
 					return;
 
 				}
 
-				if ( document.fullscreenElement ) {
-
-					document.exitFullscreen();
-
-				} else if ( document.webkitFullscreenElement ) {
-
-					if ( document.webkitExitFullscreen ) {
-
-						document.webkitExitFullscreen();
-
-					} else if ( document.webkitCancelFullScreen ) {
-
-						document.webkitCancelFullScreen();
-
-					}
-
-				}
+				exitFullscreen();
 
 			}
 
@@ -2334,13 +2426,30 @@ class CaveViewer extends EventDispatcher {
 			container.removeEventListener( 'pointerover', onPointerOver );
 			container.removeEventListener( 'pointerleave', onPointerLeave );
 
-			fullscreenElement.removeEventListener( 'fullscreenchange', onFullscreenChange );
-			fullscreenElement.removeEventListener( 'webkitfullscreenchange', onFullscreenChange );
+			// a class that is covering the page on its own would go on covering it, with
+			// no viewer left to be asked to take it off - and it is covering from the
+			// moment it is set, not from the browser's refusal
 
-			// a class that was covering the page on its own would go on covering it, with
-			// no viewer left to be asked to take it off
+			if ( fullscreenByClassOnly ) {
 
-			if ( fullscreenByClassOnly ) fullscreenElement.classList.remove( 'toggle-fullscreen' );
+				fullscreenElement.classList.remove( 'toggle-fullscreen' );
+				fullscreenByClassOnly = false;
+
+			}
+
+			if ( fullscreenRequest === REQUEST_NONE ) {
+
+				stopListeningForFullscreen();
+
+			} else {
+
+				// the browser has yet to answer a request: were it to grant it now, there
+				// would be no viewer to leave fullscreen again. The listeners stay for
+				// that one answer, which either way is what removes them.
+
+				fullscreenRequest = REQUEST_TAKEN_BACK;
+
+			}
 
 			renderer.clear();
 			renderer.dispose();
