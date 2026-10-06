@@ -76,7 +76,28 @@ class CaveLoader extends EventDispatcher {
 
 		// wait for all loaders to complete or fail
 		return Promise.all( this.loading )
-			.then( () => surveyDataCollector.getSurvey() )
+			.then( loaded => {
+
+				// The legs a file hands back are added here, in the order the files were
+				// given rather than the order they happened to be read in - which for files
+				// fetched together, or each waiting on a coordinate system to be looked up,
+				// is a different order from one load to the next. Legs are drawn in the
+				// order they are held, so where two files lie over one another the later
+				// file is the one seen, every time.
+
+				const lineSegments = surveyDataCollector.lineSegments;
+
+				loaded.forEach( segments => {
+
+					if ( ! Array.isArray( segments ) ) return;
+
+					for ( let i = 0, l = segments.length; i < l; i++ ) lineSegments.push( segments[ i ] );
+
+				} );
+
+				return surveyDataCollector.getSurvey();
+
+			} )
 			.finally( () => {
 
 				this.dispatchEvent( { type: 'progress', name: 'end' } );

@@ -138,10 +138,11 @@ class Svx3dLoader extends FileLoader{
 
 		surveyDataCollector.addStations( this.stationMap );
 
-		surveyDataCollector.addLineSegments( this.groups );
 		surveyDataCollector.enableSplayFix();
 
-		return surveyDataCollector;
+		// the legs of this file, handed back for the caller to add - see CaveLoader.loadSource()
+
+		return this.getLineSegments();
 
 	}
 

@@ -30,7 +30,8 @@ class loxLoader extends FileLoader {
 
 		surveyDataCollector.setCRS( null );
 
-		const lineSegments = surveyDataCollector.lineSegments;
+		// the legs of this file, handed back for the caller to add - see CaveLoader.loadSource()
+		const lineSegments = [];
 		const surveyTree   = surveyDataCollector.surveyTree;
 		const limits       = surveyDataCollector.limits;
 		const projection   = surveyDataCollector.projection;
@@ -79,7 +80,7 @@ class loxLoader extends FileLoader {
 
 		surveyDataCollector.addXsects( xSects );
 
-		return Promise.resolve( surveyDataCollector );
+		return Promise.resolve( lineSegments );
 
 		// .lox parsing functions
 
