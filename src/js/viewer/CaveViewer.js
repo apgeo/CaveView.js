@@ -1,4 +1,4 @@
-import { Color, EventDispatcher, FogExp2, Raycaster, Scene, Vector2, Vector3, WebGLRenderer, LinearSRGBColorSpace } from '../Three';
+import { Color, EventDispatcher, FogExp2, MathUtils, Raycaster, Scene, Vector2, Vector3, WebGLRenderer, LinearSRGBColorSpace } from '../Three';
 import {
 	FACE_SCRAPS, FACE_WALLS, FACE_MODEL, FEATURE_BOX, FEATURE_ENTRANCES, FEATURE_ENTRANCE_DOTS, FEATURE_GRID, FEATURE_STATIONS, FEATURE_TERRAIN, FEATURE_TRACES,
 	LABEL_STATION, LABEL_STATION_COMMENT, LEG_CAVE, LEG_SPLAY, LEG_DUPLICATE, LEG_SURFACE, LM_NONE, LM_SINGLE, MOUSE_MODE_TRACE_EDIT, SURVEY_WARNINGS,
@@ -602,6 +602,10 @@ class CaveViewer extends EventDispatcher {
 
 			}
 
+			// the kind of camera is part of the view - see getViewpoint()
+
+			if ( event.name === 'cameraType' ) signalViewpoint();
+
 		}
 
 		const hud = new HUD( this, renderer );
@@ -987,6 +991,14 @@ class CaveViewer extends EventDispatcher {
 
 			if ( survey === null ) return;
 
+			cameraMoved();
+
+			signalViewpoint();
+
+		}
+
+		function cameraMoved () {
+
 			lightingManager.setRotation( cameraManager.getRotation() );
 
 			if ( cameraManager.activeCamera.isOrthographicCamera ) {
@@ -996,6 +1008,25 @@ class CaveViewer extends EventDispatcher {
 			}
 
 			renderView( true );
+
+		}
+
+		// A change of the view is signalled by a 'viewpoint' event - see getViewpoint() -
+		// when it is one the application did not make itself: the reader turning, tilting,
+		// zooming or moving the model, one of the viewer's own views or controls, an auto
+		// rotation, a move to a station. A view the application sets - by setViewpoint(),
+		// setCameraAngles() or setView(), and so the view a model is first displayed in -
+		// is not: none of those draws until all of it is set, and what is not drawn is not
+		// signalled. An application keeping two viewers in step sets the view of one from
+		// the event of the other, and is not told of its own doing in return.
+
+		const viewpointEvent = { type: 'viewpoint' };
+
+		function signalViewpoint () {
+
+			if ( ! renderRequired || capture !== null || survey === null ) return;
+
+			self.dispatchEvent( viewpointEvent );
 
 		}
 
@@ -2248,6 +2279,197 @@ class CaveViewer extends EventDispatcher {
 			if ( azimuth !== undefined ) controls.rotateLeft( controls.getAzimuthalAngle() - azimuth );
 
 		}
+
+		// The view: the direction the camera looks from, how large the model is displayed,
+		// the point it looks at and the kind of camera - enough for a second viewer to be
+		// given the same view of a model of its own. The angles are those of
+		// getCameraAngles(). The other two are in units that do not depend on the model or
+		// on the size of the container, so that they mean the same in another viewer:
+		//
+		//   zoom    how large the model is displayed, where 1 is the size at which its plan
+		//           just fits the container;
+		//   target  the point looked at, as an offset from the centre of the model in
+		//           heights of the container at a zoom of 1 - so the same offset moves a
+		//           model across the same share of the display in any viewer.
+		//
+		// getViewpoint() answers null with no survey loaded or a container that is not
+		// displayed. setViewpoint() moves the camera at once, with no animation, and draws
+		// the view once; a part that is not given is left as it is. It answers false, and
+		// changes nothing, where getViewpoint() would answer null and while a capture
+		// session is open. It does not signal a 'viewpoint' event - see signalViewpoint().
+
+		const __size = new Vector3();
+		const __centre = new Vector3();
+
+		// what the units above are worked out from: the scale, in pixels of the page to a
+		// unit of the scene, at which the plan of the model just fits the container; the
+		// height of the container; and the centre of the model in the scene
+
+		function viewUnits () {
+
+			if ( survey === null || renderer === null ) return null;
+
+			const width = container.clientWidth;
+			const height = container.clientHeight;
+
+			if ( width === 0 || height === 0 ) return null;
+
+			const limits = survey.modelLimits;
+			const size = limits.getSize( __size ).multiply( survey.scale );
+
+			let fit = Math.min( width / size.x, height / size.y );
+
+			// a model with no extent in plan - a single shaft - fits at any scale at all
+
+			if ( ! Number.isFinite( fit ) || fit <= 0 ) fit = 1;
+
+			return { fit: fit, height: height, centre: limits.getCenter( __centre ).multiply( survey.scale ) };
+
+		}
+
+		// half the height of what a perspective camera displays, at a distance of one
+
+		function halfHeightAtOne ( camera ) {
+
+			return Math.tan( MathUtils.DEG2RAD * camera.getEffectiveFOV() / 2 );
+
+		}
+
+		this.getViewpoint = function () {
+
+			const units = viewUnits();
+
+			if ( units === null ) return null;
+
+			const camera = cameraManager.activeCamera;
+			const target = controls.target;
+			const angles = cameraAngles();
+
+			// the scale the model is displayed at, in pixels of the page to a unit of the
+			// scene, at the point looked at
+
+			const pixels = camera.isOrthographicCamera
+				? camera.zoom * units.height / ( camera.top - camera.bottom )
+				: units.height / ( 2 * camera.position.distanceTo( target ) * halfHeightAtOne( camera ) );
+
+			const k = units.fit / units.height;
+
+			return {
+				azimuth: angles.azimuth,
+				polar: angles.polar,
+				zoom: pixels / units.fit,
+				target: {
+					x: ( target.x - units.centre.x ) * k,
+					y: ( target.y - units.centre.y ) * k,
+					z: ( target.z - units.centre.z ) * k
+				},
+				cameraType: cameraManager.mode
+			};
+
+		};
+
+		this.setViewpoint = function ( viewpoint = {} ) {
+
+			const azimuth = angleOption( viewpoint, 'azimuth' );
+			const polar = angleOption( viewpoint, 'polar' );
+			const zoom = viewpoint.zoom ?? null;
+			const target = viewpoint.target ?? null;
+			const cameraType = viewpoint.cameraType ?? null;
+
+			if ( zoom !== null && ( typeof zoom !== 'number' || ! isFinite( zoom ) || zoom <= 0 ) ) {
+
+				throw new Error( 'the zoom of a view must be a finite number above 0' );
+
+			}
+
+			if ( target !== null && ! [ target.x, target.y, target.z ].every( n => typeof n === 'number' && isFinite( n ) ) ) {
+
+				throw new Error( 'the target of a view must be three finite numbers, x, y and z' );
+
+			}
+
+			const units = viewUnits();
+
+			if ( units === null || capture !== null ) return false;
+
+			// a camera brought nearer is otherwise also brought towards wherever the
+			// pointer last was over this viewer, which is no part of the view asked for
+
+			const zoomToCursor = controls.zoomToCursor;
+			const required = renderRequired;
+
+			controls.zoomToCursor = false;
+			renderRequired = false;
+
+			try {
+
+				// as setCameraAngles() does: a move in flight would carry on from wherever
+				// this puts the camera, and a focus call waiting on it is told it will not
+				// arrive. The move is ended where it was going, which is a change of the
+				// view like any other it made - and, ended here, one of the application's.
+
+				if ( cameraMove.isRunning() && ! controls.autoRotate ) {
+
+					settlePendingMove( new Error( 'superseded' ) );
+					cameraMove.cancel();
+
+				}
+
+				if ( cameraType !== null && cameraType !== cameraManager.mode ) self.cameraType = cameraType;
+
+				const camera = cameraManager.activeCamera;
+
+				setAngles( azimuth, polar );
+
+				if ( zoom !== null ) {
+
+					const pixels = zoom * units.fit;
+
+					if ( camera.isOrthographicCamera ) {
+
+						camera.zoom = MathUtils.clamp( pixels * ( camera.top - camera.bottom ) / units.height, controls.minZoom, controls.maxZoom );
+						camera.updateProjectionMatrix();
+
+					} else {
+
+						const distance = units.height / ( 2 * pixels * halfHeightAtOne( camera ) );
+
+						controls.scaleDolly( distance / camera.position.distanceTo( controls.target ) );
+
+					}
+
+				}
+
+				if ( target !== null ) {
+
+					// the camera is moved with the point it looks at, so that it goes on
+					// looking from the same direction and distance
+
+					const k = units.height / units.fit;
+
+					__v.set( target.x, target.y, target.z ).multiplyScalar( k ).add( units.centre ).sub( controls.target );
+
+					camera.position.add( __v );
+					controls.target.add( __v );
+
+				}
+
+				// the controls work from the angles and the distance of their last update
+
+				if ( ! controls.autoRotate ) controls.update();
+
+			} finally {
+
+				controls.zoomToCursor = zoomToCursor;
+				renderRequired = required;
+
+			}
+
+			cameraMoved();
+
+			return true;
+
+		};
 
 		// A capture session draws the view into frames of a size given in pixels, one frame
 		// at a time and only when asked, for an application recording the viewer - a movie of

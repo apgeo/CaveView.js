@@ -371,6 +371,30 @@ captured frame being the one that shows it.</p>
 	<dt>angles</dt><dd><span>Object</span>An Object with the properties azimuth and polar, each a finite number of radians or absent.</dd>
 </dl>
 
+<h4>getViewpoint()</h4>
+<p>The view, as a viewpoint Object defined below: the direction the camera looks from, how large the model
+is displayed, the point looked at and the kind of camera. Unlike the camera's own position and zoom, each
+is in a unit that means the same for another model in a container of another size, so that the view of
+one viewer can be given to another - two surveys of one cave side by side, each in a viewer of its own,
+looked at from the same direction and at the same scale relative to its extent.</p>
+<p>Returns null if no model is loaded, or the container is not displayed. Reading the view changes
+nothing and draws nothing.</p>
+
+<h4>setViewpoint( &lt;viewpoint&gt; )</h4>
+<p>Set the view from a viewpoint Object, at once and without animating the move. Any property may be left
+out, and that part of the view is then left as it is. The zoom is kept within the limits the controls
+keep, and the polar angle within those of the viewer. A camera move in flight is ended first; an automatic
+rotation carries on from the new direction. The view is drawn once.</p>
+<p>Returns true, or false - changing nothing - if no model is loaded, the container is not displayed, or
+a capture session is open. Throws an Error for an angle or a zoom that is not a finite number, a zoom that
+is not above 0, and a target that is not three finite numbers.</p>
+<p>Setting the view dispatches no viewpoint event: an application that sets the view of one viewer from
+the event of another is not answered by an event of the first.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>viewpoint</dt><dd><span>Object</span>A viewpoint Object defined below.</dd>
+</dl>
+
 <h4>beginCapture( &lt;options&gt; )</h4>
 <p>Open a capture session: the view is drawn into frames of a size given in pixels, one at a time and
 only when captureFrame() asks, for an application that records the viewer - a movie of it, whose every
@@ -603,6 +627,16 @@ suppress, so an application that leaves the event unhandled sees the label it wa
 	<dt>pointerType</dt><dd><span>string</span>The kind of pointer the collapsed marker was revealed with, as the browser reports it.</dd>
 	<dt>handled</dt><dd><span>boolean</span>Set to true by a listener to record that it has displayed the group itself <span>default: false</span>.</dd>
 </dl>
+
+<h4>viewpoint</h4>
+<p>Dispatched each time the view changes other than by the application setting it: as the reader turns,
+tilts, zooms or moves the model with the pointer or the keys; at each step of a move the viewer animates,
+to one of its own views or to a station; at each step of an automatic rotation; and when the kind of
+camera is changed. The view is read with getViewpoint().</p>
+<p>A view set by setViewpoint(), by setCameraAngles() or by setView() - and so the view a model is first
+displayed in - dispatches no event, and neither does a frame of a capture session. An application keeping
+two viewers in step listens to each and sets the view of the other, and is not told of its own doing in
+return.</p>
 
 <h2>CaveViewUI Object</h2>
 
@@ -964,6 +998,25 @@ passed back untouched rather than copied.</p>
 	</dd>
 	<dt>walls</dt>
 	<dd><span>boolean</span>visibility of basic cross section messurement (LRUD) based passage walls <span>default: false</span></dd>
+</dl>
+
+<h4>viewpoint Object</h4>
+<p>A view, as getViewpoint() gives it and setViewpoint() takes it.</p>
+<h5>Properties</h5>
+<dl>
+	<dt>azimuth</dt>
+	<dd><span>float</span>The angle of the camera about the vertical through the point it looks at, in radians, as getCameraAngles() gives it.</dd>
+	<dt>polar</dt>
+	<dd><span>float</span>The angle of the camera from looking straight down, in radians: 0 is a plan view and &pi;/2 is level.</dd>
+	<dt>zoom</dt>
+	<dd><span>float</span>How large the model is displayed: 1 is the size at which the plan of the model just fits the
+	container, and 2 is twice that. For a camera in perspective it is the size at the point looked at.</dd>
+	<dt>target</dt>
+	<dd><span>Object</span>The point the camera looks at, as an Object with the properties x, y and z: its offset from
+	the centre of the model, east, north and up, in heights of the container at a zoom of 1. The same offset moves a
+	model across the same share of the display in any viewer.</dd>
+	<dt>cameraType</dt>
+	<dd><span>enummeration</span>The projection type for the display, as the cameraType property of the view Object.</dd>
 </dl>
 
 </body>
