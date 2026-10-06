@@ -42,7 +42,8 @@
 </dl>
 
 <h4>dispose()</h4>
-<p>Free used memory including GPU and Javascript heap allocations.</p>
+<p>Free used memory including GPU and Javascript heap allocations. A toggle-fullscreen class that was
+displaying the viewer large on its own is taken off the fullscreen element.</p>
 
 <h2>CaveViewUI Object</h2>
 
@@ -98,10 +99,13 @@
 	<dd><span>Element</span> or <span>string</span>The element, or the id of the element, put into fullscreen when the
 	viewer's fullscreen is requested: the container by default. A host that keeps controls of its own around the viewer
 	names an element enclosing both, so that they go into fullscreen with it. The element in use is reported by the
-	viewer's read only fullscreenElement property. Where the browser refuses the request - in a frame that is not
-	allowed fullscreen, say - the element is left with the toggle-fullscreen class alone, for a stylesheet to display it
-	as large as the page allows: the viewer's fullscreen property is true for as long as that lasts, and setting it to
-	false takes the class off again. A request made while another element of the page is in fullscreen does nothing
+	viewer's read only fullscreenElement property. The toggle-fullscreen class is set on the element as the request
+	is made, and the viewer's fullscreen property is true from then on. Where the browser refuses the request - in a
+	frame that is not allowed fullscreen, say - the element is left with the class alone, for a stylesheet to display it
+	as large as the page allows: the property stays true for as long as that lasts, and setting it to false takes the
+	class off again. Setting it to false, or disposing the viewer, before the browser has answered takes the class off
+	as well, and a fullscreen the browser grants after that is left at once. A request made while another element of
+	the page is in fullscreen does nothing
 	(optional).</dd>
 	<dt>home</dt>
 	<dd><span>string</span> The path to the installtion of the CaveView package.</dd>
