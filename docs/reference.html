@@ -30,15 +30,18 @@
 <p>Load a single model.</p>
 <h5>Parameters</h5>
 <dl>
-	<dt>filename</dt><dd><span>string</span>The filename of the model to be loaded from the survey directory (specified by the configuration object).</dd>
+	<dt>filename</dt><dd><span>string</span> or <span>Object</span>The filename of the model to be loaded from the survey directory (specified by the configuration object), or a file description Object defined below.</dd>
 	<dt>section</dt><dd><span>string</span>The section name of the survey to be displayed (optional).</dd>
 </dl>
 
 <h4>loadCaves( &lt;array&gt; )</h4>
 <p>Display multiple models together. All files must be of the same type and CRS.</p>
+<p>The files are read into one survey tree. Files that name their surveys alike - one cave surveyed twice
+and exported under the same name - are told apart only where each is given a label, in a file description
+Object: the surveys and stations of a file with a label are those of a survey of that name.</p>
 <h5>Parameters</h5>
 <dl>
-	<dt>array</dt><dd><span>Array</span>an array of filenames of models to be displayed.</dd>
+	<dt>array</dt><dd><span>Array</span>an array of filenames of models to be displayed, or of file description Objects defined below.</dd>
 </dl>
 
 <h4>focusStation( &lt;reference&gt;, &lt;options&gt; )</h4>
@@ -573,7 +576,7 @@ suppress, so an application that leaves the event unhandled sees the label it wa
 <p>Load a single model.</p>
 <h5>Parameters</h5>
 <dl>
-	<dt>filename</dt><dd><span>string</span>The filename of the model to be loaded from the survey directory (specified by the configuration object).</dd>
+	<dt>filename</dt><dd><span>string</span>, <span>File</span> or <span>Object</span>The filename of the model to be loaded from the survey directory (specified by the configuration object), a File, or a file description Object defined below.</dd>
 	<dt>section</dt><dd><span>string</span>The section name of the survey to be displayed (optional).</dd>
 </dl>
 
@@ -585,10 +588,11 @@ suppress, so an application that leaves the event unhandled sees the label it wa
 </dl>
 
 <h4>loadCaves( &lt;array&gt; )</h4>
-<p>Display multiple models together. All files must be of the same type and CRS.</p>
+<p>Display multiple models together, as loadCaves() of the CaveView Object does. All files must be of the
+same type and CRS.</p>
 <h5>Parameters</h5>
 <dl>
-	<dt>array</dt><dd><span>Array</span>an array of filenames of models to be displayed.</dd>
+	<dt>array</dt><dd><span>Array</span>an array of filenames of models to be displayed, or of file description Objects defined below.</dd>
 </dl>
 
 <h4>.clearView()</h4>
@@ -682,6 +686,26 @@ is disposed.</p>
 	<dd><span>boolean</span>Support loading grid files for CRS tranforms where required <span>default: false</span>. (optional).</dd>
 	<dt>view</dt>
 	<dd><span>Object</span>An object, the properties of which determine the view settings applied to all models when loaded (optional).</dd>
+</dl>
+
+<h4>file description Object</h4>
+<p>A file of a model, where naming it is not enough: a File the application holds rather than a file to
+be fetched, or a file that is to be given a label.</p>
+<p>A file with a label has a survey of its own, of that name, at the top of the survey tree, and its
+surveys, stations and legs are that survey's: the path of each begins with the label. Without labels, the
+files displayed together share one tree, in which those that name their surveys alike share their
+surveys, and a station of either is found by the same path. A file with no label is read as it always
+was. A Compass .plt file takes no label.</p>
+<h5>Properties</h5>
+<dl>
+	<dt>name</dt>
+	<dd><span>string</span>The filename of the model to be loaded from the survey directory. The format of a file is read from the extension of its name. May be given with a File as well, in place of the File's own name.</dd>
+	<dt>file</dt>
+	<dd><span>File</span>A File to be read, in place of one fetched by name (optional).</dd>
+	<dt>label</dt>
+	<dd><span>string</span>The name of the survey the file's own surveys are placed in: a text of at least one character
+	with no full stop in it, since a path is its names joined by full stops. Any other value is refused with an Error
+	as the call is made. The files displayed together are each given a label of their own (optional).</dd>
 </dl>
 
 <h4>focusStation options Object</h4>

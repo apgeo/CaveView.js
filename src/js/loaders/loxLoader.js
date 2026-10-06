@@ -41,6 +41,12 @@ class loxLoader extends FileLoader {
 		const skipTerrain = ( projection !== null );
 		const utf8Decoder = new TextDecoder( 'utf-8' );
 
+		// a file given a label keeps its surveys in a survey of that name - see readSurvey()
+
+		const fileLabel = this.file.label ?? null;
+
+		let fileNode = null;
+
 		const l = source.byteLength;
 		const idOffset = loxLoader.modelOffset;
 		const stations = [];
@@ -200,11 +206,25 @@ class loxLoader extends FileLoader {
 
 				if ( node === null ) throw new Error( 'error constructing survey tree for : ' + readString( titlePtr ) );
 
-				if ( section !== null && node.getPath() === section ) {
+				// a section to load is named within the file, whatever the file is labelled
+
+				if ( section !== null && node.getPath( fileNode ?? undefined ) === section ) {
 
 					sectionId = m_id;
 
 				}
+
+			} else if ( fileLabel !== null ) {
+
+				// the survey a file's own surveys hang from is not added to the tree, and
+				// they join those of every other file of the source under its root. In a
+				// file with a label it is added, by the label: its surveys are then that
+				// survey's, and neither they nor their stations are taken for those of
+				// another file that names them alike. The stations and the legs the file
+				// puts in that survey itself find it by the identifier it has in the file.
+
+				fileNode = surveyTree.addById( fileLabel, m_id + idOffset );
+				parentNode = fileNode;
 
 			}
 

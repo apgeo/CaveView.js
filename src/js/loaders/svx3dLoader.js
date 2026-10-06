@@ -14,6 +14,7 @@ class Svx3dLoader extends FileLoader{
 
 		this.groups = [];
 		this.section = null;
+		this.fileNode = null;
 
 	}
 
@@ -53,6 +54,16 @@ class Svx3dLoader extends FileLoader{
 		console.log( 'Survex .3d version ', this.version );
 
 		this.pos = pos;
+
+		// a file given a label keeps its surveys in a survey of that name. The names a file
+		// gives its surveys and stations are paths from the root of the tree, so those of
+		// two files that name them alike would otherwise be taken for the same survey and
+		// the same stations; with a label each path is extended at its start instead.
+
+		const fileLabel = this.file.label ?? null;
+		const surveyTree = surveyDataCollector.surveyTree;
+
+		this.fileNode = ( fileLabel === null ) ? null : surveyTree.addById( fileLabel, surveyTree.maxId + 1 );
 
 		return surveyDataCollector.setCRS( sourceCRS ).then( () => this.parse2() );
 
@@ -119,7 +130,7 @@ class Svx3dLoader extends FileLoader{
 		}
 
 		// if pre selecting a section - trim returned surveyTree
-		if ( this.section !== null ) surveyDataCollector.surveyTree.trim( this.section.split( '.' ) );
+		if ( this.section !== null ) ( this.fileNode ?? surveyDataCollector.surveyTree ).trim( this.section.split( '.' ) );
 
 		surveyDataCollector.addStations( this.stationMap );
 
@@ -130,11 +141,30 @@ class Svx3dLoader extends FileLoader{
 
 	}
 
+	// add a station to the survey tree by its path in the file, which in a file with a
+	// label is a path within the survey the label names
+
+	addStation ( path, coords ) {
+
+		const surveyTree = this.surveyDataCollector.surveyTree;
+		const fileNode = this.fileNode;
+
+		if ( fileNode === null ) return surveyTree.addLeaf( path, coords );
+
+		// a station the file puts in no survey is a station of the file's own
+
+		if ( path.length === 1 ) return fileNode.addLeaf( path, coords );
+
+		path.unshift( fileNode.name );
+
+		return surveyTree.addLeaf( path, coords );
+
+	}
+
 	handleOld ( version ) {
 
 		const surveyDataCollector       = this.surveyDataCollector;
 		const source     = this.dataStream;
-		const surveyTree = surveyDataCollector.surveyTree;
 		const projection = surveyDataCollector.projection;
 		const limits     = surveyDataCollector.limits;
 
@@ -150,6 +180,8 @@ class Svx3dLoader extends FileLoader{
 		const dataView   = new DataView( source, 0 );
 		const data       = new Uint8Array( source, 0 );
 		const dataLength = data.length;
+
+		const addStation = this.addStation.bind( this );
 
 		let label     = '';
 		const sectionId = 0;
@@ -268,7 +300,7 @@ class Svx3dLoader extends FileLoader{
 			label = String.fromCharCode.apply( null, db );
 			lastPosition.type = STATION_NORMAL;
 
-			const node = surveyTree.addLeaf( label.split( '.' ), lastPosition );
+			const node = addStation( label.split( '.' ), lastPosition );
 
 			// track coords to sectionId to allow survey ID's to be added to leg vertices
 			stations.set( lastPosition, node );
@@ -403,6 +435,10 @@ class Svx3dLoader extends FileLoader{
 		const groups     = this.groups;
 		const xGroups    = [];
 		const stationMap = this.stationMap;
+
+		const fileNode   = this.fileNode;
+		const filePrefix = ( fileNode === null ) ? '' : fileNode.name + '.';
+		const addStation = this.addStation.bind( this );
 
 		// init cmd handler table with error handler for unsupported records
 		// or invalid records
@@ -798,7 +834,18 @@ class Svx3dLoader extends FileLoader{
 				// if we have a new section name
 				// add it to the survey tree
 
-				sectionId = label === '' ? 0 : surveyTree.addPath( label ).id;
+				if ( label === '' ) {
+
+					// legs in no survey of the file are in the file's own, where it has one
+
+					sectionId = ( fileNode === null ) ? 0 : fileNode.id;
+
+				} else {
+
+					sectionId = surveyTree.addPath( filePrefix + label ).id;
+
+				}
+
 				labelChanged = false;
 
 			}
@@ -950,7 +997,7 @@ class Svx3dLoader extends FileLoader{
 
 			stations.set(
 				label,
-				surveyTree.addLeaf( path, useCoords )
+				addStation( path, useCoords )
 			);
 
 			return true;

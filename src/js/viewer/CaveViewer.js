@@ -1240,7 +1240,7 @@ class CaveViewer extends EventDispatcher {
 
 		this.loadCave = function ( file, section ) {
 
-			this.loadSource( new ModelSource( [ { name: file } ], false ), section );
+			this.loadSource( new ModelSource( [ file ], false ), section );
 
 		};
 

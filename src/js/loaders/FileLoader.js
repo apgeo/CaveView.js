@@ -14,7 +14,11 @@ class FileLoader {
 		const results = { data: null, metadata: null };
 		const file = this.file;
 
-		if ( file instanceof File ) {
+		// a File, as it is or as the file of a description that gives it a label
+
+		const local = ( file instanceof File ) ? file : ( ( file.file instanceof File ) ? file.file : null );
+
+		if ( local !== null ) {
 
 			return new Promise( ( resolve, reject ) => {
 
@@ -29,12 +33,12 @@ class FileLoader {
 
 				case 'arraybuffer':
 
-					fileReader.readAsArrayBuffer( file );
+					fileReader.readAsArrayBuffer( local );
 					break;
 
 				case 'text':
 
-					fileReader.readAsText( file );
+					fileReader.readAsText( local );
 					break;
 
 				default:

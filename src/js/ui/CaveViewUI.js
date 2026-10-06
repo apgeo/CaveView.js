@@ -97,15 +97,11 @@ function CaveViewUI ( viewer ) {
 
 	this.loadCave = function ( file, section ) {
 
-		if ( file instanceof File ) {
+		// a File, the name of a file to fetch, or a description of either - see ModelSource
 
-			fileSelector.selectSource( new ModelSource( [ file ], true ), section );
+		const local = ( file instanceof File || file?.file instanceof File );
 
-		} else {
-
-			fileSelector.selectSource( new ModelSource( [ { name: file } ], false ), section );
-
-		}
+		fileSelector.selectSource( new ModelSource( [ file ], local ), section );
 
 	};
 
