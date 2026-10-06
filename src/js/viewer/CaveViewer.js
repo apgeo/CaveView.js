@@ -558,7 +558,36 @@ class CaveViewer extends EventDispatcher {
 
 		}
 
+		// true while the class alone is displaying the viewer large: the browser was asked
+		// for fullscreen and refused - in a frame that is not allowed it, say - and what the
+		// stylesheet does with the class is all there is. The document then names no
+		// fullscreen element, so nothing but this says that the next request is the one
+		// to undo it.
+
+		let fullscreenByClassOnly = false;
+
+		function setFullscreenByClassOnly ( state ) {
+
+			fullscreenByClassOnly = state;
+
+			onResize();
+			self.dispatchEvent( { type: 'change', name: 'fullscreen' } );
+
+		}
+
+		function onFullscreenRefused () {
+
+			// disposed, or taken out of the state again, while the browser was deciding
+
+			if ( renderer === null || ! fullscreenElement.classList.contains( 'toggle-fullscreen' ) ) return;
+
+			if ( ! isFullscreen() ) setFullscreenByClassOnly( true );
+
+		}
+
 		function isFullscreen () {
+
+			if ( fullscreenByClassOnly ) return true;
 
 			// the document says which element is in fullscreen where the API exists. The
 			// comparison of the container with the window is kept only for a browser
@@ -576,6 +605,11 @@ class CaveViewer extends EventDispatcher {
 		}
 
 		function onFullscreenChange () {
+
+			// a fullscreen that did come after all - the host asked for it itself, say - is
+			// the document's to report from here on
+
+			if ( ( document.fullscreenElement ?? document.webkitFullscreenElement ?? null ) !== null ) fullscreenByClassOnly = false;
 
 			if ( isFullscreen() ) {
 
@@ -598,11 +632,21 @@ class CaveViewer extends EventDispatcher {
 
 			if ( targetState ) {
 
+				// with another element of the page in fullscreen there is nothing to ask the
+				// browser for, and the class set on its own would cover what that element is
+				// displaying with nothing left to take it off again
+
+				if ( ( document.fullscreenElement ?? document.webkitFullscreenElement ?? null ) !== null ) return;
+
 				fullscreenElement.classList.add( 'toggle-fullscreen' );
 
 				if ( document.fullscreenElement === null ) {
 
-					fullscreenElement.requestFullscreen();
+					// a browser that refuses says so by rejecting, where it answers at all
+
+					const request = fullscreenElement.requestFullscreen();
+
+					if ( request !== undefined ) request.catch( onFullscreenRefused );
 
 				} else if ( document.webkitFullscreenElement === null) {
 
@@ -613,6 +657,16 @@ class CaveViewer extends EventDispatcher {
 			} else {
 
 				fullscreenElement.classList.remove( 'toggle-fullscreen' );
+
+				if ( fullscreenByClassOnly ) {
+
+					// there is no fullscreen to leave, and so no event to come: the size
+					// and the state are reported from here
+
+					setFullscreenByClassOnly( false );
+					return;
+
+				}
 
 				if ( document.fullscreenElement ) {
 
@@ -1240,6 +1294,11 @@ class CaveViewer extends EventDispatcher {
 
 			fullscreenElement.removeEventListener( 'fullscreenchange', onFullscreenChange );
 			fullscreenElement.removeEventListener( 'webkitfullscreenchange', onFullscreenChange );
+
+			// a class that was covering the page on its own would go on covering it, with
+			// no viewer left to be asked to take it off
+
+			if ( fullscreenByClassOnly ) fullscreenElement.classList.remove( 'toggle-fullscreen' );
 
 			renderer.clear();
 			renderer.dispose();
