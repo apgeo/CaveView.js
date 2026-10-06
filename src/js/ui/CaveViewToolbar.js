@@ -317,7 +317,9 @@ class CaveViewToolbar {
 		// only the viewer container is displayed fullscreen, so a toolbar added to an element
 		// outside it is not on screen for as long as that lasts. It is moved into the container
 		// for the duration and returned to where it was afterwards; where it was is held here,
-		// and is null whenever the toolbar is in the place the application put it.
+		// and is null whenever the toolbar is in the place the application put it. The same
+		// goes for a container that covers the page by its class alone, the browser having
+		// refused it fullscreen: the bar would lie under it, its fullscreen button with it.
 
 		const viewerContainer = viewer.container;
 
@@ -596,6 +598,11 @@ class CaveViewToolbar {
 
 		function onChange ( event ) {
 
+			// a fullscreen the browser refused is a change the document raises no event
+			// for: the viewer is the only one to report it
+
+			if ( event.name === 'fullscreen' ) onFullscreenChange();
+
 			refresh( event.name );
 
 		}
@@ -651,7 +658,13 @@ class CaveViewToolbar {
 
 		function onFullscreenChange () {
 
-			const fullscreenElement = document.fullscreenElement ?? document.webkitFullscreenElement ?? null;
+			// the element displayed large: the one the document has in fullscreen or, with
+			// none there and the viewer saying it is fullscreen all the same, the one the
+			// viewer set its class on
+
+			let fullscreenElement = document.fullscreenElement ?? document.webkitFullscreenElement ?? null;
+
+			if ( fullscreenElement === null && viewer.fullscreen ) fullscreenElement = viewer.fullscreenElement;
 
 			if ( fullscreenElement !== viewerContainer ) {
 

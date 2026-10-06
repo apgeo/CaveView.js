@@ -622,7 +622,9 @@ for something the loaded model does not hold - the scraps of a model surveyed wi
 with the model displayed.</p>
 <p>Only the viewer container is displayed fullscreen. A toolbar added to an element outside it is
 therefore moved into the viewer container for as long as that lasts, and returned to where it was
-afterwards, so that a fullscreen button does not remove the toolbar it was pressed on. The CSS custom
+afterwards, so that a fullscreen button does not remove the toolbar it was pressed on. It is moved in
+the same way while the container covers the page by its toggle-fullscreen class alone, the browser
+having refused the request, and returned when the class is taken off. The CSS custom
 properties below are read where the toolbar then is, so set them on the viewer container, or on an
 ancestor of both elements, for a toolbar outside the viewer to keep its appearance in fullscreen.</p>
 <h5>Parameters</h5>
