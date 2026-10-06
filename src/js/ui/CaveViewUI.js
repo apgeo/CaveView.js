@@ -126,6 +126,15 @@ function CaveViewUI ( viewer ) {
 
 	this.dispose = function () {
 
+		// the side panel is built again whenever the view is cleared, as it is below, and
+		// whenever a model or the language arrives: listening on, a disposed interface
+		// would be left in the container it was taken out of, and built again in it for
+		// as long as anything of the viewer's was still to arrive
+
+		viewer.removeEventListener( 'newCave', initUI );
+		viewer.removeEventListener( 'clear', initUI );
+		cfg.removeEventListener( 'change', initUI );
+
 		frame.clear();
 		viewer.clearView();
 		fileSelector.dispose();
