@@ -2189,6 +2189,10 @@ class CaveViewer extends EventDispatcher {
 
 			caveLoader.reset();
 
+			// the catalogue of the interface's language outlives the viewer
+
+			cfg.dispose();
+
 			ctx.workerPools.dispose();
 			scene.remove( survey );
 			controls.dispose();
