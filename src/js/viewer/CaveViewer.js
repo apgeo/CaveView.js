@@ -1276,9 +1276,56 @@ class CaveViewer extends EventDispatcher {
 		this.renderView = renderView;
 		this.resize = onResize;
 
+		// a move of a single frame - the only kind a reader who prefers reduced motion is
+		// given - ends inside the call that starts it. A caller that returns a promise has
+		// its listener in place before it moves; one that only says the end of its move is
+		// signalled by 'moved' has told its host to listen after the call has returned,
+		// which for such a move would be after the only signal there was. Such a caller
+		// holds the signal while it starts the move, and gives it once it has returned.
+
+		let moveEndHeld = false;
+		let moveEndDue = false;
+
 		function onCameraMoveEnd () {
 
+			if ( moveEndHeld ) {
+
+				moveEndDue = true;
+				return;
+
+			}
+
 			self.dispatchEvent( moveEndEvent );
+
+		}
+
+		function holdMoveEnd () {
+
+			moveEndHeld = true;
+
+		}
+
+		function releaseMoveEnd () {
+
+			moveEndHeld = false;
+
+			if ( ! moveEndDue ) return;
+
+			// due until it is given: anything that settles or abandons a move before then
+			// gives it first - see settlePendingMove() - so that the end of this move is
+			// never taken for the end of the next one
+
+			queueMicrotask( giveMoveEndDue );
+
+		}
+
+		function giveMoveEndDue () {
+
+			if ( ! moveEndDue ) return;
+
+			moveEndDue = false;
+
+			if ( renderer !== null ) self.dispatchEvent( moveEndEvent );
 
 		}
 
@@ -1397,6 +1444,11 @@ class CaveViewer extends EventDispatcher {
 		// move that is abandoned part way is settled before anything cancels it.
 
 		function settlePendingMove ( error ) {
+
+			// the end of a move already made, whose signal has yet to be given, is given
+			// before anything is done about the next one
+
+			giveMoveEndDue();
 
 			if ( pendingMove !== null ) pendingMove( error );
 
@@ -1731,7 +1783,10 @@ class CaveViewer extends EventDispatcher {
 		// section: from the nearest cardinal direction, and animated unless the reader
 		// prefers otherwise. Returns false and leaves the camera as it is when no marker is
 		// displayed, so a host can call it on every update without asking first; otherwise
-		// true, and the end of the move is signalled by the 'moved' event like any other.
+		// true, and the end of the move is signalled by the 'moved' event like any other -
+		// always after this call has returned, so that a host can call and then listen:
+		// also where the move took a single frame, and where the camera already took the
+		// markers in and there was no move to make.
 
 		this.frameLiveMarkers = function ( options = {} ) {
 
@@ -1765,7 +1820,19 @@ class CaveViewer extends EventDispatcher {
 
 			cameraMove.cancel();
 			cameraMove.prepare( box );
+
+			// the end of a move made in one frame is signalled after this call has returned,
+			// when a host that waits for it can be listening. A move that is not required
+			// never runs, and is signalled as ended all the same: the host was told to
+			// wait for a signal, and would otherwise wait for one that was never coming.
+
+			holdMoveEnd();
+
 			cameraMove.start( true, options.animate === true );
+
+			if ( ! cameraMove.isRunning() ) moveEndDue = true;
+
+			releaseMoveEnd();
 
 			return true;
 
