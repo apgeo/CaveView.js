@@ -1056,6 +1056,11 @@ class CaveViewer extends EventDispatcher {
 			caveLoader.loadSource( source, section ).then(
 				surveyData => {
 
+					// the viewer was disposed while the survey was being read, or its
+					// coordinate system looked up: there is nothing left to display it in
+
+					if ( renderer === null ) return;
+
 					onResize();
 
 					try {
@@ -1070,6 +1075,11 @@ class CaveViewer extends EventDispatcher {
 
 				},
 				error => {
+
+					// a load that fails after the viewer was disposed - as it does when what
+					// it was working with has been let go of - has nobody left to tell
+
+					if ( renderer === null ) return;
 
 					alert( `Failed loading cave information: ${error}.`);
 					this.clearView();
@@ -2172,6 +2182,12 @@ class CaveViewer extends EventDispatcher {
 			capture = null;
 
 			this.dispatchEvent( { type: 'dispose' } );
+
+			// a survey still being loaded is given up: what is being fetched or read is
+			// aborted where it can be, and a load that completes all the same - one waiting
+			// on a coordinate system, say - is dropped as it arrives
+
+			caveLoader.reset();
 
 			ctx.workerPools.dispose();
 			scene.remove( survey );
