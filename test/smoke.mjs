@@ -10,6 +10,11 @@
 // Romanian from a catalogue that arrives late, and is refused fullscreen - which is where
 // the behaviours a preference, a slow network and a refusal bring out are asserted, and
 // where the viewer is disposed while it is still loading and while it is covering the page.
+//
+// A third page holds two containers, for what an application comparing two surveys asks of
+// the viewer: two files of one source told apart by a label and a colour each, sections
+// hidden and shown again, the view of one viewer given to another, and two viewers on one
+// page that do not take from each other.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -27,6 +32,15 @@ const TIMEOUT = Number( process.env.SMOKE_TIMEOUT ?? 120000 );
 
 // a survey that names a coordinate system, for a load that has to wait while it is looked up
 const SURVEY_WITH_CRS = 'P8_Master.3d';
+
+// the surveys read twice into one model, each copy under a label: one of each format that
+// takes a label. The first has four surveys under a single one, for hiding one of them.
+const SURVEY_TWICE = 'P8_Master.3d';
+const SURVEY_TWICE_LOX = 'Cheddar.lox';
+
+// the colours the two copies are drawn in
+const COLOUR_EARLY = '#56b4e9';
+const COLOUR_LATE = '#e69f00';
 
 // the catalogue the second reader's interface is written from
 const LANGUAGE = 'ro';
@@ -105,9 +119,32 @@ const pageHtml = `<!doctype html>
 <script src="/CaveView/js/CaveView2.min.js"></script>
 </body></html>`;
 
+// two containers side by side, for two viewers on the one page
+
+const compareHtml = `<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="/CaveView/css/caveview.css">
+<style>
+	body { margin: 0; background: #000; }
+	.half { display: inline-block; width: 500px; height: 400px; position: relative; }
+</style>
+</head>
+<body>
+<div id="one" class="half"></div><div id="two" class="half"></div>
+<script src="/CaveView/js/CaveView2.min.js"></script>
+</body></html>`;
+
 const server = http.createServer( ( req, res ) => {
 
 	const url = new URL( req.url, 'http://127.0.0.1' );
+
+	if ( url.pathname === '/compare.html' ) {
+
+		res.writeHead( 200, { 'content-type': 'text/html' } );
+		res.end( compareHtml );
+		return;
+
+	}
 
 	if ( url.pathname === '/smoke.html' ) {
 
@@ -1367,12 +1404,464 @@ try {
 
 	const rejections2 = await page2.evaluate( () => smoke.rejections );
 
+	await second.close();
+
+	// --- two surveys compared: two containers on one page -----------------------------------
+
+	const third = await browser.newContext( { viewport: { width: 1040, height: 460 } } );
+	const { page: page3, seen: seen3 } = await openPage( third, '/compare.html' );
+
+	seenByPage.push( seen3 );
+
+	// what the comparing steps share: a viewer with its user interface in a container, the
+	// stations of the model it displays, and what is drawn of the two copies - counted from
+	// a frame drawn there and then, with everything but the legs taken off the view
+
+	await page3.evaluate( () => {
+
+		smoke.build = id => {
+
+			const viewer = new CV2.CaveViewer( id, { home: '/CaveView/', surveyDirectory: '/surveys/', language: 'en' } );
+
+			return { viewer: viewer, ui: new CV2.CaveViewUI( viewer ) };
+
+		};
+
+		smoke.load = async ( built, files, timeout ) => {
+
+			const newCave = smoke.wait( built.viewer, 'newCave', timeout );
+
+			built.ui.loadCaves( files );
+
+			await newCave;
+
+		};
+
+		smoke.stationPaths = viewer => {
+
+			const paths = [];
+
+			viewer.forEachStation( station => paths.push( station.name() ) );
+
+			return paths;
+
+		};
+
+		smoke.sections = node => node.children.filter( child => ! child.isStation() ).map( child => child.name ).sort();
+
+		// the pixels of each copy's colour in a frame: the colour of the first is more
+		// blue than red, and that of the second more red than blue with green in it
+
+		smoke.drawn = viewer => {
+
+			viewer.renderView();
+
+			const source = viewer.container.querySelector( 'canvas' );
+			const canvas = document.createElement( 'canvas' );
+
+			canvas.width = source.width;
+			canvas.height = source.height;
+
+			const context = canvas.getContext( '2d' );
+
+			context.drawImage( source, 0, 0 );
+
+			const data = context.getImageData( 0, 0, canvas.width, canvas.height ).data;
+
+			let early = 0;
+			let late = 0;
+
+			for ( let i = 0; i < data.length; i += 4 ) {
+
+				const r = data[ i ];
+				const g = data[ i + 1 ];
+				const b = data[ i + 2 ];
+
+				if ( b > r + 40 && b > 80 ) early++;
+				if ( r > b + 60 && g > 50 && r > 100 ) late++;
+
+			}
+
+			return { early, late };
+
+		};
+
+	} );
+
+	// one survey read twice into one model, each copy under a label and in a colour. The copy
+	// given first is held back on its way, so that it is the last of the two to be read: what
+	// is drawn over what must follow the order the files were given in, not that one.
+
+	let copiesAsked = 0;
+
+	const isCopy = url => new URL( url ).pathname === '/surveys/' + SURVEY_TWICE;
+
+	await page3.route( url => isCopy( url.href ), async route => {
+
+		if ( copiesAsked++ === 0 ) await new Promise( resolve => setTimeout( resolve, 600 ) );
+
+		await route.continue().catch( () => {} );
+
+	} );
+
+	const twice = await page3.evaluate( async ( { survey, early, late, timeout } ) => {
+
+		const first = smoke.build( 'one' );
+		const second = smoke.build( 'two' );
+
+		window.first = first;
+		window.second = second;
+
+		const viewpointBefore = first.viewer.getViewpoint();
+
+		let refused = null;
+
+		try {
+
+			first.ui.loadCaves( [ { name: survey, label: 'a.b' } ] );
+
+		} catch ( e ) {
+
+			refused = e instanceof Error;
+
+		}
+
+		await smoke.load( first, [ { name: survey, label: 'early', color: early }, { name: survey, label: 'late', color: late } ], timeout );
+		await smoke.load( second, [ survey ], timeout );
+
+		const viewer = first.viewer;
+		const tree = viewer.getSurveyTree();
+
+		const paths = smoke.stationPaths( viewer );
+		const single = smoke.stationPaths( second.viewer );
+
+		// each station is found by its own path, and the copies' paths differ by the label
+
+		let found = 0;
+
+		viewer.forEachStation( station => { if ( viewer.getStation( station.name() ) === station ) found++; } );
+
+		const under = label => paths.filter( path => path.startsWith( label + '.' ) ).map( path => path.slice( label.length + 1 ) ).sort();
+
+		const earlyPaths = under( 'early' );
+		const latePaths = under( 'late' );
+		const singlePaths = single.slice().sort();
+
+		const same = ( a, b ) => a.length === b.length && a.every( ( path, i ) => path === b[ i ] );
+
+		viewer.shadingMode = CV2.SHADING_SURVEY;
+		second.viewer.shadingMode = CV2.SHADING_SURVEY;
+
+		const within = smoke.sections( tree.children.find( node => node.name === 'late' ).children[ 0 ] );
+
+		return {
+			viewpointBefore,
+			refused,
+			top: smoke.sections( tree ),
+			singleTop: smoke.sections( second.viewer.getSurveyTree() ),
+			stations: paths.length,
+			distinct: new Set( paths ).size,
+			found,
+			single: single.length,
+			copies: same( earlyPaths, singlePaths ) && same( latePaths, singlePaths ),
+			within,
+			colours: [ viewer.getSectionColor( [ 'early' ] ), viewer.getSectionColor( 'late' ), viewer.getSectionColor( [ 'late', 'p8', within[ 0 ] ] ) ],
+			chosen: within.map( name => second.viewer.getSectionColor( [ 'p8', name ] ) ),
+			nothing: viewer.getSectionColor( 'late.nothing' ),
+			bounds: [ viewer.getSectionBounds( [ 'early' ] ), viewer.getSectionBounds( 'late' ), second.viewer.getSectionBounds( 'p8' ) ],
+			noBounds: viewer.getSectionBounds( 'late.nothing' )
+		};
+
+	}, { survey: SURVEY_TWICE, early: COLOUR_EARLY, late: COLOUR_LATE, timeout: TIMEOUT } );
+
+	await page3.unroute( url => isCopy( url.href ) ).catch( () => {} );
+
+	check( 'two copies of a survey read under a label each are two surveys of the tree, and one read plainly is as it was', twice.top.join() === 'early,late' && twice.singleTop.join() === 'p8', `labelled: ${twice.top.join( ', ' )}; plain: ${twice.singleTop.join( ', ' )}` );
+	check( 'no station of one copy is taken for one of the other: twice the stations, each found by a path of its own', twice.single > 0 && twice.stations === 2 * twice.single && twice.distinct === twice.stations && twice.found === twice.stations && twice.copies, `${twice.stations} stations, ${twice.distinct} paths, ${twice.single} in one copy` );
+	check( 'a label with a full stop in it is refused as the load is asked for', twice.refused === true );
+	check( 'each copy is drawn in the colour given with it, and getSectionColor() says so of the copy and of a section in it', twice.colours.join() === [ COLOUR_EARLY, COLOUR_LATE, COLOUR_LATE ].join(), twice.colours.join( ', ' ) );
+	check( 'getSectionColor() gives the colour the viewer chose where none was given, and null for no section', twice.chosen.length > 1 && twice.chosen.every( colour => /^#[0-9a-f]{6}$/.test( colour ) ) && new Set( twice.chosen ).size > 1 && twice.nothing === null, twice.chosen.join( ', ' ) );
+
+	const box = twice.bounds[ 0 ];
+	const sameBox = ( a, b ) => a !== null && b !== null && [ 'min', 'max' ].every( corner => [ 'x', 'y', 'z' ].every( axis => Math.abs( a[ corner ][ axis ] - b[ corner ][ axis ] ) < 0.01 ) );
+
+	check( 'getSectionBounds() gives each copy the extent of the survey read plainly, and null for no section', box !== null && box.max.x > box.min.x && box.max.y > box.min.y && box.max.z > box.min.z && sameBox( box, twice.bounds[ 1 ] ) && sameBox( box, twice.bounds[ 2 ] ) && twice.noBounds === null, box === null ? 'no box' : `${( box.max.x - box.min.x ).toFixed( 1 )} by ${( box.max.y - box.min.y ).toFixed( 1 )} by ${( box.max.z - box.min.z ).toFixed( 1 )}` );
+
+	// sections hidden and shown again: what the viewer reports, and what it draws
+
+	const hidden = await page3.evaluate( within => {
+
+		const viewer = first.viewer;
+
+		// nothing but the legs: the indicators, the entrances and the box have colours of
+		// their own
+
+		viewer.HUD = false;
+		viewer.entrances = false;
+		viewer.entrance_dots = false;
+		viewer.box = false;
+
+		let changes = 0;
+
+		viewer.addEventListener( 'change', event => { if ( event.name === 'hiddenSections' ) changes++; } );
+
+		const both = smoke.drawn( viewer );
+
+		const hidLate = viewer.setSectionVisible( [ 'late' ], false );
+		const again = viewer.setSectionVisible( 'late', false );
+		const onlyEarly = smoke.drawn( viewer );
+		const listed = viewer.getHiddenSections();
+
+		viewer.setSectionVisible( 'late', true );
+		viewer.setSectionVisible( [ 'early' ], false );
+
+		const onlyLate = smoke.drawn( viewer );
+
+		viewer.setSectionVisible( [ 'late' ], false );
+
+		const neither = smoke.drawn( viewer );
+
+		const shown = viewer.showAllSections();
+		const all = smoke.drawn( viewer );
+
+		// one section of one copy: the other copy's is drawn where it lay. The copies lie
+		// exactly over one another, so all that is seen of them is the one drawn last -
+		// the one given last, though it was the first to be read.
+
+		viewer.setSectionVisible( [ 'late', 'p8', within ], false );
+
+		const part = smoke.drawn( viewer );
+		const partListed = viewer.getHiddenSections();
+
+		viewer.showAllSections( [ 'early' ] );
+
+		const kept = viewer.getHiddenSections().length;
+
+		viewer.showAllSections( [ 'late' ] );
+
+		return {
+			both, hidLate, again, onlyEarly, listed, onlyLate, neither, shown, all, part, partListed, kept,
+			left: viewer.getHiddenSections().length,
+			unknown: viewer.setSectionVisible( 'late.nothing', false ),
+			changes
+		};
+
+	}, twice.within[ 0 ] );
+
+	check( 'setSectionVisible() answers true for a section and false for none, and each change is signalled once', hidden.hidLate === true && hidden.again === true && hidden.unknown === false && hidden.changes === 7, `${hidden.changes} change events` );
+	check( 'getHiddenSections() lists what is hidden by its path, and showAllSections() shows what is within the section it is given', hidden.listed.length === 1 && hidden.listed[ 0 ].join() === 'late' && hidden.partListed.length === 1 && hidden.partListed[ 0 ].join( '.' ) === `late.p8.${twice.within[ 0 ]}` && hidden.kept === 1 && hidden.left === 0 && hidden.shown === true, `hidden: ${hidden.partListed.map( path => path.join( '.' ) ).join( ', ' )}` );
+	check( 'the legs of a hidden copy are not drawn, and those of the other are', hidden.onlyEarly.early > 100 && hidden.onlyEarly.late === 0 && hidden.onlyLate.late > 100 && hidden.onlyLate.early === 0 && hidden.neither.early === 0 && hidden.neither.late === 0, `late hidden: ${hidden.onlyEarly.early} and ${hidden.onlyEarly.late} pixels; early hidden: ${hidden.onlyLate.early} and ${hidden.onlyLate.late}; both hidden: ${hidden.neither.early} and ${hidden.neither.late}` );
+	check( 'where the two copies lie over one another the one given later is the one seen, though it was read first', copiesAsked >= 2 && hidden.both.late > 100 && hidden.both.early === 0, `${hidden.both.early} and ${hidden.both.late} pixels` );
+	check( 'they are drawn again when it is shown, and a section hidden in the later copy shows the earlier one\'s where it lay', hidden.all.early === hidden.both.early && hidden.all.late === hidden.both.late && hidden.part.early > hidden.all.early && hidden.part.late < hidden.all.late, `all shown: ${hidden.all.early} and ${hidden.all.late} pixels; one section hidden: ${hidden.part.early} and ${hidden.part.late}` );
+
+	// the view of one viewer given to the other, and the signal of a change of it
+
+	const viewed = await page3.evaluate( () => {
+
+		const a = first.viewer;
+		const b = second.viewer;
+
+		smoke.viewpoints = { a: 0, b: 0 };
+
+		a.addEventListener( 'viewpoint', () => smoke.viewpoints.a++ );
+		b.addEventListener( 'viewpoint', () => smoke.viewpoints.b++ );
+
+		a.setCameraAngles( { azimuth: 0.6, polar: 1.1 } );
+
+		const from = a.getViewpoint();
+		const set = b.setViewpoint( from );
+		const to = b.getViewpoint();
+		const angles = b.getCameraAngles();
+
+		// every part of a view, read back as it was set
+
+		const given = { azimuth: -1.2, polar: 0.8, zoom: 2.5, target: { x: 0.2, y: -0.1, z: 0.05 }, cameraType: CV2.CAMERA_ORTHOGRAPHIC };
+
+		b.setViewpoint( given );
+
+		const back = b.getViewpoint();
+
+		a.setViewpoint( back );
+
+		const carried = a.getViewpoint();
+
+		let refusedZoom = false;
+
+		try { b.setViewpoint( { zoom: 0 } ); } catch { refusedZoom = true; }
+
+		// a part left out is left as it is
+
+		b.setViewpoint( { zoom: 1 } );
+
+		const partly = b.getViewpoint();
+
+		a.setViewpoint( { zoom: 1, target: { x: 0, y: 0, z: 0 }, cameraType: CV2.CAMERA_PERSPECTIVE } );
+		b.setViewpoint( a.getViewpoint() );
+
+		return { from, set, to, angles, given, back, carried, refusedZoom, partly, events: { ...smoke.viewpoints } };
+
+	} );
+
+	const near = ( a, b, tolerance = 1e-6 ) => Math.abs( a - b ) < tolerance;
+	const sameView = ( a, b ) => a !== null && b !== null && near( a.azimuth, b.azimuth ) && near( a.polar, b.polar ) && near( a.zoom, b.zoom ) && near( a.target.x, b.target.x ) && near( a.target.y, b.target.y ) && near( a.target.z, b.target.z ) && a.cameraType === b.cameraType;
+
+	check( 'getViewpoint() is null before a model is loaded, and afterwards gives the camera\'s angles and a zoom', twice.viewpointBefore === null && viewed.from !== null && near( viewed.from.azimuth, 0.6 ) && near( viewed.from.polar, 1.1 ) && viewed.from.zoom > 0, viewed.from === null ? 'no view' : `zoom ${viewed.from.zoom.toFixed( 3 )}` );
+	check( 'the view read from one viewer and set on a second gives it the same direction and the same zoom', viewed.set === true && sameView( viewed.from, viewed.to ) && near( viewed.angles.azimuth, 0.6 ) && near( viewed.angles.polar, 1.1 ), `azimuth ${viewed.angles.azimuth.toFixed( 4 )}, polar ${viewed.angles.polar.toFixed( 4 )}` );
+	check( 'a view is read back as it was set - angles, zoom, target and kind of camera - and is carried to the first viewer whole', sameView( viewed.given, viewed.back ) && sameView( viewed.back, viewed.carried ), `zoom ${viewed.back.zoom.toFixed( 4 )}, target ${viewed.back.target.x.toFixed( 4 )}, ${viewed.back.target.y.toFixed( 4 )}, ${viewed.back.target.z.toFixed( 4 )}` );
+	check( 'a part of a view left out is left as it is, and a zoom of 0 is refused', near( viewed.partly.zoom, 1 ) && near( viewed.partly.azimuth, viewed.given.azimuth ) && near( viewed.partly.target.x, viewed.given.target.x ) && viewed.partly.cameraType === viewed.given.cameraType && viewed.refusedZoom );
+	check( 'a view the application sets raises no viewpoint event, on either viewer', viewed.events.a === 0 && viewed.events.b === 0, `first: ${viewed.events.a}, second: ${viewed.events.b}` );
+
+	// the reader turns the first model with the pointer, the application giving its view to
+	// the second as it changes
+
+	const centre = await page3.evaluate( () => {
+
+		const rect = document.getElementById( 'one' ).getBoundingClientRect();
+
+		first.viewer.addEventListener( 'viewpoint', () => second.viewer.setViewpoint( first.viewer.getViewpoint() ) );
+
+		return { x: rect.left + rect.width * 0.6, y: rect.top + rect.height * 0.6, azimuth: first.viewer.getViewpoint().azimuth };
+
+	} );
+
+	await page3.mouse.move( centre.x, centre.y );
+	await page3.mouse.down();
+	await page3.mouse.move( centre.x + 90, centre.y + 40, { steps: 6 } );
+	await page3.mouse.up();
+	await page3.waitForTimeout( 300 );
+
+	const turned = await page3.evaluate( () => ( { a: first.viewer.getViewpoint(), b: second.viewer.getViewpoint(), events: { ...smoke.viewpoints } } ) );
+
+	check( 'a model turned by the pointer raises the viewpoint event, and the viewer it is given to follows without raising one', turned.events.a > 0 && turned.events.b === 0 && ! near( turned.a.azimuth, centre.azimuth, 0.01 ) && sameView( turned.a, turned.b ), `first: ${turned.events.a} events, second: ${turned.events.b}; azimuth ${turned.a.azimuth.toFixed( 3 )} and ${turned.b.azimuth.toFixed( 3 )}` );
+
+	// one of the viewer's own views, flown to: a change at every step, and the same at its end
+
+	const flown = await page3.evaluate( async () => {
+
+		const before = smoke.viewpoints.a;
+		const moved = smoke.wait( first.viewer, 'moved', 30000 );
+
+		first.viewer.view = CV2.VIEW_ELEVATION_N;
+
+		await moved;
+
+		const during = smoke.viewpoints.a - before;
+
+		first.viewer.cameraType = CV2.CAMERA_ORTHOGRAPHIC;
+
+		return { during, kind: smoke.viewpoints.a - before - during, a: first.viewer.getViewpoint(), b: second.viewer.getViewpoint(), events: smoke.viewpoints.b };
+
+	} );
+
+	check( 'a move the viewer animates to one of its views raises the event as it goes, and a change of the kind of camera raises it once', flown.during > 1 && flown.kind === 1 && sameView( flown.a, flown.b ) && flown.b.cameraType === flown.a.cameraType && flown.events === 0, `${flown.during} events during the move` );
+
+	// a .lox file takes a label as a .3d file does
+
+	const lox = await page3.evaluate( async ( { survey, timeout } ) => {
+
+		await smoke.load( first, [ { name: survey, label: 'early' }, { name: survey, label: 'late' } ], timeout );
+		await smoke.load( second, [ survey ], timeout );
+
+		const paths = smoke.stationPaths( first.viewer );
+		const hiddenAfterLoad = first.viewer.getHiddenSections().length;
+
+		// what else is drawn by section, which this survey has and the other has not: the
+		// walls, counted as the part of the mesh that is drawn, and the stations, counted
+		// as those given a size
+
+		const survey3d = first.viewer.ctx.survey;
+		const walls = survey3d.getFeature( CV2.FACE_WALLS );
+		const sizes = survey3d.stations.geometry.getAttribute( 'pSize' );
+
+		const wallsDrawn = () => Array.isArray( walls.material ) ? walls.geometry.groups.reduce( ( total, group ) => total + group.count, 0 ) : walls.geometry.index.count;
+		const stationsDrawn = () => sizes.array.reduce( ( total, size ) => total + ( size > 0 ? 1 : 0 ), 0 );
+
+		const all = { walls: wallsDrawn(), stations: stationsDrawn() };
+
+		first.viewer.setSectionVisible( [ 'late' ], false );
+
+		const half = { walls: wallsDrawn(), stations: stationsDrawn() };
+
+		first.viewer.showAllSections();
+
+		const again = { walls: wallsDrawn(), stations: stationsDrawn() };
+
+		return {
+			top: smoke.sections( first.viewer.getSurveyTree() ),
+			singleTop: smoke.sections( second.viewer.getSurveyTree() ),
+			stations: paths.length,
+			distinct: new Set( paths ).size,
+			labelled: paths.filter( path => path.startsWith( 'early.' ) ).length,
+			single: smoke.stationPaths( second.viewer ).length,
+			hiddenAfterLoad, all, half, again
+		};
+
+	}, { survey: SURVEY_TWICE_LOX, timeout: TIMEOUT } );
+
+	check( 'two copies of a .lox survey read under a label each are two surveys of the tree, with twice the stations', lox.top.join() === 'early,late' && lox.singleTop.length === 1 && lox.singleTop[ 0 ] !== 'early' && lox.single > 0 && lox.stations === 2 * lox.single && lox.distinct === lox.stations && lox.labelled === lox.single, `${lox.stations} stations, ${lox.single} in one copy` );
+	check( 'what was hidden in one model is not hidden in the next, and the walls and the stations of a hidden copy are left out with its legs', lox.hiddenAfterLoad === 0 && lox.all.walls > 0 && lox.half.walls * 2 === lox.all.walls && lox.half.stations * 2 === lox.all.stations && lox.again.walls === lox.all.walls && lox.again.stations === lox.all.stations, `walls: ${lox.half.walls} of ${lox.all.walls}; stations: ${lox.half.stations} of ${lox.all.stations}` );
+
+	// two viewers on one page: the workers of one ended early give their turns back to the
+	// page, and both viewers leave their containers as they found them
+
+	const pair = await page3.evaluate( () => {
+
+		const pool = first.viewer.ctx.workerPools.getPool( 'webTileWorker.js' );
+		const other = second.viewer.ctx.workerPools.getPool( 'webTileWorker.js' );
+		const WorkerPool = pool.constructor;
+
+		// two turns for the whole page: the first viewer takes both, and work of the
+		// second waits for one
+
+		const turns = WorkerPool.maxActive;
+
+		WorkerPool.maxActive = 2;
+
+		pool.queueWork( {}, () => {} );
+		pool.queueWork( {}, () => {} );
+		other.queueWork( {}, () => {} );
+
+		const waiting = { active: WorkerPool.activeWorkerCount, pending: WorkerPool.pendingWork.length };
+
+		// the workers are ended in the turn they were started in, before any has run
+
+		first.ui.dispose();
+
+		const afterFirst = { active: WorkerPool.activeWorkerCount, pending: WorkerPool.pendingWork.length };
+
+		second.ui.dispose();
+
+		const afterBoth = { active: WorkerPool.activeWorkerCount, pending: WorkerPool.pendingWork.length };
+
+		WorkerPool.maxActive = turns;
+
+		// disposed again, and asked to draw: neither is anything to do
+
+		first.ui.dispose();
+		second.viewer.renderView();
+
+		return {
+			waiting, afterFirst, afterBoth,
+			canvases: document.querySelectorAll( 'canvas' ).length,
+			left: document.getElementById( 'one' ).children.length + document.getElementById( 'two' ).children.length
+		};
+
+	} );
+
+	check( 'a viewer disposed with its workers at work returns their turns to the page, and work the other viewer had waiting is started', pair.waiting.active === 2 && pair.waiting.pending === 1 && pair.afterFirst.active === 1 && pair.afterFirst.pending === 0 && pair.afterBoth.active === 0 && pair.afterBoth.pending === 0, `at work and waiting: ${pair.waiting.active} and ${pair.waiting.pending}, then ${pair.afterFirst.active} and ${pair.afterFirst.pending}, then ${pair.afterBoth.active} and ${pair.afterBoth.pending}` );
+	check( 'two viewers on one page are disposed leaving nothing in either container', pair.canvases === 0 && pair.left === 0, `canvases: ${pair.canvases}, elements left: ${pair.left}` );
+
+	await page3.waitForTimeout( 700 );
+
+	const rejections3 = await page3.evaluate( () => smoke.rejections );
+
 	const uncaught = seenByPage.reduce( ( total, each ) => total + each.pageErrors.length, 0 );
 	const dialogs = seenByPage.reduce( ( total, each ) => total + each.dialogs.length, 0 );
+	const rejections = rejections1 + rejections2 + rejections3;
 
-	check( 'no uncaught error, no unhandled rejection and no dialog in either page', uncaught === 0 && dialogs === 0 && rejections1 + rejections2 === 0, `uncaught errors: ${uncaught}, unhandled rejections: ${rejections1 + rejections2}, dialogs: ${dialogs}` );
+	check( 'no uncaught error, no unhandled rejection and no dialog in any of the pages', uncaught === 0 && dialogs === 0 && rejections === 0, `uncaught errors: ${uncaught}, unhandled rejections: ${rejections}, dialogs: ${dialogs}` );
 
-	await second.close();
+	await third.close();
 
 } catch ( e ) {
 

@@ -10,7 +10,7 @@ What it does:
   `docs/surveys/` at `/surveys/`, and blocks every request to anywhere else;
 - loads the UMD bundle (`build/CaveView/js/CaveView2.min.js`) in headless Chromium, twice
   in the one browser, each time loading `docs/surveys/titan.3d` and building a toolbar in
-  an element beside the viewer's container.
+  an element beside the viewer's container - and a third time in a page of two containers.
 
 The first page is read by somebody with no preference about motion, in English, who is
 allowed fullscreen. It asserts that:
@@ -83,12 +83,51 @@ to (a `Permissions-Policy` header). It asserts that:
 - that viewer, disposed in the turn of a request the browser goes on to refuse, leaves
   no class.
 
-The last assertion is that neither page raised an uncaught error, left a rejection
+A third page holds two containers side by side, each with a viewer and its user interface,
+for what an application comparing two surveys asks of the viewer. `docs/surveys/P8_Master.3d`
+is read twice into the first viewer, each copy under a label and in a colour, and once,
+plainly, into the second. It asserts that:
+
+- the two copies are two surveys at the top of the tree, named by their labels, while the
+  survey read plainly has the tree it always had; there are twice the stations, each found
+  by a path of its own, and the paths of each copy are those of the plain survey after its
+  label; a label with a full stop in it is refused as the load is asked for;
+- `getSectionColor()` gives each copy the colour given with it, and a section within a copy
+  the same; where no colour was given it gives the colours the viewer chose, more than one
+  of them; and it gives null for a reference that names no section;
+- `getSectionBounds()` gives each copy the extent of the survey read plainly, and null for
+  a reference that names no section;
+- `setSectionVisible()` answers true for a section, whether or not it was hidden already,
+  and false for none; each change is signalled by one `change` event named `hiddenSections`;
+  `getHiddenSections()` lists what is hidden by its path; `showAllSections()` given a section
+  shows what is hidden within it and nothing else;
+- in a frame drawn with only the legs displayed, a hidden copy has no pixel of its colour
+  and the other copy has; with both hidden neither has; with both shown the copy given
+  later is the only one seen - the two lie exactly over one another - although the test
+  holds the earlier one back so that the later is read first; shown again the frame is what
+  it was; and one section hidden in the later copy shows the earlier copy's legs where it
+  lay;
+- `getViewpoint()` is null before a model is loaded; the view read from one viewer and set
+  on the second gives the second the same angles and the same zoom; a view is read back as
+  it was set, in every part, and a part left out is left as it is; a zoom of 0 is refused;
+- none of that raises a `viewpoint` event on either viewer; the first model turned by the
+  pointer raises it, and the second viewer, given the view as each event arrives, ends with
+  the same view having raised none; a move animated to one of the viewer's own views raises
+  it at every step, and a change of the kind of camera raises it once;
+- `docs/surveys/Cheddar.lox` read twice under a label each is likewise two surveys with
+  twice the stations; what was hidden in the model before it is not hidden in it; and the
+  walls and the stations of a hidden copy are left out with its legs, and put back;
+- with two turns for the whole page, both taken by workers of the first viewer and work of
+  the second waiting, disposing the first returns its turns and starts the work that
+  waited; and both viewers, disposed, leave no canvas and no element in either container.
+
+The last assertion is that none of the pages raised an uncaught error, left a rejection
 unhandled or opened a dialog.
 
-What it does not assert: anything about how the model is drawn, the touch gestures, the
-terrain, or what a real change of the system's motion setting does while the viewer is
-displayed - the preference is fixed for the life of each page.
+What it does not assert: anything about how the model is drawn beyond which of two colours
+a frame holds, the touch gestures, the terrain, or what a real change of the system's
+motion setting does while the viewer is displayed - the preference is fixed for the life
+of each page.
 
 Before running it, build: `npm run build`. The test does not build. `SMOKE_BUILD_DIR` names
 another directory laid out like `build/` to test instead - a vendored copy, say - which is
