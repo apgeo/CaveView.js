@@ -148,8 +148,8 @@ is not selected.</p>
 </dl>
 
 <h4>setStationMedia( &lt;source&gt; )</h4>
-<p>Supply images to be displayed for stations. A strip of thumbnails is displayed over the model next to
-the station when the pointer comes to rest on a station that has images - which requires the
+<p>Supply images to be displayed for stations. A strip of thumbnails is displayed at the left edge of the model, or next to
+the station where the configuration asks for that (stationMediaPlacement), when the pointer comes to rest on a station that has images - which requires the
 stationLabelOver view setting, as the station name label does - and when a station is focussed by
 focusStation() with the popup option set to true. The strip is HTML placed over the model rather than
 drawn into it as the popups are, as an image cannot be drawn into a popup.</p>
@@ -343,6 +343,14 @@ the survey on every frame of one would be the expensive half of the work done fo
 
 <h4>getTrails()</h4>
 <p>An Array of the trail Objects described under addTrail(), one for each trail.</p>
+
+<p>Markers at stations that are near one another on the screen - two parties at neighbouring stations, with
+the whole cave in view - would have their labels written over one another. For each frame drawn the labels are
+taken from the top of the screen down, and one that would lie over a label already placed is drawn lower, by the
+height of a backed line at a time and by ten of those at most, until it is clear; its dot stays where it is, and
+its first line is in the colour of its dot. A label that is not clear within that distance is left on the line of
+its dot. How far a label has been moved, in lines of its text, is the labelShift of the marker as
+getLiveMarkers() lists it: 0 for a label on the line of its dot.</p>
 
 <h4>setLiveMarkerClusterLabel( &lt;function&gt; )</h4>
 <p>Set the function that labels a collapsed marker - the single marker drawn in place of the markers of
@@ -560,6 +568,22 @@ survey is not overruled by what one reader once saved. The labels of live marker
 own (liveMarkerLabelSize) and are not scaled by this.</p>
 <p><span>number</span> <span>default: 1</span></p>
 
+<h4>sizeClass, mobile</h4>
+<p>How large the viewer is being displayed: 'large', 'medium' or 'small', by the width of its container -
+narrower than 1000 pixels is medium and narrower than 600 is small, unless the configuration sets other
+widths (sizeClasses). It is a question about the container and not about the screen: a viewer set beside
+an article, or in one pane of an application, is small on the largest of screens. <i>mobile</i> is the
+other question, about the device: true on a screen as narrow as the stylesheet's own narrow layout (767
+pixels). Both are read only. The container carries a class for each - cv-size-large, cv-size-medium or
+cv-size-small, and cv-mobile - and a change of sizeClass dispatches the change event, after the resized
+event of the resize that brought it about.</p>
+<p>What is laid out over the model follows it. The compass and the inclination dial are drawn at half
+their size in a medium or a small viewer and at a quarter on a mobile screen (hudScale in the
+configuration says otherwise), about the corner they stand in, and are driven through regions of the
+same size. A toolbar that was given a strip beside the viewer is laid out in it while the viewer is not
+large - see the toolbar's strip option.</p>
+<p><span>string</span>, <span>boolean</span></p>
+
 <h4>liveMarkerLabelBacking</h4>
 <p>Whether a backing is drawn behind the text of each label. It covers the whole block of lines rather
 than each line, is sized to the text with a little room left around it, and follows the label as the
@@ -768,6 +792,19 @@ is disposed.</p>
 	<dd><span>boolean</span>Use Aven style mouse and keyboard controls (true) or original mode <span>default: true</span>. (optional).</dd>
 	<dt>cesiumAccessToken</dt>
 	<dd><span>string</span>Cesium access token required to use Cesium terrain mesh tiles </dd>
+	<dt>sizeClasses</dt>
+	<dd><span>object</span>The widths of the container, in pixels, below which the viewer is of the medium and of the
+	small size <span>default: { medium: 1000, small: 600 }</span>. See the sizeClass property. (optional).</dd>
+	<dt>hudScale</dt>
+	<dd><span>number</span> or <span>object</span>The size the compass and the inclination dial are drawn at, as a
+	multiple of the theme's: one number for every size of viewer, or one for each of the sizes by name
+	<span>default: { large: 1, medium: 0.5, small: 0.5, mobile: 0.25 }</span>. (optional).</dd>
+	<dt>stationMediaPlacement</dt>
+	<dd><span>string</span>Where the pictures of a station set by setStationMedia() are displayed: 'left', a column of
+	thumbnails at the left edge of the model, where they are over none of the cave, or 'station', a row beside the
+	station they are of <span>default: 'left'</span>. At the left the thumbnails are 32 pixels (44 under a finger),
+	half the size they had beside the station, and a caption is the title of its thumbnail rather than a line under
+	it. (optional).</dd>
 	<dt>stationLabelScale</dt>
 	<dd><span>number</span>How large the names of the stations and the comments on them are written, as a multiple of
 	the theme's size <span>default: 1</span>. Also a property of the viewer, where it is described. (optional).</dd>
@@ -880,6 +917,15 @@ a finger. A property that is set is used whichever pointer is in use.</p>
 <dl>
 	<dt>placement</dt>
 	<dd><span>string</span>the edge of the container the toolbar is placed against, <i>top</i> or <i>bottom</i> <span>default: top</span>. (optional).</dd>
+	<dt>strip</dt>
+	<dd><span>Element</span> or <span>string</span>An element beside the viewer, or its id, that the toolbar is laid
+	out in while the viewer is displayed at less than its large size (see the viewer's sizeClass): in the flow of that
+	element and across the whole of it, where it covers none of the model. While the viewer is large, and while it is
+	displayed fullscreen, the toolbar is over the model as it is without this option. The element is given the class
+	cv-toolbar-strip-on while it holds the toolbar; each move dispatches the viewer's change event with the name
+	toolbarPlacement and is followed by a resize event of the window, since the strip has taken room on the page or
+	given it back. The background of the toolbar in the strip is the CSS property --cv-toolbar-strip-background.
+	(optional).</dd>
 	<dt>buttons</dt>
 	<dd><span>Array</span>the identifiers of the buttons to display, in the order they are to appear. The
 	full list below is used, in the order it is listed, if this is not given, and an unrecognised
