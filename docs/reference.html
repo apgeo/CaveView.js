@@ -542,6 +542,24 @@ never null, so an application that changes the size for a while and then wants t
 the property first and writes back what it read.</p>
 <p><span>number</span> or <span>null</span> <span>default: 12 * window.devicePixelRatio</span></p>
 
+<h4>stationLabelScale</h4>
+<p>How large the names of the stations, and the comments on them, are written: a multiple of the size the
+theme gives for each kind of station (stations.default.fontsize, stations.junctions.fontsize and
+stations.linked.fontsize, 18 where the theme says nothing). A survey names every station by its whole
+path, and where many stations are close together the names at the theme's size cover the legs they
+name; an application sets the scale down for such a survey, or offers its reader a control for it.</p>
+<p>It may be given in the configuration of the viewer and set at any time afterwards. Set while a model
+is displayed, the names in view are taken down and written again at the new size the next time the view
+is drawn, and the change event is dispatched; setting the scale it already has does neither. Anything
+that is not a finite number greater than zero is refused, with a warning to the console, and the names
+are left as they are. A scale that would take a name below 4 pixels of the screen, or above the largest
+text the viewer draws, is held at that size.</p>
+<p>The scale belongs to the viewer rather than to a model, so it is kept as models are cleared and loaded.
+It is not among the view settings the reader saves as their default: a page that sets a size for its
+survey is not overruled by what one reader once saved. The labels of live markers have a size of their
+own (liveMarkerLabelSize) and are not scaled by this.</p>
+<p><span>number</span> <span>default: 1</span></p>
+
 <h4>liveMarkerLabelBacking</h4>
 <p>Whether a backing is drawn behind the text of each label. It covers the whole block of lines rather
 than each line, is sized to the text with a little room left around it, and follows the label as the
@@ -750,6 +768,9 @@ is disposed.</p>
 	<dd><span>boolean</span>Use Aven style mouse and keyboard controls (true) or original mode <span>default: true</span>. (optional).</dd>
 	<dt>cesiumAccessToken</dt>
 	<dd><span>string</span>Cesium access token required to use Cesium terrain mesh tiles </dd>
+	<dt>stationLabelScale</dt>
+	<dd><span>number</span>How large the names of the stations and the comments on them are written, as a multiple of
+	the theme's size <span>default: 1</span>. Also a property of the viewer, where it is described. (optional).</dd>
 	<dt>fullscreenElement</dt>
 	<dd><span>Element</span> or <span>string</span>The element, or the id of the element, put into fullscreen when the
 	viewer's fullscreen is requested: the container by default. A host that keeps controls of its own around the viewer

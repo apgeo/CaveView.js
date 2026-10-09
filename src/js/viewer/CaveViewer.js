@@ -145,6 +145,21 @@ class CaveViewer extends EventDispatcher {
 		let terrain = null;
 		let survey = null;
 
+		// see the stationLabelScale property. A configuration that gives something other
+		// than a size is not a reason to draw no names at all: it is warned of and the
+		// theme's size stands.
+
+		const validStationLabelScale = x => ( typeof x === 'number' && Number.isFinite( x ) && x > 0 );
+
+		let stationLabelScale = cfg.value( 'stationLabelScale', 1 );
+
+		if ( ! validStationLabelScale( stationLabelScale ) ) {
+
+			console.warn( 'a station label scale must be a number greater than zero' );
+			stationLabelScale = 1;
+
+		}
+
 		let useFog = false;
 
 		let renderRequired = true;
@@ -192,6 +207,39 @@ class CaveViewer extends EventDispatcher {
 				get() { return pointerControls.getStationNameLabelMode(); },
 				set: x => { pointerControls.setStationNameLabelMode( x ); },
 				enumerable: true
+			},
+
+			// how large the names of the stations and the comments on them are written, as a
+			// multiple of the size the theme gives for each kind of station. A survey names
+			// every station by its whole path, and a busy passage at the theme's size is a
+			// wall of text over the legs it names: an application sets this down for such a
+			// survey, or offers its reader a control for it. It belongs to the viewer and
+			// not to a model, so it is kept as models are cleared and loaded - and it is not
+			// among the view settings a reader saves as their default, which would let one
+			// reader's press decide the size for a page that set its own.
+
+			'stationLabelScale': {
+				get() { return stationLabelScale; },
+				set( x ) {
+
+					if ( ! validStationLabelScale( x ) ) {
+
+						console.warn( 'a station label scale must be a number greater than zero' );
+						return;
+
+					}
+
+					if ( x === stationLabelScale ) return;
+
+					stationLabelScale = x;
+
+					survey?.getFeature( LABEL_STATION )?.setScale( x );
+
+					self.dispatchEvent( { type: 'change', name: 'stationLabelScale' } );
+
+					renderView();
+
+				}
 			},
 
 			// the markers an application maintains are kept as models are cleared and

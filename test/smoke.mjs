@@ -546,6 +546,80 @@ try {
 	check( 'focusStation() resolves with the station and moves the camera target', focus.ok && focus.moved > 0, `target moved ${focus.moved.toFixed( 1 )} units` );
 	check( 'a reader with no preference about motion is flown there: several frames, and one moved event', focus.frames > 1 && focus.moves === 1, `${focus.frames} frames, ${focus.moves} moved` );
 
+	// the size the names of the stations are written at: a property of the viewer, set
+	// while a model is displayed. Asked here, with the camera at a station, because a name is
+	// written only for a station the camera is near
+
+	const labels = await page.evaluate( async () => {
+
+		const frame = () => new Promise( resolve => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) );
+		const changes = [];
+		const heard = event => { if ( event.name === 'stationLabelScale' ) changes.push( viewer.stationLabelScale ); };
+		const warned = [];
+		const warn = console.warn;
+
+		viewer.addEventListener( 'change', heard );
+
+		const before = viewer.stationLabelScale;
+		const saved = Object.keys( viewer ).includes( 'stationLabelScale' );
+
+		const canvas = viewer.container.querySelector( 'canvas' );
+		const picture = () => { viewer.renderView(); return canvas.toDataURL(); };
+		// a name is written only for a station the camera is near, so the camera is brought
+		// nearer the station it is at until turning the names on changes the picture
+
+		const was = viewer.getViewpoint();
+		let named = false;
+
+		for ( let nearer = 4; nearer <= 4096 && ! named; nearer *= 4 ) {
+
+			viewer.stationLabels = false;
+			viewer.setViewpoint( { zoom: was.zoom * nearer } );
+			await frame();
+
+			const off = picture();
+
+			viewer.stationLabels = true;
+			await frame();
+
+			named = ( picture() !== off );
+
+		}
+
+		const atOne = picture();
+
+		viewer.stationLabelScale = 2;
+		await frame();
+		const atTwo = picture();
+		const set = viewer.stationLabelScale;
+
+		console.warn = message => warned.push( String( message ) );
+		[ '2', 0, - 1, NaN, null, undefined, true ].forEach( x => { viewer.stationLabelScale = x; } );
+		console.warn = warn;
+
+		const kept = viewer.stationLabelScale;
+
+		viewer.stationLabelScale = 2;
+		viewer.stationLabelScale = 1;
+		await frame();
+		const back = picture();
+
+		viewer.stationLabels = false;
+		viewer.setViewpoint( was );
+		await frame();
+		viewer.removeEventListener( 'change', heard );
+
+		return { before, saved, set, kept, changes, warned: warned.length, differs: atOne !== atTwo, restored: back === atOne, drawn: atOne.length, named };
+
+	} );
+
+	check( 'stationLabelScale is 1 until it is set, and is not among the view settings a reader saves', labels.before === 1 && labels.saved === false, `${labels.before}, saved: ${labels.saved}` );
+	check( 'set while a model is displayed, the names are written again at the new size', labels.set === 2 && labels.differs, `scale ${labels.set}, the view ${labels.differs ? 'changed' : 'did not change'}, names in view: ${labels.named}` );
+	check( 'each change is signalled once, and setting the size it has is not a change', JSON.stringify( labels.changes ) === '[2,1]', JSON.stringify( labels.changes ) );
+	check( 'anything that is not a number above zero is refused with a warning and changes nothing', labels.kept === 2 && labels.warned === 7, `kept ${labels.kept}, ${labels.warned} warnings` );
+	check( 'set back, the model is drawn as it was', labels.restored, `${labels.drawn} characters of picture` );
+
+
 	const markers = await page.evaluate( async ( { far, leg } ) => {
 
 		const none = viewer.frameLiveMarkers();
