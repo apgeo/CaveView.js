@@ -217,7 +217,14 @@ class Survey extends Object3D {
 
 		return;
 
-		function _dispose ( object ) { if ( object.geometry ) object.geometry.dispose(); }
+		function _dispose ( object ) {
+
+			if ( object.geometry ) object.geometry.dispose();
+
+			// the labels of the stations may be written with materials built for them alone
+			if ( object.type === 'CV.StationLabels' ) object.releaseMaterials();
+
+		}
 
 	}
 
