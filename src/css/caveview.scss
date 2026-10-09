@@ -416,8 +416,13 @@ div.cv-frame::-webkit-scrollbar-button:end {
 		width: $tab-size;
 	}
 
+	// At the end of the row of tabs, which lies along the top of the viewer: the top right
+	// corner of the viewer itself. It was fixed to the top right corner of the screen, which
+	// is the same place only while the viewer covers the screen - and a viewer set in a page
+	// does not, so the one control that closes a panel covering the whole model was somewhere
+	// else on the page, under whatever the page keeps at its top.
 	.cv-tab-box .close {
-		position: fixed;
+		position: absolute;
 		background-color: $tab-inactive;
 		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white' width='36px' height='36px'%3E%3Cpath d='M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z'/%3E%3Cpath d='M0 0h24v24H0z' fill='none'/%3E%3C/svg%3E");
 		top: 0px;
