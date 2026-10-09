@@ -1549,6 +1549,10 @@ class CaveViewer extends EventDispatcher {
 
 				survey.update( cameraManager, controls.target );
 
+				// the labels of the markers are set clear of one another for the view about
+				// to be drawn
+				liveMarkers.arrangeLabels( cameraManager.activeCamera );
+
 				if ( useFog ) materials.setFog( true );
 
 				cameraManager.activeRenderer();

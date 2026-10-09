@@ -72,6 +72,15 @@ const LABEL_RENDER_ORDER = 3;
 
 const LINE_SPACING = 1.25;
 
+// how far a label is moved down to stand clear of another, at most, in steps of the height
+// of one backed line - and the room left between two labels that would otherwise touch, in
+// the pixels of the page. A label that is not clear within that many steps is left where it
+// stands: a crowd is not helped by a label carried a third of the way down the screen from
+// its dot.
+
+const MAX_LABEL_SHIFT = 10;
+const LABEL_CLEARANCE = 1;
+
 // the gap, in CSS pixels, between the dot and the label set beside it
 
 const LABEL_GAP = 4;
@@ -662,6 +671,17 @@ class LiveMarkers {
 
 		};
 
+		// see arrangeLabels(): asked by the viewer for each frame it draws
+
+		this.arrangeLabels = arrangeLabels;
+
+		// what arrangeLabels() measures with, kept between frames
+
+		const __labelAt = new Vector3();
+
+		let halfWidth = 0;
+		let halfHeight = 0;
+
 		return;
 
 		// a reference may be given as an array of the components of a station path, and a
@@ -699,7 +719,10 @@ class LiveMarkers {
 				sublabel: copyValue( marker.sublabel ),
 				color: marker.color,
 				payload: marker.payload,
-				resolved: ( marker.node !== null )
+				resolved: ( marker.node !== null ),
+				// how many lines below its dot the label is drawn, where it has been moved to
+				// stand clear of another: 0 for one on the line of its dot
+				labelShift: marker.labelBlock?.shift ?? 0
 			};
 
 		}
@@ -749,7 +772,10 @@ class LiveMarkers {
 		// Nothing at all is built while the labels are turned off, so a marker that is not
 		// labelled holds no geometry for text that is not drawn.
 
-		function mountLabel ( object, lines, headingColor ) {
+		// `shift` is how many lines down from the line of its dot the block is drawn, where
+		// it has been moved to stand clear of another label - see arrangeLabels()
+
+		function mountLabel ( object, lines, headingColor, shift = 0 ) {
 
 			if ( ! labelsShown || lines.length === 0 ) return emptyBlock();
 
@@ -764,7 +790,7 @@ class LiveMarkers {
 
 			const strings = lines.map( ( text, line ) => {
 
-				const glyph = new MutableGlyphString( ` ${String( text ).normalize( 'NFC' )} `, line === 0 ? heading : labelMaterial, - line * lineHeight, indent );
+				const glyph = new MutableGlyphString( ` ${String( text ).normalize( 'NFC' )} `, line === 0 ? heading : labelMaterial, - ( line + shift ) * lineHeight, indent );
 
 				glyph.layers.set( FEATURE_LIVE_MARKERS );
 				glyph.renderOrder = LABEL_RENDER_ORDER;
@@ -775,7 +801,7 @@ class LiveMarkers {
 
 			} );
 
-			return { strings: strings, backing: mountBacking( object, strings, atlas ) };
+			return { strings: strings, backing: mountBacking( object, strings, atlas ), shift: shift, lineHeight: lineHeight };
 
 		}
 
@@ -803,7 +829,174 @@ class LiveMarkers {
 
 		function emptyBlock () {
 
-			return { strings: [], backing: null };
+			return { strings: [], backing: null, shift: 0, lineHeight: 0 };
+
+		}
+
+		// The labels of markers that stand near one another on the screen are written over
+		// one another: two parties at neighbouring stations, seen from far enough off that
+		// the stations are a few pixels apart, are two names in one place. Markers at one
+		// station are collapsed into one marker with one label; this is the other case,
+		// which is a matter of where the camera is and so is settled for each frame drawn.
+		//
+		// Each label is taken in turn, from the top of the screen down, and is moved down by
+		// whole lines of its own text until it is clear of those already placed. Its dot
+		// stays where it is, and the first line of a label is drawn in the colour of its
+		// dot, which is what says whose it is once it no longer stands on the dot's line.
+		// A label is built again only when the number of lines it is moved by changes.
+
+		function labelExtent ( item, camera, extent ) {
+
+			const block = item.labelBlock;
+			const atlas = labelMaterial.getAtlas();
+
+			// where the dot is on the screen, in pixels of the page from the middle of it,
+			// and whether it is in front of the camera at all
+
+			item.object.getWorldPosition( __labelAt ).project( camera );
+
+			const x = __labelAt.x * halfWidth;
+			const y = __labelAt.y * halfHeight;
+
+			// the room the text takes, which is what is seen of a label: the box its backing
+			// is drawn to, held in cells of the atlas, of which one is scaleFactor pixels of
+			// the page. The line a string is picked on is a whole cell tall, twice the height
+			// of the text in it, and labels kept clear by that would stand a line apart.
+
+			const box = textBox( block.strings, atlas );
+			const cell = labelMaterial.scaleFactor;
+
+			// as it would stand on the line of its dot, whatever it is moved by now
+
+			const line = block.lineHeight / atlas.cellSize * cell;
+			const moved = block.shift * line;
+
+			extent.left = x + box.min.x * cell;
+			extent.right = x + box.max.x * cell;
+			extent.top = y + box.max.y * cell + moved;
+			extent.bottom = y + box.min.y * cell + moved;
+			extent.line = line;
+
+			// what a label is moved by at a time: the height of one line as it is backed,
+			// with the room kept between two, so that labels set one under the other stand
+			// as closely as the lines of one label do and no closer. In lines of text, which
+			// is the unit a label is built in, and to the hundredth, so that the same view
+			// gives the same number from one frame to the next.
+
+			const oneLine = ( box.max.y - box.min.y ) * cell - ( block.strings.length - 1 ) * line;
+
+			extent.step = Math.round( 100 * ( oneLine + 2 * LABEL_CLEARANCE ) / line ) / 100;
+
+			// in front of the camera and on the screen, or not something to make room for
+			extent.seen = __labelAt.z > - 1 && __labelAt.z < 1 &&
+				extent.right > - halfWidth && extent.left < halfWidth && extent.top > - halfHeight && extent.bottom < halfHeight;
+
+		}
+
+		function relabel ( item, shift ) {
+
+			const object = item.object;
+			const old = item.labelBlock;
+
+			old.strings.forEach( glyph => object.remove( glyph ) );
+
+			if ( old.backing !== null ) object.remove( old.backing );
+
+			unmountLabel( old );
+
+			const lines = item.isCluster === true ? item.text.split( '\n' ) : toLines( item.label );
+			const block = mountLabel( object, lines, item.color, shift );
+
+			block.strings.forEach( glyph => {
+
+				if ( item.isCluster === true ) glyph.liveCluster = item; else glyph.liveMarker = item;
+
+			} );
+
+			item.labelBlock = block;
+
+		}
+
+		function arrangeLabels ( camera ) {
+
+			if ( group === null || ! labelsShown || labelMaterial === null ) return;
+
+			const items = [];
+
+			markers.forEach( marker => {
+
+				// a marker pointed at is displaying what more it has to say, in the place of
+				// its label, and is left as it is while that lasts
+
+				if ( marker.object !== null && marker.labelBlock.strings.length > 0 && marker !== hovered ) items.push( marker );
+
+			} );
+
+			clusters.forEach( cluster => { if ( cluster.labelBlock.strings.length > 0 ) items.push( cluster ); } );
+
+			if ( items.length === 0 ) return;
+
+			halfWidth = container.clientWidth / 2;
+			halfHeight = container.clientHeight / 2;
+
+			const extents = items.map( item => {
+
+				const extent = { item: item, left: 0, right: 0, top: 0, bottom: 0, line: 0, step: 1, seen: false, shift: 0 };
+
+				labelExtent( item, camera, extent );
+
+				return extent;
+
+			} );
+
+			// from the top of the screen down, and from the left where two start level, so
+			// that the order - and with it who is moved - does not change from frame to
+			// frame while nothing else does
+
+			const placed = [];
+
+			extents.filter( extent => extent.seen )
+				.sort( ( a, b ) => ( b.top - a.top ) || ( a.left - b.left ) )
+				.forEach( extent => {
+
+					let steps = 0;
+					let down = 0;
+
+					for ( ; steps <= MAX_LABEL_SHIFT; steps ++ ) {
+
+						down = steps * extent.step * extent.line;
+
+						const top = extent.top - down + LABEL_CLEARANCE;
+						const bottom = extent.bottom - down - LABEL_CLEARANCE;
+
+						const clear = placed.every( other => extent.right < other.left || extent.left > other.right || bottom > other.top || top < other.bottom );
+
+						if ( clear ) break;
+
+					}
+
+					if ( steps > MAX_LABEL_SHIFT ) { steps = 0; down = 0; }
+
+					extent.shift = Math.round( 100 * steps * extent.step ) / 100;
+
+					placed.push( { left: extent.left, right: extent.right, top: extent.top - down, bottom: extent.bottom - down } );
+
+				} );
+
+			let rebuilt = false;
+
+			extents.forEach( extent => {
+
+				if ( extent.item.labelBlock.shift === extent.shift ) return;
+
+				relabel( extent.item, extent.shift );
+
+				rebuilt = true;
+
+			} );
+
+			// the lines of a label are among what a pointer is aimed at
+			if ( rebuilt ) rebuildTargets();
 
 		}
 
@@ -1111,6 +1304,9 @@ class LiveMarkers {
 
 			const first = members[ 0 ].color;
 			const color = members.every( marker => marker.color === first ) ? first : undefined;
+
+			// kept, for a label that is built again where it has to stand clear of another
+			cluster.color = color;
 
 			const point = new LiveMarkerPoint( ctx, color ?? cfg.themeColor( 'stations.default.marker' ) );
 
