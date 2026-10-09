@@ -38,7 +38,10 @@ class CompassControl extends Control {
 
 			const bc = self.rect;
 
-			center.set( bc.left + hudObject.stdWidth, bc.top + hudObject.stdWidth );
+			// the middle of the region, which is the middle of the dial at whatever size the
+			// dial is drawn
+
+			center.set( bc.left + bc.width / 2, bc.top + bc.height / 2 );
 			dragging = false;
 
 		}

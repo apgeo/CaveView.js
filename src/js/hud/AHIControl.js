@@ -37,7 +37,7 @@ class AHIControl extends Control {
 			self.commonEnter( event.currentTarget, handlers );
 
 			// update center position (accounts for resizes)
-			centerY = self.rect.top +  hudObject.stdWidth;
+			centerY = self.rect.top + self.rect.height / 2;
 			dragging = false;
 
 		}
@@ -55,7 +55,7 @@ class AHIControl extends Control {
 			dragging = true;
 			dragged = false;
 
-			lastAngle = Math.atan( ( event.clientY - centerY ) / ballSize );
+			lastAngle = Math.atan( ( event.clientY - centerY ) / ( ballSize * self.scale ) );
 			self.hitRegion.setPointerCapture( event.pointerId );
 
 		}
@@ -87,7 +87,7 @@ class AHIControl extends Control {
 
 			if ( ! dragging ) return;
 
-			const angle = Math.atan( ( event.clientY - centerY ) / ballSize );
+			const angle = Math.atan( ( event.clientY - centerY ) / ( ballSize * self.scale ) );
 
 			controls.rotateUp( lastAngle - angle );
 

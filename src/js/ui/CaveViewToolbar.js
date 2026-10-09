@@ -84,6 +84,25 @@ function barStyle ( sizes ) {
 
 }
 
+// The bar laid out in a strip of the page beside the viewer rather than over the model: a
+// block in the flow of the strip, across the whole of it, where it covers nothing. Its
+// background is what the bar's own is over a black model, said outright, since there is
+// no model behind it here for a translucent one to darken.
+
+function stripStyle () {
+
+	return {
+		'position': 'static',
+		'left': 'auto',
+		'transform': 'none',
+		'width': '100%',
+		'max-width': '100%',
+		'background': 'var( --cv-toolbar-strip-background, rgb( 29, 29, 29 ) )',
+		'border-radius': '0'
+	};
+
+}
+
 function buttonStyle ( sizes ) {
 
 	return {
@@ -310,6 +329,15 @@ class CaveViewToolbar {
 
 		const edge = ( options.placement === 'bottom' ) ? 'bottom' : 'top';
 
+		// a toolbar over a model that is displayed small covers a good part of it, and at
+		// the size a finger needs it covers most of it. An application that has room beside
+		// the viewer names an element there (options.strip, the element or its id): while
+		// the viewer is displayed at less than its large size the bar is laid out in that
+		// element, in the flow of the page, and over the model again when the viewer is
+		// large. The strip is given the class cv-toolbar-strip-on while it holds the bar.
+
+		const strip = ( typeof options.strip === 'string' ) ? document.getElementById( options.strip ) : ( options.strip ?? null );
+
 		const controls = [];
 		const listeners = [];
 		const iconElements = [];
@@ -330,12 +358,12 @@ class CaveViewToolbar {
 
 		target.appendChild( bar );
 
-		placeAgainstEdge();
+		layOut();
 
 		viewer.addEventListener( 'change', onChange );
 		viewer.addEventListener( 'newCave', onModelChange );
 		viewer.addEventListener( 'clear', onModelChange );
-		viewer.addEventListener( 'resized', placeAgainstEdge );
+		viewer.addEventListener( 'resized', layOut );
 		viewer.addEventListener( 'dispose', dispose );
 
 		// the names of the shading modes are read from the catalogue of the interface's
@@ -390,6 +418,62 @@ class CaveViewToolbar {
 		function placeAgainstEdge () {
 
 			bar.style.setProperty( edge, `var( --cv-toolbar-offset, ${EDGE_OFFSET + edgeClearance()}px )` );
+
+		}
+
+		// the styles of the bar for wherever it now is: over the model against an edge, or
+		// in the strip
+
+		function restyle () {
+
+			setStyle( bar, barStyle( sizes ) );
+
+			if ( strip !== null && bar.parentNode === strip ) {
+
+				setStyle( bar, stripStyle() );
+				bar.style.removeProperty( edge );
+
+			} else {
+
+				placeAgainstEdge();
+
+			}
+
+		}
+
+		// puts the bar where the size of the viewer says it belongs. While the viewer is
+		// displayed fullscreen the bar has been taken into it, and stays there.
+
+		function layOut () {
+
+			if ( strip !== null && displaced === null ) {
+
+				const wanted = ( viewer.sizeClass !== undefined && viewer.sizeClass !== 'large' );
+				const there = ( bar.parentNode === strip );
+
+				if ( wanted !== there ) {
+
+					( wanted ? strip : target ).appendChild( bar );
+
+					strip.classList.toggle( 'cv-toolbar-strip-on', wanted );
+
+					restyle();
+
+					// the strip has taken room on the page, or given it back, and whatever
+					// lays the viewer out beside it has to hear of that: the application by
+					// the event, and the viewer by the one signal it resizes on
+
+					viewer.dispatchEvent( { type: 'change', name: 'toolbarPlacement' } );
+
+					window.setTimeout( () => window.dispatchEvent( new Event( 'resize' ) ), 0 );
+
+					return;
+
+				}
+
+			}
+
+			if ( strip === null || bar.parentNode !== strip ) placeAgainstEdge();
 
 		}
 
@@ -614,7 +698,7 @@ class CaveViewToolbar {
 
 			sizes = event.matches ? coarseSizes : fineSizes;
 
-			setStyle( bar, barStyle( sizes ) );
+			restyle();
 
 			controls.forEach( control => setStyle( control.element, control.style( sizes ) ) );
 
@@ -679,9 +763,12 @@ class CaveViewToolbar {
 			}
 
 			// a container displayed fullscreen is a different size, and the user interface
-			// it holds is laid out for that size
+			// it holds is laid out for that size - and a bar taken out of its strip, or put
+			// back in it, is styled for where it now is
 
-			placeAgainstEdge();
+			restyle();
+
+			if ( displaced === null ) layOut();
 
 		}
 
@@ -710,8 +797,10 @@ class CaveViewToolbar {
 			viewer.removeEventListener( 'change', onChange );
 			viewer.removeEventListener( 'newCave', onModelChange );
 			viewer.removeEventListener( 'clear', onModelChange );
-			viewer.removeEventListener( 'resized', placeAgainstEdge );
+			viewer.removeEventListener( 'resized', layOut );
 			viewer.removeEventListener( 'dispose', dispose );
+
+			if ( strip !== null ) strip.classList.remove( 'cv-toolbar-strip-on' );
 
 			bar.remove();
 

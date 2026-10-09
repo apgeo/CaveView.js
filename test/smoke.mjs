@@ -735,6 +735,175 @@ try {
 
 	check( 'a station media image that 404s is reported and its thumbnail removed, closing the strip', media.errors === 1 && media.errorUrl === '/no-such-image.jpg' && media.thumbnails === 0 && media.display === 'none', `mediaError events: ${media.errors}, thumbnails left: ${media.thumbnails}` );
 
+	// the labels of markers that stand near one another on the screen: the two ends of one
+	// leg, with the whole model in view, are a few pixels apart
+
+	const crowd = await page.evaluate( async ( { leg } ) => {
+
+		const frame = () => new Promise( resolve => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) );
+		const shifts = () => viewer.getLiveMarkers().filter( m => m.id.startsWith( 'crowd' ) ).map( m => m.labelShift ).sort( ( a, b ) => a - b ).join( ',' );
+		const was = viewer.getViewpoint();
+
+		viewer.setViewpoint( { zoom: 1 } );
+		await frame();
+
+		viewer.addLiveMarker( 'crowd-a', leg.start, { label: 'Anca Inventata' } );
+		viewer.addLiveMarker( 'crowd-b', leg.end, { label: 'Bogdan Inventat' } );
+		viewer.addLiveMarker( 'crowd-c', leg.end, { label: 'Corina Inventata' } );
+		viewer.renderView();
+		await frame();
+
+		// two of them are at one station, and are one marker; its label and the third's are
+		// the two that would be written over one another
+		const together = shifts();
+		const clustered = viewer.getLiveMarkers().filter( m => m.id.startsWith( 'crowd' ) ).length;
+
+		viewer.removeLiveMarker( 'crowd-c' );
+		viewer.renderView();
+		await frame();
+
+		const far = shifts();
+
+		// brought near enough that the two stations are far apart on the screen
+		let apart = far;
+
+		for ( let nearer = 8; nearer <= 32768 && apart !== '0,0'; nearer *= 8 ) {
+
+			viewer.setViewpoint( { zoom: nearer } );
+			await viewer.focusStation( leg.start, { popup: false } ).catch( () => {} );
+			viewer.renderView();
+			await frame();
+			apart = shifts();
+
+		}
+
+		viewer.removeLiveMarker( 'crowd-a' );
+		viewer.removeLiveMarker( 'crowd-b' );
+		viewer.setViewpoint( was );
+		await frame();
+
+		return { together, clustered, far, apart };
+
+	}, loaded );
+
+	check( 'two labels that would be written over one another are set one under the other, by a line and a little', /^0,1(\.\d+)?$/.test( crowd.far ), `lines moved: ${crowd.far}` );
+	check( 'and stand on the lines of their dots again when the view brings the stations apart', crowd.apart === '0,0', `lines moved: ${crowd.apart}` );
+
+	// the size the viewer is displayed at, and what is laid out for it: the two dials, a
+	// toolbar given a strip beside the viewer, and the pictures of a station
+
+	const sizes = await page.evaluate( async ( { far } ) => {
+
+		const scene = viewer.container;
+		const frame = () => new Promise( resolve => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) );
+		const classes = () => [ 'large', 'medium', 'small' ].filter( name => scene.classList.contains( `cv-size-${name}` ) ).join( ',' );
+		// the compass and the inclination, which are the first two of the regions the dials are driven through
+		const dials = () => [ ...scene.querySelectorAll( '.cv-hud-control' ) ].slice( 0, 2 ).map( region => Math.round( region.getBoundingClientRect().width ) ).join( ',' );
+		const state = () => ( { size: viewer.sizeClass, classes: classes(), dials: dials() } );
+
+		const heard = [];
+		const onChange = event => { if ( event.name === 'sizeClass' ) heard.push( viewer.sizeClass ); };
+
+		viewer.addEventListener( 'change', onChange );
+
+		const widthBefore = scene.style.width;
+
+		const resize = async width => {
+
+			scene.style.width = width + 'px';
+			window.dispatchEvent( new Event( 'resize' ) );
+			await frame();
+			await smoke.sleep( 30 );
+			await frame();
+
+		};
+
+		const asOpened = state();
+
+		await resize( 1100 );
+
+		const wide = state();
+
+		await resize( 500 );
+
+		const narrow = state();
+
+		// a toolbar that is given a strip beside the viewer
+
+		const strip = document.createElement( 'div' );
+
+		strip.id = 'strip';
+		scene.parentNode.insertBefore( strip, scene );
+
+		const toolbar = new CV2.CaveViewToolbar( viewer, scene, { strip: 'strip', buttons: [ 'viewPlan', 'fullscreen' ] } );
+		const bar = () => document.querySelectorAll( '.cv-toolbar' )[ document.querySelectorAll( '.cv-toolbar' ).length - 1 ];
+		const where = () => ( { inStrip: strip.contains( bar() ), over: scene.contains( bar() ), position: bar().style.position, marked: strip.classList.contains( 'cv-toolbar-strip-on' ), stripHeight: Math.round( strip.getBoundingClientRect().height ) } );
+
+		await frame();
+
+		const barNarrow = where();
+
+		await resize( 1100 );
+
+		const barWide = where();
+
+		await resize( 500 );
+
+		const barNarrowAgain = where();
+
+		toolbar.dispose();
+
+		const stripLeft = strip.childElementCount;
+
+		strip.remove();
+
+		// the pictures of a station, at the left of the model
+
+		const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+		viewer.setStationMedia( new Map( [ [ far, [ { url: pixel, caption: 'one' }, { url: pixel, caption: 'two' }, { url: pixel } ] ] ] ) );
+
+		await viewer.focusStation( far, { popup: true } );
+		await frame();
+
+		const pictures = scene.querySelector( '.cv-media-strip' );
+		const box = pictures.getBoundingClientRect();
+		const within = scene.getBoundingClientRect();
+		const thumbnails = [ ...pictures.querySelectorAll( 'img' ) ];
+
+		const media = {
+			shown: pictures.style.display === 'flex',
+			count: thumbnails.length,
+			column: pictures.style.flexDirection,
+			left: Math.round( box.left - within.left ),
+			stacked: thumbnails.length === 3 && thumbnails[ 1 ].getBoundingClientRect().top >= thumbnails[ 0 ].getBoundingClientRect().bottom,
+			size: thumbnails.length ? Math.round( thumbnails[ 0 ].getBoundingClientRect().width ) : 0,
+			captions: pictures.querySelectorAll( ':scope > div > div' ).length,
+			titled: thumbnails.length ? thumbnails[ 0 ].title : ''
+		};
+
+		viewer.clearStationMedia();
+		viewer.popup = viewer.getSurveyTree();
+
+		scene.style.width = widthBefore;
+		window.dispatchEvent( new Event( 'resize' ) );
+		await frame();
+
+		viewer.removeEventListener( 'change', onChange );
+
+		return { asOpened, wide, narrow, heard, barNarrow, barWide, barNarrowAgain, stripLeft, media, mobile: viewer.mobile, restored: viewer.sizeClass };
+
+	}, loaded );
+
+	check( 'a viewer 800 pixels wide is of the medium size, says so on its container, and draws its two dials at half their size', sizes.asOpened.size === 'medium' && sizes.asOpened.classes === 'medium' && sizes.asOpened.dials === '40,40', JSON.stringify( sizes.asOpened ) );
+	check( 'made wider it is large and the dials are whole; made narrow it is small', sizes.wide.size === 'large' && sizes.wide.dials === '80,80' && sizes.narrow.size === 'small' && sizes.narrow.classes === 'small' && sizes.narrow.dials === '40,40', JSON.stringify( [ sizes.wide, sizes.narrow ] ) );
+	check( 'each change of size is signalled once', JSON.stringify( sizes.heard.slice( 0, 2 ) ) === '["large","small"]', JSON.stringify( sizes.heard ) );
+	check( 'a toolbar given a strip is laid out in it while the viewer is small, in the flow of the page', sizes.barNarrow.inStrip && sizes.barNarrow.position === 'static' && sizes.barNarrow.marked && sizes.barNarrow.stripHeight > 20, JSON.stringify( sizes.barNarrow ) );
+	check( 'and over the model while it is large, the strip left empty', sizes.barWide.over && ! sizes.barWide.inStrip && sizes.barWide.position === 'absolute' && ! sizes.barWide.marked && sizes.barWide.stripHeight === 0, JSON.stringify( sizes.barWide ) );
+	check( 'back in the strip when the viewer is small again, and out of it when disposed', sizes.barNarrowAgain.inStrip && sizes.stripLeft === 0, `${JSON.stringify( sizes.barNarrowAgain )}, left in the strip: ${sizes.stripLeft}` );
+	check( 'the pictures of a station stand at the left of the model, one under the other, at half the size they had and with no caption under them', sizes.media.shown && sizes.media.count === 3 && sizes.media.column === 'column' && sizes.media.left === 8 && sizes.media.stacked && sizes.media.size === 32 && sizes.media.captions === 0 && sizes.media.titled === 'one', JSON.stringify( sizes.media ) );
+	check( 'a screen this wide is not a telephone, and the viewer is put back as it was', sizes.mobile === false && sizes.restored === 'medium', `${sizes.mobile}, ${sizes.restored}` );
+
 	// a capture at a size given in pixels
 
 	const capture = await page.evaluate( () => {

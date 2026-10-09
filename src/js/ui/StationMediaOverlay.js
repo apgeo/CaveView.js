@@ -15,29 +15,47 @@ const ANCHOR_OFFSET = 12;
 // with a finger. Each set below is only what the custom properties fall back to, so a size
 // set by the application is still the one used, whichever pointer is in use.
 
+// The sizes are half of what they were while the strip stood at its station: there it had
+// to be read at a glance beside the place it was about, and stood over the passages of the
+// cave to do it. Standing at the side of the model it is a list of what there is to open,
+// and a thumbnail is opened to be seen.
+
 const fineSizes = {
-	thumbnail: '64px',
-	gap: '4px',
-	padding: '4px',
+	thumbnail: '32px',
+	gap: '3px',
+	padding: '3px',
 	caption: '11px'
 };
 
 const coarseSizes = {
-	thumbnail: '88px',
-	gap: '8px',
-	padding: '8px',
+	thumbnail: '44px',
+	gap: '6px',
+	padding: '6px',
 	caption: '13px'
 };
+
+// distance in pixels between a strip standing at the side of the model and the edges of
+// the container
+
+const SIDE_MARGIN = 8;
 
 // appearance is taken from CSS custom properties, which a host may set on the viewer
 // container or on any of its ancestors. The second argument of each var() is the value
 // used where the property is not set, so the strip is usable without any stylesheet.
 
-function stripStyle ( sizes ) {
+// `docked` is a strip standing at the left of the model, its pictures one under the other
+// and in further columns where one is not tall enough for them all; otherwise it is a row
+// beside its station.
+
+function stripStyle ( sizes, docked ) {
 
 	return {
 		'position': 'absolute',
 		'display': 'none',
+		'flex-direction': docked ? 'column' : 'row',
+		'flex-wrap': docked ? 'wrap' : 'nowrap',
+		'align-content': 'flex-start',
+		'max-height': docked ? `calc( 100% - ${2 * SIDE_MARGIN}px )` : 'none',
 		'box-sizing': 'border-box',
 		'gap': `var( --cv-media-gap, ${sizes.gap} )`,
 		'padding': `var( --cv-media-padding, ${sizes.padding} )`,
@@ -115,6 +133,12 @@ class StationMediaOverlay {
 		const viewer = ctx.viewer;
 		const container = ctx.container;
 
+		// where the strip stands: at the left of the model, where it is over none of the
+		// cave, unless the configuration asks for it beside the station it is about
+		// (stationMediaPlacement: 'station')
+
+		const docked = ( ctx.cfg.value( 'stationMediaPlacement', 'left' ) !== 'station' );
+
 		// the pointer the strip is sized for, which a device may gain or lose while it is
 		// displaying one
 
@@ -126,7 +150,7 @@ class StationMediaOverlay {
 
 		strip.classList.add( 'cv-media-strip' );
 
-		setStyle( strip, stripStyle( sizes ) );
+		setStyle( strip, stripStyle( sizes, docked ) );
 
 		container.appendChild( strip );
 
@@ -267,7 +291,11 @@ class StationMediaOverlay {
 
 				item.appendChild( thumbnail );
 
-				if ( entry.caption !== undefined ) {
+				// a caption under a thumbnail this small in a column this narrow is two
+				// letters and an ellipsis: at the side of the model it is the title of the
+				// thumbnail, which a pointer resting on it is shown, and nothing more
+
+				if ( entry.caption !== undefined && ! docked ) {
 
 					const caption = document.createElement( 'div' );
 
@@ -296,6 +324,21 @@ class StationMediaOverlay {
 		}
 
 		function place () {
+
+			if ( docked ) {
+
+				// down the left edge, about the middle of it: clear of a toolbar along the
+				// top and of the dials and scales along the bottom
+
+				strip.style.setProperty( 'left', SIDE_MARGIN + 'px' );
+				strip.style.setProperty( 'top', Math.max( SIDE_MARGIN, ( containerHeight - stripHeight ) / 2 ) + 'px' );
+
+				strip.style.setProperty( 'display', 'flex' );
+				strip.style.setProperty( 'visibility', 'visible' );
+
+				return;
+
+			}
 
 			if ( ! getAnchor( station, __v ) ) {
 
@@ -332,7 +375,7 @@ class StationMediaOverlay {
 
 			sizes = event.matches ? coarseSizes : fineSizes;
 
-			setStyle( strip, stripStyle( sizes ) );
+			setStyle( strip, stripStyle( sizes, docked ) );
 
 			if ( station === null ) return;
 
