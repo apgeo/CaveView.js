@@ -53,6 +53,49 @@ class CaveViewer extends EventDispatcher {
 		container.classList.add( 'cv-container' );
 		container.style.backgroundColor = cfg.themeColorCSS( 'background' );
 
+		// How large the viewer is being displayed, which is a question about its container
+		// and not about the screen: a viewer set beside an article, or in one pane of an
+		// application, is small on the largest of screens. What is laid out over the model
+		// - the dials, the toolbar, the pictures of a station - is laid out for the size
+		// the model has, so the size is named once, here, and each of those asks for it.
+		//
+		// 'large', 'medium' or 'small' by the width of the container, at widths the
+		// configuration may set (sizeClasses: { medium: 1000, small: 600 } - a container
+		// narrower than `medium` is medium, narrower than `small` is small). `mobile` is
+		// the other question, about the device: a screen as narrow as the stylesheet's own
+		// narrow layout. The container is given a class for each (cv-size-<name>,
+		// cv-mobile), for a stylesheet to follow.
+
+		const sizeLimits = Object.assign( { medium: 1000, small: 600 }, cfg.value( 'sizeClasses', {} ) );
+		const mobileQuery = ( typeof window.matchMedia === 'function' ) ? window.matchMedia( '(max-width: 767px)' ) : null;
+
+		let sizeClass = 'large';
+		let mobile = false;
+
+		function updateSizeClass () {
+
+			const width = container.clientWidth;
+
+			// a container that is not laid out has no size to be classed by, and keeps the
+			// class it had: it is not displayed, and is measured again when it is
+
+			const next = ( width === 0 ) ? sizeClass : ( width < sizeLimits.small ) ? 'small' : ( width < sizeLimits.medium ) ? 'medium' : 'large';
+			const nextMobile = ( mobileQuery !== null && mobileQuery.matches );
+
+			const changed = ( next !== sizeClass || nextMobile !== mobile );
+
+			sizeClass = next;
+			mobile = nextMobile;
+
+			[ 'large', 'medium', 'small' ].forEach( name => container.classList.toggle( `cv-size-${name}`, name === sizeClass ) );
+			container.classList.toggle( 'cv-mobile', mobile );
+
+			return changed;
+
+		}
+
+		updateSizeClass();
+
 
 		const ctx = {
 			cfg: cfg,
@@ -549,6 +592,17 @@ class CaveViewer extends EventDispatcher {
 
 			'fullscreenElement': {
 				get() { return fullscreenElement; }
+			},
+
+			// see updateSizeClass(). Read only: the size is the container's, and an
+			// application that wants another gives the container another.
+
+			'sizeClass': {
+				get() { return sizeClass; }
+			},
+
+			'mobile': {
+				get() { return mobile; }
 			},
 
 			'fog': {
@@ -1231,7 +1285,14 @@ class CaveViewer extends EventDispatcher {
 
 			renderer.setSize( w, h );
 
+			// settled before anything is told of the new size, so that whatever lays itself
+			// out for the size reads the class of the size it is being told of
+
+			const sizeClassChanged = updateSizeClass();
+
 			self.dispatchEvent( { type: 'resized', name: 'rts', 'width': w, 'height': h } );
+
+			if ( sizeClassChanged ) self.dispatchEvent( { type: 'change', name: 'sizeClass' } );
 
 			renderView();
 

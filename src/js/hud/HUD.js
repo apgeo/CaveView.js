@@ -88,6 +88,45 @@ function HUD ( viewer, renderer ) {
 	const compassControl = new CompassControl( hudObject, viewer );
 	const ahiControl = new AHIControl( hudObject, viewer );
 
+	// The two dials - the compass and the inclination - are drawn at the size the theme
+	// gives them where the viewer is displayed large, and smaller where it is not: a dial
+	// 80 pixels across is a tenth of a large model and a quarter of one set in a column of
+	// an article, where it stands over the cave it is there to orient. They are drawn at
+	// half that size in a medium or a small container, and at a quarter on a screen as
+	// narrow as a telephone's. The configuration may say otherwise: hudScale is a number
+	// for every size, or the three by name ({ medium: 0.5, small: 0.5, mobile: 0.25 }).
+	//
+	// Everything in the group stands about the corner the group is placed at, so scaling
+	// the group keeps the dials in their corner; the regions they are driven through are
+	// scaled with them.
+
+	const scaleSetting = cfg.value( 'hudScale', null );
+	const scaleBySize = Object.assign( { large: 1, medium: 0.5, small: 0.5, mobile: 0.25 }, ( typeof scaleSetting === 'object' && scaleSetting !== null ) ? scaleSetting : {} );
+
+	function dialScale () {
+
+		if ( typeof scaleSetting === 'number' && scaleSetting > 0 ) return scaleSetting;
+
+		const named = viewer.mobile ? scaleBySize.mobile : scaleBySize[ viewer.sizeClass ];
+
+		return ( typeof named === 'number' && named > 0 ) ? named : 1;
+
+	}
+
+	function scaleDials () {
+
+		const scale = dialScale();
+
+		attitudeGroup.scale.set( scale, scale, 1 );
+		attitudeGroup.updateMatrix();
+
+		compassControl.setScale( scale );
+		ahiControl.setScale( scale );
+
+	}
+
+	scaleDials();
+
 	function i18n ( text ) {
 
 		const tr = cfg.i18n( 'hud.' + text );
@@ -162,7 +201,9 @@ function HUD ( viewer, renderer ) {
 		camera.updateProjectionMatrix();
 
 		attitudeGroup.position.set( hWidth, -hHeight, 0 );
-		attitudeGroup.updateMatrix();
+
+		// the size the viewer is displayed at may have changed class with its dimensions
+		scaleDials();
 
 		newScales();
 

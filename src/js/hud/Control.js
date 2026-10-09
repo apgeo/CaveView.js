@@ -5,6 +5,15 @@ class Control {
 		this.hitRegion = this.createHitRegion( width, height, onEnter );
 		this.container = container;
 
+		// the region as it is at the full size of the dials, and the part of that size the
+		// dials are being drawn at - see setScale()
+
+		this.fullWidth = width;
+		this.fullHeight = height;
+		this.fullRight = 0;
+		this.fullBottom = 0;
+		this.scale = 1;
+
 	}
 
 	createHitRegion ( width, height, onEnter ) {
@@ -14,6 +23,9 @@ class Control {
 		div.style.width = width + 'px';
 		div.style.height = height + 'px';
 		div.style.position = 'absolute';
+
+		// named, for a stylesheet of the application and for whoever inspects the page
+		div.classList.add( 'cv-hud-control' );
 
 		div.setAttribute( 'draggable', 'false' );
 		div.addEventListener( 'dragstart', e => e.preventDefault() );
@@ -28,10 +40,29 @@ class Control {
 
 		const hr = this.hitRegion;
 
-		hr.style.right = right + 'px';
-		hr.style.bottom = bottom + 'px';
+		this.fullRight = right;
+		this.fullBottom = bottom;
+
+		hr.style.right = right * this.scale + 'px';
+		hr.style.bottom = bottom * this.scale + 'px';
 
 		this.container.appendChild( hr );
+
+	}
+
+	// the dials are drawn smaller where the viewer is displayed small, about the corner
+	// they stand in, and the region each is driven through is kept over what is drawn
+
+	setScale ( scale ) {
+
+		const hr = this.hitRegion;
+
+		this.scale = scale;
+
+		hr.style.width = this.fullWidth * scale + 'px';
+		hr.style.height = this.fullHeight * scale + 'px';
+		hr.style.right = this.fullRight * scale + 'px';
+		hr.style.bottom = this.fullBottom * scale + 'px';
 
 	}
 
