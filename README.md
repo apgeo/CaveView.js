@@ -137,6 +137,22 @@ LochViewer prioritizes user security and data protection. An independent securit
 ### 🔗 Embedding & Sharing
 - **Google Maps Style Embed**: Embed 3D models into any webpage using `<iframe>`.
 - **URL State Persistence**: All sidebar settings (themes, colors, clipping planes, terrain) are automatically saved to the URL.
+- **Embedding from a page that holds the file**: a host page can hand the viewer a model's bytes with `postMessage` instead of an address — for files behind a sign-in, or whose address carries a token that must not end up in a URL, a server log or a Referer. The viewer answers only the window that framed or opened it, and only the origin that sent the file.
+
+```js
+const frame = document.querySelector('iframe#viewer')   // src: https://…/?embed=true
+window.addEventListener('message', async (e) => {
+  if (e.source !== frame.contentWindow) return
+  if (e.data?.type === 'lochviewer:ready') {
+    const data = await (await fetch('/my/cave.3d', { credentials: 'include' })).arrayBuffer()
+    frame.contentWindow.postMessage({ type: 'lochviewer:open', name: 'cave.3d', data }, '*', [data])
+  }
+  // then: 'lochviewer:loaded' { name, stations, segments }, 'lochviewer:error' { message },
+  //       'lochviewer:station' { name, x, y, z } when a named station is clicked
+})
+```
+
+The same works for a window opened with `window.open` (without `noopener`). The name's extension chooses the parser. See `src/shared/embed/embedMessages.ts`.
 
 ## 🛠 Installation and Running
 
@@ -297,6 +313,7 @@ LochViewer kladie veľký dôraz na bezpečnosť používateľov a ochranu dát.
 ### 🔗 Zdieľanie a Embedovanie
 - **Google Maps Style Embed**: Možnosť vkladať 3D modely do ľubovoľných webových stránok pomocou `<iframe>`.
 - **URL State Persistence**: Všetky nastavenia sidebaru sa automaticky ukladajú do URL. Keď niekomu pošlete odkaz, uvidí presne to isté.
+- **Vloženie zo stránky, ktorá má súbor**: hostiteľská stránka môže viewer-u poslať samotný súbor cez `postMessage` namiesto adresy (napr. súbor za prihlásením). Popis správ je v anglickej časti vyššie.
 
 ## 🛠 Inštalácia a spustenie
 
