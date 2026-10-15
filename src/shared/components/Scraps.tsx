@@ -22,7 +22,7 @@ interface CaveMaterialPreset {
 
 const CAVE_MATERIAL_PRESETS: Record<CaveTexturePreset, CaveMaterialPreset> = {
   limestone: {
-    texturePath: '/assets/cave_limestone.png',
+    texturePath: `${import.meta.env.BASE_URL}assets/cave_limestone.png`,
     color: '#ffffff',
     roughness: 0.68,
     metalness: 0.0,

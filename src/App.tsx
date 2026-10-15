@@ -3360,13 +3360,13 @@ export default function App() {
                 <div>
                   <div className="demo-title">{t('welcome.demoTitle')}</div>
                   <div className="demo-grid">
-                    <button className="btn-demo" onClick={() => loadFromUrl('/test_simple.lox', 'model-simple.lox')} type="button">
+                    <button className="btn-demo" onClick={() => loadFromUrl(`${import.meta.env.BASE_URL}test_simple.lox`, 'model-simple.lox')} type="button">
                       🗺️ Simple
                     </button>
-                    <button className="btn-demo" onClick={() => loadFromUrl('/test_model2.lox', 'model2.lox')} type="button">
+                    <button className="btn-demo" onClick={() => loadFromUrl(`${import.meta.env.BASE_URL}test_model2.lox`, 'model2.lox')} type="button">
                       🗺️ Scraps
                     </button>
-                    <button className="btn-demo" onClick={() => loadFromUrl('/vetrna_dira.ply', 'Vetrna_dira_merge.ply')} type="button">
+                    <button className="btn-demo" onClick={() => loadFromUrl(`${import.meta.env.BASE_URL}vetrna_dira.ply`, 'Vetrna_dira_merge.ply')} type="button">
                       ☁️ LiDAR
                     </button>
                     <button className="btn-demo" style={{ borderColor: '#818cf8', color: '#a5b4fc', background: 'rgba(99,102,241,0.05)' }} 
@@ -3379,7 +3379,7 @@ export default function App() {
                   <div className="demo-title danger">{t('welcome.stressTitle')}</div>
                   <div className="demo-grid demo-grid-stress">
                     <button className="btn-demo" style={{ borderColor: 'rgba(245,101,101,0.4)', color: '#feb2b2', background: 'rgba(245,101,101,0.05)' }} 
-                      onClick={() => loadFromUrl('/zlomiskovo.lox', 'zlomiskovo-lid2022.lox')} type="button">
+                      onClick={() => loadFromUrl(`${import.meta.env.BASE_URL}zlomiskovo.lox`, 'zlomiskovo-lid2022.lox')} type="button">
                       🏔️ {t('welcome.bigModel')}
                     </button>
                   </div>
@@ -5881,7 +5881,7 @@ export default function App() {
       })()}
       {!isEmbedMode && (
         <div style={{ position: 'fixed', bottom: '10px', right: '12px', fontSize: '10px', opacity: 0.4, zIndex: 1000, pointerEvents: 'auto' }}>
-          <a href="/privacy.html" style={{ color: 'white', textDecoration: 'none' }}>Privacy Policy</a>
+          <a href={`${import.meta.env.BASE_URL}privacy.html`} style={{ color: 'white', textDecoration: 'none' }}>Privacy Policy</a>
         </div>
       )}
     </>
