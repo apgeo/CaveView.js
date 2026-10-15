@@ -256,6 +256,15 @@ export function parseLox(buffer: ArrayBuffer, onProgress?: (msg: string) => void
 }
 
 // ─── SVX .3d parser (v3–v8) ────────────────────────────────────────────────────
+//
+// Follows Survex's format documentation (doc/3dformat.htm for v8, doc/3dformat-old.htm for
+// v3–v7). The two families share the header and the coordinate encoding, but number their items
+// differently — in v3–v7 0x40–0x7f is a station and 0x80–0xbf a leg, in v8 it is the other way
+// round — and patch the running label differently. Every item is read to its full length,
+// cross-sections and error statistics included: skipping one by a wrong count misreads the rest
+// of the file.
+
+const SVX_FILE_ID = 'Survex 3D Image File'
 
 export function parseSvx(buffer: ArrayBuffer, onProgress?: (msg: string) => void): ParsedCave {
   const data    = new Uint8Array(buffer)
@@ -264,96 +273,166 @@ export function parseSvx(buffer: ArrayBuffer, onProgress?: (msg: string) => void
 
   const segments:  Segment[]  = []
   const stations:  Vec3[]     = []
-  const stationMeta = new Map<number, { name: string; z: number }>()
-  const stationMap  = new Map<string, Vec3>()
+  const stationMeta = new Map<number, { name: string; z: number; isEntrance?: boolean }>()
+  const seen = new Set<string>()
 
   let pos = 0
 
-  function readLine(): string {
-    const start = pos
-    while (pos < data.length && data[pos] !== 0x0a) pos++
-    const s = decoder.decode(data.subarray(start, pos)); pos++; return s
+  function need(n: number) {
+    if (pos + n > data.length) throw new Error(`.3d file ends inside an item (offset ${pos})`)
   }
-
-  readLine(); const version = readLine(); readLine(); readLine()
-
-  if (!['v3','v4','v5','v6','v7','v8'].includes(version))
-    throw new Error('Nepodporovaná verzia .3d: ' + version)
-  if (version === 'v8') pos++
-
-  let label = ''; let prevPos: Vec3 | null = null; let stIdx = 0
-
-  if (onProgress) onProgress('parsing_model');
-  while (pos < data.length) {
-    const cmd = data[pos++]
-    if (cmd === 0x00) { label = ''; continue }
-    if (cmd === 0x0f) { prevPos = readXYZ(); continue }
-
-    if (cmd >= 0x40 && cmd < 0x80) {
-      const flags = cmd & 0x3f
-      if (version === 'v8') readLabelV8(flags); else readLabelV7()
-      const cur = readXYZ()
-      if (prevPos) {
-        const type: Segment['type'] = (flags & 0x01) ? 'surface' : (flags & 0x04) ? 'splay' : 'cave'
-        segments.push({ from: { ...prevPos }, to: { ...cur }, type })
-      }
-      prevPos = cur; continue
-    }
-
-    if (cmd >= 0x80) {
-      if (version === 'v8') readLabelV8(cmd & 0x3f); else readLabelV7()
-      const coords = readXYZ()
-      if (!stationMap.has(label)) {
-        stationMap.set(label, coords)
-        stations.push(coords)
-        stationMeta.set(stIdx++, { name: label, z: coords.z })
-      }
-      continue
-    }
-
-    if (cmd >= 0x00 && cmd <= 0x04) continue
-    if (cmd === 0x10) continue
-    if (cmd === 0x11) { pos += 2; continue }
-    if (cmd === 0x12) { pos += 3; continue }
-    if (cmd === 0x13) { pos += 4; continue }
-    if (cmd === 0x1f) { pos += 4; continue }
-    if (cmd >= 0x20 && cmd <= 0x24) { pos += 4; continue }
-    if (cmd === 0x21) { pos += 8; continue }
-    if (cmd >= 0x01 && cmd < 0x0f) { label = label.slice(0, -cmd); continue }
-    if (cmd >= 0x10 && cmd < 0x20) { label = label.slice(0, -(cmd - 15)); continue }
-    if (cmd === 0x30 || cmd === 0x31) { pos += 8;  continue }
-    if (cmd === 0x32 || cmd === 0x33) { pos += 16; continue }
-  }
-
-  return buildResult(segments, stations, stationMeta, [], [])
+  function skip(n: number) { need(n); pos += n }
+  function u8()  { need(1); return data[pos++] }
+  function u16() { need(2); const v = dv.getUint16(pos, true); pos += 2; return v }
+  function u32() { need(4); const v = dv.getUint32(pos, true); pos += 4; return v }
 
   function readXYZ(): Vec3 {
-    const x = dv.getInt32(pos, true) / 100; pos += 4
-    const y = dv.getInt32(pos, true) / 100; pos += 4
-    const z = dv.getInt32(pos, true) / 100; pos += 4
+    need(12)
+    const x = dv.getInt32(pos, true) / 100
+    const y = dv.getInt32(pos + 4, true) / 100
+    const z = dv.getInt32(pos + 8, true) / 100
+    pos += 12
     return { x, y, z }
   }
 
-  function readLabelV7() {
-    let len = 0
-    if      (data[pos] === 0xfe) { len = dv.getUint16(pos, true) + data[pos]; pos += 2 }
-    else if (data[pos] === 0xff) { len = dv.getUint32(pos, true);              pos += 4 }
-    else                          { len = data[pos++] }
-    if (len === 0) return
-    label += decoder.decode(data.subarray(pos, pos + len)); pos += len
+  function readLine(): Uint8Array {
+    const start = pos
+    while (pos < data.length && data[pos] !== 0x0a) pos++
+    if (pos >= data.length) throw new Error('.3d header is incomplete')
+    return data.subarray(start, pos++)
   }
 
-  function readLabelV8(flags: number) {
-    if (flags & 0x20) return
-    const b = data[pos++]; let del = 0, add = 0
+  // The running label is kept as bytes: the delete, append and trim counts are byte counts, and a
+  // name with diacritics has more bytes than characters.
+  let label = new Uint8Array(64)
+  let labelLen = 0
+
+  function appendLabel(n: number) {
+    need(n)
+    if (labelLen + n > label.length) {
+      const grown = new Uint8Array(Math.max(label.length * 2, labelLen + n))
+      grown.set(label.subarray(0, labelLen))
+      label = grown
+    }
+    label.set(data.subarray(pos, pos + n), labelLen)
+    labelLen += n
+    pos += n
+  }
+
+  // v8: delete D bytes from the end, then append A — packed in one byte's nibbles, or escaped as a
+  // byte each, where a byte of 0xff escapes further to a 32-bit count.
+  function patchLabelV8() {
+    let del: number, add: number
+    const b = u8()
     if (b !== 0) { del = b >> 4; add = b & 0x0f }
     else {
-      const db = data[pos++]; del = db !== 0xff ? db : (dv.getUint32(pos, true) + (pos += 4, 0))
-      const ab = data[pos++]; add = ab !== 0xff ? ab : (dv.getUint32(pos, true) + (pos += 4, 0))
+      del = u8(); if (del === 0xff) del = u32()
+      add = u8(); if (add === 0xff) add = u32()
     }
-    if (del) label = label.slice(0, -del)
-    if (add) { label += decoder.decode(data.subarray(pos, pos + add)); pos += add }
+    if (del > labelLen) throw new Error(`.3d label patch deletes more than the label holds (offset ${pos})`)
+    labelLen -= del
+    appendLabel(add)
   }
+
+  // v3–v7: append a length-prefixed string; 0xfe and 0xff escape to 16- and 32-bit lengths.
+  function appendLabelV3() {
+    let len = u8()
+    if (len === 0xfe) len = 0xfe + u16()
+    else if (len === 0xff) len = u32()
+    appendLabel(len)
+  }
+
+  // v3–v7 0x01–0x0e: drop the last 16 bytes, then cut back to (and keep) the dot that closes the
+  // Nth survey level from there.
+  function trimLabelLevels(levels: number) {
+    let i = labelLen - 18
+    if (i < 0) throw new Error('.3d label level-trim on a too-short label')
+    for (;;) {
+      if (label[i] === 0x2e && --levels <= 0) break
+      if (--i < 0) throw new Error('.3d label level-trim consumed the whole label')
+    }
+    labelLen = i + 1
+  }
+
+  // v3–v7 0x10–0x1f: drop the last N bytes.
+  function trimLabelChars(n: number) {
+    if (labelLen <= n) throw new Error('.3d label trim consumed the whole label')
+    labelLen -= n
+  }
+
+  // ─── header
+  if (decoder.decode(readLine()) !== SVX_FILE_ID) throw new Error('Not a Survex .3d file')
+  const versionLine = decoder.decode(readLine())
+  const version = ({ v3: 3, v4: 4, v5: 5, v6: 6, v7: 7, v8: 8 } as Record<string, number | undefined>)[versionLine]
+  if (version === undefined) throw new Error('Nepodporovaná verzia .3d: ' + versionLine)
+  readLine()                // title; v8 appends the coordinate system and separator after NULs
+  readLine()                // datestamp
+  if (version >= 8) skip(1) // file-wide flags
+
+  if (onProgress) onProgress('parsing_model')
+
+  let prevPos: Vec3 | null = null
+
+  function addLeg(to: Vec3, flags: number) {
+    if (prevPos) {
+      const type: Segment['type'] = (flags & 0x01) ? 'surface' : (flags & 0x04) ? 'splay' : 'cave'
+      segments.push({ from: prevPos, to, type })
+    }
+    prevPos = to
+  }
+
+  function addStation(coords: Vec3, flags: number) {
+    // An anonymous station is the far end of a splay or a wall shot: it has no name to label it
+    // or pick it by, and a file can hold many times more of them than named ones.
+    if (flags & 0x20) return
+    const name = decoder.decode(label.subarray(0, labelLen))
+    if (seen.has(name)) return
+    seen.add(name)
+    stationMeta.set(stations.length, { name, z: coords.z, isEntrance: (flags & 0x04) !== 0 })
+    stations.push(coords)
+  }
+
+  // A v8 0x00 sets the normal style the first time it is met and ends the file once it is set.
+  let style = -1
+
+  items: while (pos < data.length) {
+    const opt = u8()
+
+    if (version >= 8) {
+      if (opt === 0x00 && style === 0) break items
+      else if (opt <= 0x04)                 style = opt
+      else if (opt === 0x0f)                prevPos = readXYZ()                 // MOVE
+      else if (opt === 0x10)                { /* no date */ }
+      else if (opt === 0x11)                skip(2)                             // date
+      else if (opt === 0x12)                skip(3)                             // date + span
+      else if (opt === 0x13)                skip(4)                             // date range
+      else if (opt === 0x1f)                skip(20)                            // error info
+      else if (opt >= 0x30 && opt <= 0x33)  { patchLabelV8(); skip(opt >= 0x32 ? 16 : 8) } // LRUD
+      else if (opt >= 0x40 && opt <= 0x7f)  { if (!(opt & 0x20)) patchLabelV8(); addLeg(readXYZ(), opt & 0x1f) }
+      else if (opt >= 0x80)                 { patchLabelV8(); addStation(readXYZ(), opt & 0x7f) }
+      else throw new Error(`.3d reserved item code 0x${opt.toString(16)} (offset ${pos - 1})`)
+      continue
+    }
+
+    if (opt === 0x00) {
+      if (labelLen === 0) break items                                           // STOP
+      labelLen = 0                                                              // clear label
+    }
+    else if (opt <= 0x0e)                                 trimLabelLevels(opt)
+    else if (opt === 0x0f)                                prevPos = readXYZ()   // MOVE
+    else if (opt <= 0x1f)                                 trimLabelChars(opt - 15)
+    else if (opt === 0x20)                                skip(version < 7 ? 4 : 2)  // date
+    else if (opt === 0x21)                                skip(version < 7 ? 8 : 3)  // date range
+    else if (opt === 0x22 && version >= 6)                skip(20)              // error info
+    else if (opt === 0x23 && version >= 7)                skip(4)               // date range
+    else if (opt === 0x24 && version >= 7)                { /* no date */ }
+    else if (opt >= 0x30 && opt <= 0x33 && version >= 5)  { appendLabelV3(); skip(opt >= 0x32 ? 16 : 8) } // LRUD
+    else if (opt >= 0x40 && opt <= 0x7f)                  { appendLabelV3(); addStation(readXYZ(), opt & 0x3f) }
+    else if (opt >= 0x80 && opt <= 0xbf)                  { appendLabelV3(); addLeg(readXYZ(), opt & 0x3f) }
+    else throw new Error(`.3d reserved item code 0x${opt.toString(16)} for version ${version} (offset ${pos - 1})`)
+  }
+
+  return buildResult(segments, stations, stationMeta, [], [])
 }
 
 // ─── PLT parser (Compass) ──────────────────────────────────────────────────────
