@@ -17,6 +17,7 @@ import packageJson from '../package.json'
 import { SJTSK_DEF, fetchAltitudeFromZbgis, wgs84ToJtsk } from '@shared/utils/geoUtils'
 import { tryUtmToWgs84, tryJtskToWgs84 } from "@shared/utils/coords";
 import { useEmbedHost, postToHost } from '@shared/embed/embedMessages'
+import { loadGoogleIdentity } from '@shared/utils/googleIdentity'
 import type { ParsedCave, ViewerOptions, CaveSurface, StationLabel, Vec3, ViewerCameraSnapshot, PointCloudShape } from '@shared/types'
 import type { TextureDownloadInspector } from '@shared/utils/XyzTileDownloader'
 import { clearBrowserTileCache } from '@shared/utils/tileCache'
@@ -2858,6 +2859,7 @@ export default function App() {
     setGdriveStatus('uploading')
     
     try {
+      await loadGoogleIdentity()
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
         scope: 'https://www.googleapis.com/auth/drive.file',
@@ -2924,6 +2926,8 @@ export default function App() {
   }
 
   const openShareDialog = () => {
+    // Started here, not on the upload click: see loadGoogleIdentity.
+    if (GOOGLE_CLIENT_ID) loadGoogleIdentity().catch(() => { /* reported when the upload is tried */ })
     const params = new URLSearchParams(window.location.search)
     const currentModel = params.get('model') || `/${loadedFile?.name ?? ''}`
     setCustomShareUrl(currentModel)
