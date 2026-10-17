@@ -55,6 +55,11 @@ function CameraManager ( ctx, renderer, scene ) {
 		const width = e.width;
 		const height = e.height;
 
+		// a size of nothing - a restore that measured a container nobody can see - would leave the
+		// orthographic zoom 0 and every later one NaN: the cameras keep what they were fitted to
+
+		if ( width === 0 || height === 0 ) return;
+
 		// adjust cameras to new aspect ratio etc.
 
 		orthographicCamera.zoom *= width / ( orthographicCamera.right - orthographicCamera.left );

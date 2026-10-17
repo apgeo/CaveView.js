@@ -1386,6 +1386,40 @@ try {
 
 	check( 'frameLiveMarkers() with no margin on markers at one station leaves an orthographic camera a zoom that is a number', fitted.orthographic && fitted.framed === true && fitted.arrived && fitted.finite, `zoom ${fitted.zoom}` );
 
+	// a viewer whose container is not displayed when the window is resized measures nothing, and an
+	// orthographic camera fitted to nothing was left with a zoom of 0 - which the next resize, at a
+	// real size, turned into NaN: a viewer in a hidden tab came back with nothing drawn
+
+	const hiddenResize = await page2.evaluate( () => {
+
+		viewer.cameraType = CV2.CAMERA_ORTHOGRAPHIC;
+
+		const camera = viewer.getControls().cameraManager.activeCamera;
+		const container = viewer.container;
+		const canvas = container.querySelector( 'canvas' );
+		const before = { zoom: camera.zoom, size: `${canvas.width}x${canvas.height}` };
+
+		const display = container.style.display;
+		container.style.display = 'none';
+		window.dispatchEvent( new Event( 'resize' ) );
+		const whileHidden = { zoom: camera.zoom, size: `${canvas.width}x${canvas.height}` };
+
+		container.style.display = display;
+		window.dispatchEvent( new Event( 'resize' ) );
+		const after = { zoom: camera.zoom, size: `${canvas.width}x${canvas.height}` };
+
+		viewer.cameraType = CV2.CAMERA_PERSPECTIVE;
+
+		return {
+			before: JSON.stringify( before ), whileHidden: JSON.stringify( whileHidden ), after: JSON.stringify( after ),
+			kept: whileHidden.zoom === before.zoom && whileHidden.size === before.size,
+			restored: Number.isFinite( after.zoom ) && after.zoom === before.zoom && after.size === before.size
+		};
+
+	} );
+
+	check( 'a viewer hidden when the window is resized keeps the size it had, and an orthographic camera its zoom, hidden and shown again', hiddenResize.kept && hiddenResize.restored, `before ${hiddenResize.before}, hidden ${hiddenResize.whileHidden}, shown ${hiddenResize.after}` );
+
 	// fullscreen refused: the class is all that displays the viewer large, and the next
 	// press has to be the one that takes it off
 

@@ -1283,6 +1283,14 @@ class CaveViewer extends EventDispatcher {
 			const w = container.clientWidth;
 			const h = container.clientHeight;
 
+			// a container that is not displayed - a hidden tab, a collapsed pane - measures nothing,
+			// and nothing is not a size: fitted to it, an orthographic camera is left with a zoom of
+			// 0, which the next resize at a real size turns into NaN, and the viewer comes back with
+			// nothing drawn. The last real size is kept instead. Shown again at that size, nothing
+			// has changed; shown at another, the host says so the way it says any resize.
+
+			if ( w === 0 || h === 0 ) return;
+
 			renderer.setSize( w, h );
 
 			// settled before anything is told of the new size, so that whatever lays itself
