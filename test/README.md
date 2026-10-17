@@ -64,6 +64,9 @@ to (a `Permissions-Policy` header). It asserts that:
 - `frameLiveMarkers()` dispatches no `moved` event during the call and one after it;
 - `frameLiveMarkers( { margin: 0 } )` on two markers at one station leaves an
   orthographic camera a zoom that is a finite number;
+- a window resized while the viewer's container is not displayed leaves the canvas at the
+  size it had and an orthographic camera at its zoom, and both are the same once it is
+  displayed and the window resized again;
 - where fullscreen is refused, one press of the toolbar's button sets the class on the
   fullscreen element, `fullscreen` reads true and the button shows pressed; a second
   press takes the class off; and no rejection is left unhandled;
