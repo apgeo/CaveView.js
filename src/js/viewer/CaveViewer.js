@@ -2191,19 +2191,32 @@ class CaveViewer extends EventDispatcher {
 
 			if ( survey === null || stationMediaSource === null || typeof stationMediaSource.forEach !== 'function' ) return [];
 
-			const stations = [];
+			const counts = new Map();
 
-			stationMediaSource.forEach( ( entries, path ) => {
+			stationMediaSource.forEach( ( entries, name ) => {
 
 				if ( ! Array.isArray( entries ) ) return;
 
 				const count = entries.filter( entry => typeof entry?.url === 'string' ).length;
 
-				if ( count === 0 ) return;
+				if ( count > 0 ) counts.set( name, count );
 
-				const pStation = self.getStation( path );
+			} );
 
-				if ( pStation !== null ) stations.push( { station: pStation, count: count } );
+			if ( counts.size === 0 ) return [];
+
+			// matched by the name the strip looks a station up by, so that every station marked is
+			// one whose pictures the strip will find - a path read through the survey tree can
+			// spell the same station differently
+
+			const stations = [];
+
+			survey.stations.forEach( station => {
+
+				const pStation = publicFactory.getStation( station );
+				const count = counts.get( pStation.name() );
+
+				if ( count !== undefined && station.connections > 0 ) stations.push( { station: pStation, count: count } );
 
 			} );
 
