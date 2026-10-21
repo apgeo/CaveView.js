@@ -735,6 +735,54 @@ try {
 
 	check( 'a station media image that 404s is reported and its thumbnail removed, closing the strip', media.errors === 1 && media.errorUrl === '/no-such-image.jpg' && media.thumbnails === 0 && media.display === 'none', `mediaError events: ${media.errors}, thumbnails left: ${media.thumbnails}` );
 
+	// the stations holding pictures marked over the model, a marker pressed showing its station's
+	// pictures, and the markers gone again when asked
+
+	const marked = await page.evaluate( async ( { far, leg } ) => {
+
+		const frame = () => new Promise( resolve => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) );
+		// images that load, so the strip a marker opens is not closed again by its pictures failing
+		const pixel = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==';
+		const pictures = n => Array.from( { length: n }, ( _, i ) => ( { url: `${pixel}#${i}`, caption: `picture ${i}` } ) );
+
+		viewer.addEventListener( 'mediaError', event => { event.handled = true; } );
+
+		let pressed = null;
+		viewer.addEventListener( 'mediaMarker', event => { pressed = event.station.name(); } );
+
+		viewer.setStationMedia( new Map( [ [ far, pictures( 3 ) ], [ leg.start, pictures( 1 ) ], [ 'no.such.station', pictures( 1 ) ] ] ) );
+		viewer.setStationMediaMarkers( true );
+		await viewer.focusStation( far );
+		await frame();
+
+		const markers = Array.from( viewer.container.querySelectorAll( '.cv-media-marker' ) );
+		const farMarker = markers.find( m => m.dataset.station === far );
+		const count = farMarker?.querySelector( 'span' )?.textContent ?? null;
+		const shown = farMarker !== undefined && farMarker.style.display === 'block';
+		const rect = viewer.container.getBoundingClientRect();
+		const box = farMarker?.getBoundingClientRect();
+		const inside = box !== undefined && box.left >= rect.left - box.width && box.right <= rect.right + box.width;
+
+		farMarker?.click();
+		await frame();
+
+		const strip = viewer.container.querySelector( '.cv-media-strip' );
+		const stripShown = strip !== null && strip.style.display === 'flex';
+
+		viewer.setStationMediaMarkers( false );
+		const left = viewer.container.querySelectorAll( '.cv-media-marker' ).length;
+
+		viewer.clearStationMedia();
+		viewer.popup = viewer.getSurveyTree();
+
+		return { stations: markers.map( m => m.dataset.station ).sort().join( ',' ), count, shown, inside, pressed, stripShown, left };
+
+	}, loaded );
+
+	check( 'stations holding pictures are marked over the model, one marker each, with how many where there is more than one, and a station the model lacks is not', marked.stations === [ loaded.far, loaded.leg.start ].sort().join( ',' ) && marked.count === '3' && marked.shown && marked.inside, JSON.stringify( marked ) );
+	check( 'a marker pressed shows its station\'s pictures and says which station it was', marked.stripShown && marked.pressed === loaded.far, JSON.stringify( marked ) );
+	check( 'the markers are taken off the model when asked', marked.left === 0, `markers left: ${marked.left}` );
+
 	// the labels of markers that stand near one another on the screen: the two ends of one
 	// leg, with the whole model in view, are a few pixels apart
 
