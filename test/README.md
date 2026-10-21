@@ -26,6 +26,9 @@ allowed fullscreen. It asserts that:
   and its own;
 - a trail along two connected stations has a length;
 - a station media image which 404s is reported by `mediaError` and its thumbnail removed;
+- `setStationMediaMarkers( true )` marks each station of the model holding pictures once, with
+  the count where there is more than one, and not a station the model lacks; pressing a marker
+  shows that station's strip and dispatches `mediaMarker`; `false` takes the markers away;
 - a capture returns a frame of the requested size;
 - a key pressed with the pointer over the model drives the viewer, while keys typed into
   an input, a textarea and an editable element of the host page reach those and not the

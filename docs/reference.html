@@ -174,6 +174,24 @@ events, so the model can still be rotated and stations still selected through th
 <h4>clearStationMedia()</h4>
 <p>Remove the media source set by setStationMedia(), and any strip displayed.</p>
 
+<h4>setStationMediaMarkers( &lt;on&gt; )</h4>
+<p>Mark every station of the loaded model that holds pictures with a small camera drawn just above
+it, so that where the pictures were taken can be seen without hovering every station. A station holding
+more than one picture shows how many. Pressing a marker displays that station's strip, as a hover over
+the station does, and dispatches a <code>mediaMarker</code> event whose <code>station</code> is the
+Station object. The markers follow the view as the strip does and are taken off the screen with a
+station that leaves it; they are marked again for each model loaded and for each source set by
+setStationMedia(). Only a Map source names its stations, so a function source marks none. Appearance is
+taken from the CSS custom properties <code>--cv-media-marker-size</code>,
+<code>--cv-media-marker-background</code>, <code>--cv-media-marker-color</code>,
+<code>--cv-media-marker-border</code>, <code>--cv-media-marker-count-background</code> and
+<code>--cv-media-marker-z-index</code>.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>on</dt>
+	<dd><span>Boolean</span>true to mark the stations, false to take the markers away.</dd>
+</dl>
+
 <h4>addLiveMarker( &lt;id&gt;, &lt;reference&gt;, &lt;options&gt; )</h4>
 <p>Display a marker at a station of the loaded model - a labelled dot drawn over the model, which an
 application adds, moves and removes while the model is displayed rather than loading a model to show

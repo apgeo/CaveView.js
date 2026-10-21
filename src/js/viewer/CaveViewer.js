@@ -23,6 +23,7 @@ import { PublicFactory } from '../public/PublicFactory';
 import { RenderUtils } from '../core/RenderUtils';
 import { Snapshot } from './Snapshot';
 import { StationMediaOverlay } from '../ui/StationMediaOverlay';
+import { StationMediaMarkers } from '../ui/StationMediaMarkers';
 import { Survey } from './Survey';
 import { ViewState } from './ViewState';
 import { WebTerrain } from '../terrain/WebTerrain';
@@ -222,6 +223,9 @@ class CaveViewer extends EventDispatcher {
 
 		// the media overlay, created by the first setStationMedia() call - see below
 		let stationMedia = null;
+		// the markers at the stations holding pictures, while setStationMediaMarkers( true ) - see below
+		let stationMediaSource = null;
+		let stationMediaMarkers = null;
 
 		// event handler
 		window.addEventListener( 'resize', onResize );
@@ -1480,6 +1484,10 @@ class CaveViewer extends EventDispatcher {
 
 			self.dispatchEvent( { type: 'newSurvey', name: 'newSurvey', survey: survey, publicFactory: publicFactory } );
 
+			// the stations to mark are looked up in the model, so a new one is marked again
+
+			if ( stationMediaMarkers !== null ) stationMediaMarkers.refresh();
+
 			// have we got built in terrain
 			let terrain = survey.terrain;
 
@@ -1576,6 +1584,7 @@ class CaveViewer extends EventDispatcher {
 			// before it, which would leave it a frame behind the model while the view moves
 
 			if ( stationMedia !== null ) stationMedia.reposition();
+			if ( stationMediaMarkers !== null ) stationMediaMarkers.reposition();
 
 		}
 
@@ -2144,7 +2153,71 @@ class CaveViewer extends EventDispatcher {
 
 			stationMedia.setSource( source );
 
+			stationMediaSource = source ?? null;
+
+			if ( stationMediaMarkers !== null ) stationMediaMarkers.refresh();
+
 		};
+
+		// marks the stations that hold pictures, so that where the photographs were taken can be
+		// seen without hovering every station; a marker is pressed to show its station's pictures.
+		// Only a source that is a Map can say which stations those are - a function is asked about
+		// one station at a time - so a function source marks nothing.
+
+		this.setStationMediaMarkers = function ( on ) {
+
+			if ( ! on ) {
+
+				if ( stationMediaMarkers !== null ) stationMediaMarkers.dispose();
+				stationMediaMarkers = null;
+				return;
+
+			}
+
+			if ( stationMediaMarkers !== null ) {
+
+				stationMediaMarkers.refresh();
+				return;
+
+			}
+
+			stationMediaMarkers = new StationMediaMarkers( ctx, markedStations, getStationAnchor, onMarkerPress );
+
+		};
+
+		// the stations of the loaded model that hold at least one picture, with how many
+
+		function markedStations () {
+
+			if ( survey === null || stationMediaSource === null || typeof stationMediaSource.forEach !== 'function' ) return [];
+
+			const stations = [];
+
+			stationMediaSource.forEach( ( entries, path ) => {
+
+				if ( ! Array.isArray( entries ) ) return;
+
+				const count = entries.filter( entry => typeof entry?.url === 'string' ).length;
+
+				if ( count === 0 ) return;
+
+				const pStation = self.getStation( path );
+
+				if ( pStation !== null ) stations.push( { station: pStation, count: count } );
+
+			} );
+
+			return stations;
+
+		}
+
+		function onMarkerPress ( pStation ) {
+
+			if ( stationMedia !== null ) stationMedia.show( pStation );
+
+			self.dispatchEvent( { type: 'mediaMarker', station: pStation } );
+
+		}
 
 		this.clearStationMedia = function () {
 
@@ -2156,6 +2229,9 @@ class CaveViewer extends EventDispatcher {
 			stationMedia.dispose();
 
 			stationMedia = null;
+			stationMediaSource = null;
+
+			if ( stationMediaMarkers !== null ) stationMediaMarkers.refresh();
 
 		};
 
