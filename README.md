@@ -12,7 +12,8 @@ original viewer does, it still does; its documentation at
 
 The fork exists for [SilexGIS](https://github.com/apgeo/silexgis), a web GIS for cave and karst
 data, and for the cave pages of the Silex caving club's website, which show trips recorded in
-SilexGIS on a 3D model of the cave.
+SilexGIS on a 3D model of the cave. [ThIDE](https://github.com/apgeo/ThIDE), an editor for Therion
+surveys, embeds it as its 3D model viewer and writes stand-alone web pages around it.
 
 ## Seen in use
 
@@ -39,7 +40,7 @@ Every method, property, event and option is also described in the API reference,
 
 | area | what | details |
 |---|---|---|
-| **Navigation** | fly to a station or a survey section by name, highlight a station, a `stationHover` event | [navigation.md](fork-docs/navigation.md) |
+| **Navigation** | fly to a station or a survey section by name, or to a close-up of a station; highlight a station; where a station or a splay's end is drawn, for a mark of the host's own; a `stationHover` event | [navigation.md](fork-docs/navigation.md) |
 | **Station pictures** | images held for a station, shown as a strip over the model on hover or focus; a camera marker on every station that has pictures; load failures reported | [station-pictures.md](fork-docs/station-pictures.md) |
 | **Live markers** | labelled markers an application adds, moves (animated, over a set duration) and removes; collapsed per station under a label the application chooses; label plates readable over any background; the accented letters of European names | [live-markers-and-trails.md](fork-docs/live-markers-and-trails.md) |
 | **Trails** | the way somebody went, routed along the survey's own legs rather than as straight lines, drawn up to a fraction of its length for replays | [live-markers-and-trails.md](fork-docs/live-markers-and-trails.md) |
@@ -48,7 +49,7 @@ Every method, property, event and option is also described in the API reference,
 | **Comparing surveys** | several files in one viewer, each with a label and a colour; sections hidden and shown; their extent and colour asked for; the viewpoint of one viewer given to another | [comparing-surveys.md](fork-docs/comparing-surveys.md) |
 | **Capture** | a session that draws the view frame by frame at a size given in pixels, for recording a movie of the model | [capture.md](fork-docs/capture.md) |
 | **Host integration** | a coordinate-system lookup supplied by the host instead of a public web service, a Romanian interface catalogue, clean disposal, keys typed into the host page left to the page | [host-integration.md](fork-docs/host-integration.md) |
-| **Fixes** | the dispose handler's typo, calls after dispose, workers ended before they report back, `loadCaves` through the interface, a hidden container being resized, the line shader on three.js r183 (on its own branch, offered to upstream) | [host-integration.md](fork-docs/host-integration.md) |
+| **Fixes** | the dispose handler's typo, calls after dispose, workers ended before they report back, `loadCaves` through the interface, a hidden container being resized, the information page of a model loaded through the viewer, the line shader on three.js r183 (on its own branch, offered to upstream) | [host-integration.md](fork-docs/host-integration.md) |
 
 ## Branches and versions
 
