@@ -13,13 +13,17 @@ class InfoPage extends Page {
 
 		this.addHeader( 'stats.header' );
 
-		const names = fileSelector.loadedSource.getNames();
+		// a model loaded through the viewer rather than through this interface's file
+		// selector leaves it with no loaded source, and so with no file name to show
+
+		const loadedSource = fileSelector.loadedSource;
+		const names = ( loadedSource === null ) ? [] : loadedSource.getNames();
 
 		if ( names.length === 1 ) {
 
 			this.addText( this.i18n( 'file' ) + ': ' + names[ 0 ] );
 
-		} else {
+		} else if ( names.length > 1 ) {
 
 			this.addText( this.i18n( 'files' ) + ':' );
 			names.forEach( name => this.addLine( name ) );

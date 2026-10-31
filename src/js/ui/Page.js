@@ -307,7 +307,7 @@ class Page {
 			opt.text = source.name;
 			opt.value = source.id;
 
-			if ( opt.value == fileSelector.loadedSource.id ) opt.selected = true;
+			if ( fileSelector.loadedSource !== null && opt.value == fileSelector.loadedSource.id ) opt.selected = true;
 
 			select.add( opt, null );
 
