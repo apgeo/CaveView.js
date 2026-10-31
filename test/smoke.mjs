@@ -546,6 +546,54 @@ try {
 	check( 'focusStation() resolves with the station and moves the camera target', focus.ok && focus.moved > 0, `target moved ${focus.moved.toFixed( 1 )} units` );
 	check( 'a reader with no preference about motion is flown there: several frames, and one moved event', focus.frames > 1 && focus.moves === 1, `${focus.frames} frames, ${focus.moves} moved` );
 
+	// a host's own mark over a station: where the station is drawn, and a close-up of it
+
+	const anchor = await page.evaluate( async ( { far } ) => {
+
+		const container = document.getElementById( 'scene' );
+		const controls = viewer.getControls();
+		const camera = () => controls.cameraManager.activeCamera;
+		const distance = () => camera().position.distanceTo( controls.target );
+
+		const at = viewer.getStationScreenPosition( far );
+		const same = viewer.getStationScreenPosition( far, { x: 0, y: 0, z: 0 } );
+		const up = viewer.getStationScreenPosition( far, { x: 0, y: 0, z: 1 } );
+		const none = viewer.getStationScreenPosition( 'no.such.station' );
+		const splays = viewer.getStationSplays( far );
+		const noSplays = viewer.getStationSplays( 'no.such.station' );
+
+		const before = distance();
+		const angles = viewer.getCameraAngles();
+		await viewer.focusStation( far, { span: 20 } );
+		const near = distance();
+		const after = viewer.getCameraAngles();
+		const centred = viewer.getStationScreenPosition( far );
+		await viewer.focusStation( far, { span: 2000 } );
+		const kept = distance();
+
+		let refused = false;
+		await viewer.focusStation( far, { span: -1 } ).catch( () => { refused = true; } );
+
+		return {
+			at, same, up, none, noSplays,
+			splaysIsArray: Array.isArray( splays ),
+			centre: { x: container.clientWidth / 2, y: container.clientHeight / 2 },
+			centred, before, near, kept, refused,
+			turned: Math.abs( after.azimuth - angles.azimuth ) + Math.abs( after.polar - angles.polar )
+		};
+
+	}, loaded );
+
+	const offCentre = anchor.centred === null ? Infinity : Math.hypot( anchor.centred.x - anchor.centre.x, anchor.centred.y - anchor.centre.y );
+
+	check( 'getStationScreenPosition() places a focused station on the screen, and a zero offset at the same pixel', anchor.at !== null && anchor.same !== null && anchor.at.x === anchor.same.x && anchor.at.y === anchor.same.y );
+	check( 'getStationScreenPosition() with an offset upwards places the point higher on the screen', anchor.up !== null && anchor.up.y < anchor.at.y, anchor.up ? `${( anchor.at.y - anchor.up.y ).toFixed( 2 )} px higher` : 'null' );
+	check( 'getStationScreenPosition() and getStationSplays() answer null for a station the model does not have', anchor.none === null && anchor.noSplays === null );
+	check( 'getStationSplays() answers an Array for a station of the model', anchor.splaysIsArray );
+	check( 'focusStation() with a span brings the camera nearer, keeps its direction and centres the station', anchor.near < anchor.before && anchor.turned < 1e-6 && offCentre < 2, `distance ${anchor.before.toFixed( 1 )} -> ${anchor.near.toFixed( 1 )}, ${offCentre.toFixed( 2 )} px off centre` );
+	check( 'focusStation() with a wider span does not pull a closer camera back', Math.abs( anchor.kept - anchor.near ) < 1e-6 * anchor.near, `${anchor.near.toFixed( 3 )} -> ${anchor.kept.toFixed( 3 )}` );
+	check( 'focusStation() refuses a span that is not a number of metres above 0', anchor.refused );
+
 	// the size the names of the stations are written at: a property of the viewer, set
 	// while a model is displayed. Asked here, with the camera at a station, because a name is
 	// written only for a station the camera is near

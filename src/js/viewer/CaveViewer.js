@@ -1997,6 +1997,16 @@ class CaveViewer extends EventDispatcher {
 			// existing caller sees exactly the behaviour it saw before.
 			const keepView = ( options?.keepView === true );
 
+			// span: a close-up - the width of the survey, in metres, to take in about the
+			// station. It moves the camera as keepView does, and only ever nearer.
+			const span = options?.span;
+
+			if ( span !== undefined && ! ( typeof span === 'number' && span > 0 && isFinite( span ) ) ) {
+
+				return Promise.reject( new Error( 'the span of a focus must be a finite number of metres above 0' ) );
+
+			}
+
 			return runCameraMove( () => {
 
 				// the station is selected directly rather than through selectSection(),
@@ -2006,7 +2016,11 @@ class CaveViewer extends EventDispatcher {
 
 				const focusTarget = survey.getWorldPosition( node.clone() );
 
-				if ( keepView ) {
+				if ( span !== undefined ) {
+
+					cameraMove.preparePointKeepingView( focusTarget, span * survey.scale.x );
+
+				} else if ( keepView ) {
 
 					cameraMove.preparePointKeepingView( focusTarget );
 
@@ -2095,6 +2109,89 @@ class CaveViewer extends EventDispatcher {
 			if ( survey === null ) return;
 
 			self.highlight = survey.surveyTree;
+
+		};
+
+		// Where a station is drawn, for a host that marks it with something of its own over
+		// the model - a crosshair, a callout. The position is in pixels from the top left of
+		// the container, as { x, y }. offset, in metres east, north and up, names a point
+		// that far from the station instead, in the axes and units of the model (metres east,
+		// north and up for a survey that is not reprojected): the far end of a splay, say (see
+		// getStationSplays()). Null with no survey loaded, for a reference that names no
+		// station, and for a point that is not on the screen - behind the camera or moved
+		// off the view - so that what a host anchors to it goes with it rather than staying
+		// pinned to the edge. Cheap enough to be asked once for every frame drawn.
+
+		const __anchor = new Vector3();
+
+		this.getStationScreenPosition = function ( ref, offset ) {
+
+			if ( survey === null || renderer === null ) return null;
+
+			const node = getNodeByRef( ref );
+
+			if ( node === null || ! node.isStation() ) return null;
+
+			__anchor.copy( node );
+
+			if ( offset ) __anchor.add( __v.set( offset.x ?? 0, offset.y ?? 0, offset.z ?? 0 ) );
+
+			__anchor.applyMatrix4( survey.matrixWorld ).project( cameraManager.activeCamera );
+
+			if (
+				__anchor.x < -1 || __anchor.x > 1 ||
+				__anchor.y < -1 || __anchor.y > 1 ||
+				__anchor.z < -1 || __anchor.z > 1
+			) return null;
+
+			return {
+				x: ( __anchor.x + 1 ) / 2 * container.clientWidth,
+				y: ( 1 - __anchor.y ) / 2 * container.clientHeight
+			};
+
+		};
+
+		// The splays shot from a station, as the offset of the far end of each from the
+		// station in metres east, north and up - what a host needs to point at one splay of
+		// several, which has no name of its own. A splay is found from either of its ends,
+		// since a file may record it in either direction, and from any station at the same
+		// place. Empty for a station with no splays, and for a model with none at all; null
+		// with no survey loaded and for a reference that names no station.
+
+		this.getStationSplays = function ( ref ) {
+
+			if ( survey === null ) return null;
+
+			const node = getNodeByRef( ref );
+
+			if ( node === null || ! node.isStation() ) return null;
+
+			const splays = survey.getFeature( LEG_SPLAY );
+
+			if ( splays === undefined ) return [];
+
+			const vertices = splays.legVertices;
+			const found = [];
+
+			for ( let i = 0; i + 1 < vertices.length; i += 2 ) {
+
+				const from = vertices[ i ];
+				const to = vertices[ i + 1 ];
+
+				let end = null;
+
+				if ( from === node || from.equals( node ) ) end = to;
+				else if ( to === node || to.equals( node ) ) end = from;
+
+				if ( end !== null && ! end.equals( node ) ) {
+
+					found.push( { x: end.x - node.x, y: end.y - node.y, z: end.z - node.z } );
+
+				}
+
+			}
+
+			return found;
 
 		};
 

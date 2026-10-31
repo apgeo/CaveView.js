@@ -87,6 +87,31 @@ loaded or the reference does not identify a station of the loaded model.</p>
 <h4>clearHighlight()</h4>
 <p>Remove the highlight applied by highlightStation() or focusStation().</p>
 
+<h4>getStationScreenPosition( &lt;reference&gt;, &lt;offset&gt; )</h4>
+<p>Where a station is drawn, as an Object with x and y properties in pixels from the top left of the
+container - for a host that marks the station with something of its own over the model, such as a
+crosshair. Asking once for every frame drawn is cheap. Returns null if no model is loaded, if the
+reference does not identify a station of the loaded model, or if the point is not on the screen: behind
+the camera, or outside the view.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the station.</dd>
+	<dt>offset</dt><dd><span>Object</span>An Object with x, y and z properties: the position of a point that far from
+	the station is given instead, in the axes and units of the model - metres east, north and up for a survey that
+	is not reprojected. One of the offsets returned by getStationSplays() names the far end of a splay (optional).</dd>
+</dl>
+
+<h4>getStationSplays( &lt;reference&gt; )</h4>
+<p>The splays shot from a station, as an Array of Objects with x, y and z properties: the offset of the far
+end of each splay from the station, in the axes and units of the model. A splay is found from either of its
+ends, as a file may record it in either direction, and from any station at the same place. The Array is empty
+for a station with no splays. Returns null if no model is loaded or the reference does not identify a station
+of the loaded model.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the station.</dd>
+</dl>
+
 <h4>setSectionVisible( &lt;reference&gt;, &lt;visible&gt; )</h4>
 <p>Hide a section of the survey, or show it again: its legs of every kind, its stations and their labels,
 its entrances, and its walls and scraps, together with those of every section within it. The rest of the
@@ -896,6 +921,13 @@ was. A Compass .plt file takes no label.</p>
 	prefers-reduced-motion media query matches, every camera move - a focus, a change of view, a turn to an
 	azimuth or polar angle - otherwise arrives in a single frame, and an auto rotation is not started; the
 	viewer's read only reducedMotion property reports the preference <span>default: false</span>. (optional).</dd>
+	<dt>keepView</dt>
+	<dd><span>boolean</span>centre the station by moving the camera with it rather than turning the camera to face it,
+	so the direction the reader looks from is kept <span>default: false</span>. (optional).</dd>
+	<dt>span</dt>
+	<dd><span>number</span>a close-up: the width of the survey, in metres, to take in about the station, across the
+	narrower side of the view. The camera is moved as with keepView, and is only ever brought nearer - a reader already
+	looking more closely stays where they are. A value that is not a finite number above 0 rejects the call (optional).</dd>
 </dl>
 
 <h4>media entry Object</h4>

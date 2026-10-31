@@ -214,7 +214,7 @@ class CameraMove {
 		 * animateMove() that moves the camera at all, and skipNext has to be cleared by
 		 * hand because preparePoint() uses "no rotation" to mean "nothing to do".
 		 */
-		this.preparePointKeepingView = function ( endPOIIn ) {
+		this.preparePointKeepingView = function ( endPOIIn, span ) {
 
 			if ( running ) return this;
 
@@ -229,6 +229,37 @@ class CameraMove {
 			// carried over explicitly: animateMove() lerps towards it on this branch, and
 			// a value left from an earlier move would pull the zoom with it
 			endZoom = camera.zoom;
+
+			// span: the width, in units of the scene, the view should take in about the
+			// point - a close-up of a place. The camera only ever comes nearer for it: a
+			// reader already looking more closely is not pulled back. The direction of
+			// view is kept either way, so the zoom is along the line already looked down.
+
+			if ( span !== undefined && span > 0 ) {
+
+				const across = Math.min( 1, camera.aspect ?? 1 );
+
+				if ( camera.isPerspectiveCamera ) {
+
+					const distance = span / ( across * 2 * Math.tan( MathUtils.DEG2RAD * 0.5 * camera.getEffectiveFOV() ) );
+
+					__v2.copy( camera.position ).sub( controls.target );
+
+					if ( distance < __v2.length() ) {
+
+						endCameraPosition.copy( endPOI ).add( __v2.setLength( distance ) );
+
+					}
+
+				} else {
+
+					const zoom = Math.min( camera.right - camera.left, camera.top - camera.bottom ) / span;
+
+					if ( Number.isFinite( zoom ) && zoom > camera.zoom ) endZoom = Math.min( zoom, controls.maxZoom ?? zoom );
+
+				}
+
+			}
 
 			rotation = 0;
 			skipNext = false;
