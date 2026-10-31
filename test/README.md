@@ -19,6 +19,11 @@ allowed fullscreen. It asserts that:
   version;
 - `focusStation()` on a station resolved from the tree moves the camera target, over
   several animation frames, and signals one `moved` event;
+- `getStationScreenPosition()` places the focused station on the screen, a zero offset at the same
+  pixel and an offset upwards higher; it and `getStationSplays()` answer null for a station the model
+  does not have, and `getStationSplays()` an Array for one it has; `focusStation()` with a `span`
+  brings the camera nearer without turning it and centres the station, a wider `span` does not pull
+  it back, and a `span` below zero is refused;
 - a live marker can be added, moved, framed and removed, and `frameLiveMarkers()` signals
   its end again when called with the camera already where it left it;
 - a `focusStation()` started in the same turn as such a framing is flown over several
