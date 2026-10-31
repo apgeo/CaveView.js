@@ -24,12 +24,43 @@ model is loaded, or the move was superseded by another focus or cancelled by the
 | `animate` | `false` | animate even for a reader who asked for reduced motion (see [toolbar-and-layout.md](toolbar-and-layout.md)) |
 | `keepView` | `false` | move the camera with the station instead of swinging it round to face it, so a reader who chose a direction to look from keeps it |
 
+A **close-up** of the station is `span`: the width of the survey, in metres, to take in about it.
+The camera is moved as `keepView` moves it and only ever comes nearer, so a reader already looking
+more closely is left where they are:
+
+```js
+await viewer.focusStation( 'cave.big_pitch.12', { span: 30 } );   // centred, about 30 m across
+```
+
 ## Highlighting without moving
 
 ```js
 viewer.highlightStation( 'cave.big_pitch.12' );   // returns the Station, or null
 viewer.clearHighlight();
 ```
+
+## Marking a station with something of your own
+
+The viewer's highlight is a point in the model's own colours. A host wanting a mark that cannot be
+missed - a crosshair, a callout - draws it over the container and asks, for each frame, where the
+station is:
+
+```js
+const crosshair = document.getElementById( 'crosshair' );   // absolutely placed in the container
+
+function follow () {
+  const at = viewer.getStationScreenPosition( 'cave.big_pitch.12' );   // { x, y } or null
+  crosshair.hidden = ( at === null );                                   // off the screen
+  if ( at ) crosshair.style.transform = `translate(${at.x}px, ${at.y}px)`;
+  requestAnimationFrame( follow );
+}
+requestAnimationFrame( follow );
+```
+
+A splay has no name to ask for. `getStationSplays( station )` gives the far end of each splay shot
+from a station, as an offset from it in metres east, north and up; the host picks the one it means
+(by its direction, say) and passes that offset as the second argument of
+`getStationScreenPosition()`.
 
 ## Knowing what the pointer is over
 
