@@ -1,5 +1,5 @@
 
-export const VERSION = '2.9.0-slx.22';
+export const VERSION = '2.9.0-slx.23';
 
 // what a host can ask of this build: a live marker placed at a station with an offset,
 // { station, offset }, as at the far end of a splay
