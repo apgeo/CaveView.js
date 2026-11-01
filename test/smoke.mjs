@@ -710,6 +710,30 @@ try {
 
 	}, loaded );
 
+	// a marker at a splay's far end: a station and the offset of the end from it
+
+	const offsetMarker = await page.evaluate( ( { far } ) => {
+
+		const placed = viewer.addLiveMarker( 'smoke-splay', { station: far, offset: [ 0, 0, 5 ] }, { label: 'splay' } );
+		const asObject = viewer.addLiveMarker( 'smoke-splay-xyz', { station: far, offset: { x: 1, y: 0, z: 0 } }, { label: 'splay' } );
+		const lost = viewer.addLiveMarker( 'smoke-lost', { station: 'no.such.station', offset: [ 0, 0, 1 ] }, { label: 'lost' } );
+		const listed = viewer.getLiveMarkers().find( m => m.id === 'smoke-splay' );
+
+		[ 'smoke-splay', 'smoke-splay-xyz', 'smoke-lost' ].forEach( id => viewer.removeLiveMarker( id ) );
+
+		return {
+			flag: CV2.LIVE_MARKER_OFFSETS === true,
+			placed: placed?.resolved === true,
+			asObject: asObject?.resolved === true,
+			lost: lost?.resolved === false,
+			ref: listed?.ref?.station === far && JSON.stringify( listed?.ref?.offset ) === '[0,0,5]'
+		};
+
+	}, loaded );
+
+	check( 'a live marker is placed at a station with an offset, given as an Array or as { x, y, z }', offsetMarker.flag && offsetMarker.placed && offsetMarker.asObject && offsetMarker.ref, JSON.stringify( offsetMarker ) );
+	check( 'a live marker with an offset from a station the model does not have is not resolved', offsetMarker.lost );
+
 	check( 'frameLiveMarkers() returns false with no marker placed', markers.none === false );
 	check( 'addLiveMarker() / moveLiveMarker() / removeLiveMarker() round-trip', markers.added && markers.listed === 1 && markers.moved && markers.removed === true && markers.left === 0 );
 	check( 'frameLiveMarkers() returns true with a marker placed and the camera moves', markers.framed === true && markers.arrived, `target moved ${markers.targetMoved.toFixed( 1 )} units` );

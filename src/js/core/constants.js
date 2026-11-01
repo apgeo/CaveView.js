@@ -1,6 +1,10 @@
 
 export const VERSION = '2.9.0-slx.22';
 
+// what a host can ask of this build: a live marker placed at a station with an offset,
+// { station, offset }, as at the far end of a splay
+export const LIVE_MARKER_OFFSETS = true;
+
 export const CAMERA_NONE         = 0;
 export const CAMERA_ORTHOGRAPHIC = 1;
 export const CAMERA_PERSPECTIVE  = 2;
