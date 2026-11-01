@@ -691,7 +691,30 @@ class LiveMarkers {
 
 		function copyValue ( value ) {
 
-			return Array.isArray( value ) ? value.slice() : value;
+			if ( Array.isArray( value ) ) return value.slice();
+
+			// a station with an offset, for a marker at the far end of a splay
+
+			if ( value !== null && typeof value === 'object' ) {
+
+				return { station: copyValue( value.station ), offset: offsetValue( value.offset ) };
+
+			}
+
+			return value;
+
+		}
+
+		// an offset in metres east, north and up, given as [ e, n, u ] or as { x, y, z } -
+		// the form getStationSplays() answers in
+
+		function offsetValue ( offset ) {
+
+			if ( Array.isArray( offset ) ) return [ offset[ 0 ] ?? 0, offset[ 1 ] ?? 0, offset[ 2 ] ?? 0 ];
+
+			if ( offset ) return [ offset.x ?? 0, offset.y ?? 0, offset.z ?? 0 ];
+
+			return [ 0, 0, 0 ];
 
 		}
 
@@ -738,9 +761,29 @@ class LiveMarkers {
 
 		function resolve ( marker ) {
 
-			const node = ( survey === null ) ? null : survey.surveyTree.getByRef( marker.ref );
+			// a splay's far end has no name, so a marker there is given as the station the
+			// splay was shot from and the offset of its end. It is placed at that point, which
+			// is not the station's, so it is collapsed with no marker at the station itself
 
-			marker.node = ( node !== null && node.isStation() ) ? node : null;
+			const ref = marker.ref;
+			const atOffset = ( ref !== null && typeof ref === 'object' && ! Array.isArray( ref ) );
+
+			const node = ( survey === null ) ? null : survey.surveyTree.getByRef( atOffset ? ref.station : ref );
+
+			if ( node === null || ! node.isStation() ) {
+
+				marker.node = null;
+
+			} else if ( atOffset ) {
+
+				const [ e, n, u ] = ref.offset;
+				marker.node = new Vector3( node.x + e, node.y + n, node.z + u );
+
+			} else {
+
+				marker.node = node;
+
+			}
 
 		}
 

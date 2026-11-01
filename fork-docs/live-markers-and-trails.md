@@ -22,6 +22,11 @@ viewer.clearLiveMarkers();
 viewer.getLiveMarkers();   // [{ id, ref, label, sublabel, color, resolved, … }]
 ```
 
+- **At a splay's far end**, which has no name: give the station and the offset of the end from it,
+  `viewer.addLiveMarker( 'lake', { station: 'cave.big_pitch.12', offset: [ 1.5, -0.4, 2.0 ] } )`, in
+  metres east, north and up — or in the `{ x, y, z }` form `getStationSplays()` answers in. The marker
+  is placed at that point and is not collapsed with the station's own markers.
+  `CV2.LIVE_MARKER_OFFSETS` says a build accepts it.
 - **A station the model does not have** leaves the marker unresolved: drawn nowhere, reported with
   `resolved: false`, and placed as soon as a model that has the station is loaded. Markers survive
   a model being cleared and loaded again.

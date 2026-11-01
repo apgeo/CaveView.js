@@ -224,7 +224,11 @@ it. Markers are displayed whatever the view settings are, and are drawn against 
 features: one placed at a station that the terrain covers is hidden by it as the station is.</p>
 <p>The identifier names the marker for the calls below, and adding a marker with the identifier of one
 already displayed replaces it. The reference names the station the marker is placed at, in either of
-the forms focusStation() accepts.</p>
+the forms focusStation() accepts. A splay's far end has no name: a marker there is given as an object,
+<code>{ station: &lt;reference&gt;, offset: [ east, north, up ] }</code>, the offset in metres from the
+station and in the form getStationSplays() answers in, <code>{ x, y, z }</code>, as well. It is placed at
+that point and is not collapsed with the markers at the station itself. <code>CV2.LIVE_MARKER_OFFSETS</code>
+is true in a build that accepts this form.</p>
 <p>A label may be a single string, or an Array of the strings its lines are. The lines are drawn one
 below the other, ranged left, with the first of them on the line of the dot: a label grows downwards as
 lines are added to it, so the dot stays where it is and whatever the marker is first called stays
