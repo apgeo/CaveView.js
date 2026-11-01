@@ -652,7 +652,10 @@ setting is true. Hovering over any other part of the model dispatches no event.<
 instead, dispatching the same event, and a tap anywhere else ends the hover as moving a mouse off a
 station does. That is the whole of the difference: a listener has the same event to act on either way,
 and the pointerType property says which kind of pointer made it. A tap that reports a station also does
-what a click of a mouse does, so the station is selected by the same tap that reports it.</p>
+what a click of a mouse does, so the station is selected by the same tap that reports it. A finger or
+pen selects the station, and the station select event is dispatched, as the tap ends; a contact that
+turns the model instead selects nothing. <code>CV2.STATION_SELECTED_ON_TAP</code> is true in a build that
+does this.</p>
 <p>A listener that displays its own information for the station sets the handled property of the event,
 which suppresses the station name label until another station is hovered over. The distance popup
 displayed while measuring between stations is not suppressed.</p>

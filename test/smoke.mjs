@@ -594,6 +594,48 @@ try {
 	check( 'focusStation() with a wider span does not pull a closer camera back', Math.abs( anchor.kept - anchor.near ) < 1e-6 * anchor.near, `${anchor.near.toFixed( 3 )} -> ${anchor.kept.toFixed( 3 )}` );
 	check( 'focusStation() refuses a span that is not a number of metres above 0', anchor.refused );
 
+	// a finger turns the model with the same contact it taps with: the station under it is
+	// selected as the contact ends as a tap, and a turn begun over it selects nothing
+
+	const touch = await page.evaluate( async ( { far } ) => {
+
+		await viewer.focusStation( far, { span: 20 } );
+
+		const canvas = document.querySelector( '#scene canvas' );
+		const box = canvas.getBoundingClientRect();
+		const at = viewer.getStationScreenPosition( far );
+		const x = box.left + at.x;
+		const y = box.top + at.y;
+
+		const selected = [];
+		const listener = event => { selected.push( event.node.name() ); event.handled = true; };
+		viewer.addEventListener( 'station', listener );
+
+		const send = ( type, px, py, id ) => canvas.dispatchEvent( new PointerEvent( type, {
+			bubbles: true, cancelable: true, pointerId: id, pointerType: 'touch', isPrimary: true,
+			clientX: px, clientY: py, button: 0, buttons: type === 'pointerup' ? 0 : 1
+		} ) );
+
+		send( 'pointerdown', x, y, 71 );
+		const onDown = selected.length;
+		send( 'pointerup', x, y, 71 );
+		const onTap = selected.length;
+
+		send( 'pointerdown', x, y, 72 );
+		for ( let i = 1; i <= 8; i ++ ) send( 'pointermove', x + i * 10, y, 72 );
+		send( 'pointerup', x + 80, y, 72 );
+		const onTurn = selected.length;
+
+		viewer.removeEventListener( 'station', listener );
+		await viewer.focusStation( far, { span: 20 } );
+
+		return { flag: CV2.STATION_SELECTED_ON_TAP === true, onDown, onTap, onTurn, name: selected[ 0 ] ?? null, far };
+
+	}, loaded );
+
+	check( 'under a finger a station is selected as the tap ends, not as it begins', touch.flag && touch.onDown === 0 && touch.onTap === 1 && touch.name === touch.far, JSON.stringify( touch ) );
+	check( 'a turn begun over a station under a finger selects nothing', touch.onTurn === 1, `${touch.onTurn} selections` );
+
 	// the size the names of the stations are written at: a property of the viewer, set
 	// while a model is displayed. Asked here, with the camera at a station, because a name is
 	// written only for a station the camera is near

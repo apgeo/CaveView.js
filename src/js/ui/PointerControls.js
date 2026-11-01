@@ -66,6 +66,11 @@ class PointerControls extends EventDispatcher {
 
 		const tap = new TapGesture();
 
+		// the station a finger went down on, selected only if the contact ends as a tap -
+		// see onPointerDown()
+
+		let pendingSelection = null;
+
 		// event handler
 
 		viewer.addEventListener( 'newSurvey', e => {
@@ -307,7 +312,14 @@ class PointerControls extends EventDispatcher {
 			// and a tap on anything else dismisses what the last one revealed. Stations
 			// are tracked under either pointer only while the name label is displayed.
 
-			if ( tap.end( event ) && showStationNameLabel ) {
+			const tapped = tap.end( event );
+
+			const pending = pendingSelection;
+			pendingSelection = null;
+
+			if ( tapped && pending !== null ) selectStation( pending.station, pending.event );
+
+			if ( tapped && showStationNameLabel ) {
 
 				if ( ! hoverAt( event.clientX, event.clientY, event.pointerType ) ) {
 
@@ -334,6 +346,8 @@ class PointerControls extends EventDispatcher {
 			endPointer();
 
 			tap.cancel();
+
+			pendingSelection = null;
 
 		}
 
@@ -691,7 +705,21 @@ class PointerControls extends EventDispatcher {
 			case MOUSE_MODE_NORMAL:
 
 				if ( hit === undefined ) break;
-				selectStation( hit.station, event );
+
+				// a finger turns the model with the same contact it taps with, so a station
+				// under it is selected when the contact ends as a tap, not as it begins: a
+				// turn begun over a station would otherwise select it. A mouse turns the model
+				// with a press held down, and selects as it is pressed, as it always has
+
+				if ( pointerHovers( event.pointerType ) ) {
+
+					selectStation( hit.station, event );
+
+				} else {
+
+					pendingSelection = { station: hit.station, event: event };
+
+				}
 
 				break;
 

@@ -40,6 +40,9 @@ stylesheet can follow. On smaller viewers the compass and inclination dials are 
 - targets are larger under a finger (44 px), and the toolbar's buttons grow with them;
 - one finger still turns the model and two still zoom and pan: a tap is told from a drag by distance
   and time, and nothing the browser does by default is prevented.
+- a station under a finger or a pen is selected — and the `station` event dispatched — when the contact
+  ends as a tap, not as it begins, so turning the model from a station selects nothing; a mouse selects
+  as it is pressed. `CV2.STATION_SELECTED_ON_TAP` says a build does this.
 
 ## Labels
 
