@@ -101,6 +101,71 @@ the camera, or outside the view.</p>
 	is not reprojected. One of the offsets returned by getStationSplays() names the far end of a splay (optional).</dd>
 </dl>
 
+<h4>markStation( &lt;reference&gt;, &lt;options&gt; )</h4>
+<p>Draw a crosshair over a station, with a label beside it, without moving the camera - for a host that
+sends a reader to a place, where the highlight alone is lost among the stations about it. The mark follows
+the station as the model is turned, leaves the screen with it, takes no pointer events, and is taken away by
+clearStationMark(), by a later call for a station the model does not have, and by loading another model.
+Returns the Station object, or null if no model is loaded or the reference does not identify a station of the
+loaded model. Its colours, font and stacking are read from the CSS custom properties --cv-station-mark-color,
+--cv-station-mark-halo, --cv-station-mark-label-color, --cv-station-mark-label-background,
+--cv-station-mark-font and --cv-station-mark-z-index.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the station.</dd>
+	<dt>options</dt><dd><span>Object</span>An object with an offset property, as getStationScreenPosition() takes it, to mark
+	a point that far from the station, and a label property, the text beside the mark: the reference as a dotted
+	name by default, none for an empty string (optional).</dd>
+</dl>
+
+<h4>clearStationMark()</h4>
+<p>Take away the mark drawn by markStation() or showStation().</p>
+
+<h4>getStationMark()</h4>
+<p>What is marked, as an Object with ref, offset and label properties, or null.</p>
+
+<h4>showStation( &lt;reference&gt;, &lt;options&gt; )</h4>
+<p>Fly to a place named by a host and mark it. The reference is resolved as resolveStationName() resolves it;
+one that names a survey section is framed by focusSurvey() with no mark. Returns a Promise, resolved with an
+Object whose kind property is station, survey, none (the reference names neither) or cancelled (another move
+replaced the flight). For a station the Object also has name, the dotted name the model has for it, station,
+the Station object, splay, null or one of matched, closest and missing, and angle, the difference in degrees
+between the splay marked and the one asked for. The Promise is rejected only for a span that is not a number
+of metres above 0.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the station or survey section.</dd>
+	<dt>options</dt><dd><span>Object</span>An object with the properties closeUp (<span>boolean</span>, a close-up of the
+	station; otherwise it is centred keeping the camera's distance and direction <span>default: false</span>), span (the
+	width of the close-up in metres <span>default: 30</span>), splay (an Object with length, compass and clino properties:
+	the mark is placed on the far end of the model's splay that best matches it), label (as for markStation()), popup
+	and animate (as for focusStation(); popup <span>default: false</span>) (optional).</dd>
+</dl>
+
+<h4>resolveStationName( &lt;reference&gt; )</h4>
+<p>The name the loaded model has for a station named by a source that may see the survey from another level - a
+model compiled from a parent survey adds a level to every name, one compiled from inside it drops one. Returns
+the reference itself when it names a station of the model; otherwise the one station whose path ends with the
+name, or that the name ends with, as an Array of path components; null if no model is loaded or no station,
+or more than one, fits.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the station.</dd>
+</dl>
+
+<h4>matchStationSplay( &lt;reference&gt;, &lt;shot&gt; )</h4>
+<p>The splay of a station that best matches one measured from it: the nearest in direction, and of two in about
+the same direction the nearer in length. Returns an Object with offset (as getStationSplays() gives it), angle
+(degrees between the two directions) and matched (true when that is 25 degrees or less - enough for declination
+and grid convergence) properties, or null if no model is loaded, the reference does not identify a station or
+the station has no splays.</p>
+<h5>Parameters</h5>
+<dl>
+	<dt>reference</dt><dd><span>string</span> or <span>Array</span>The name of the station.</dd>
+	<dt>shot</dt><dd><span>Object</span>An Object with length, compass and clino properties, in the model's length unit and
+	degrees.</dd>
+</dl>
+
 <h4>getStationSplays( &lt;reference&gt; )</h4>
 <p>The splays shot from a station, as an Array of Objects with x, y and z properties: the offset of the far
 end of each splay from the station, in the axes and units of the model. A splay is found from either of its
