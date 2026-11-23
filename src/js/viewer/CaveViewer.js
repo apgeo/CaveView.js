@@ -24,6 +24,7 @@ import { RenderUtils } from '../core/RenderUtils';
 import { Snapshot } from './Snapshot';
 import { StationMediaOverlay } from '../ui/StationMediaOverlay';
 import { StationMediaMarkers } from '../ui/StationMediaMarkers';
+import { StationMark } from '../ui/StationMark';
 import { Survey } from './Survey';
 import { ViewState } from './ViewState';
 import { WebTerrain } from '../terrain/WebTerrain';
@@ -226,6 +227,14 @@ class CaveViewer extends EventDispatcher {
 		// the markers at the stations holding pictures, while setStationMediaMarkers( true ) - see below
 		let stationMediaSource = null;
 		let stationMediaMarkers = null;
+
+		// the host's crosshair over a station, created by the first markStation() call - see below
+		let stationMark = null;
+
+		// the stations of the loaded model by the last name of each, for resolveStationName(),
+		// built on first use for the survey it was built from
+		let stationIndex = null;
+		let stationIndexSurvey = null;
 
 		// event handler
 		window.addEventListener( 'resize', onResize );
@@ -1585,6 +1594,7 @@ class CaveViewer extends EventDispatcher {
 
 			if ( stationMedia !== null ) stationMedia.reposition();
 			if ( stationMediaMarkers !== null ) stationMediaMarkers.reposition();
+			if ( stationMark !== null ) stationMark.reposition();
 
 		}
 
@@ -2192,6 +2202,271 @@ class CaveViewer extends EventDispatcher {
 			}
 
 			return found;
+
+		};
+
+		// A crosshair over a station, with a label beside it, for a host that sends a reader to a
+		// place: the viewer's own highlight is a point in the model's colours, lost among the
+		// stations about it once the camera is any distance away. It follows the station as the
+		// model is turned and leaves the screen with it, and is taken away by clearStationMark()
+		// and by loading another model. The camera is not moved - see showStation() for that.
+		//
+		// options.offset  a point that far from the station instead, as getStationScreenPosition()
+		//                 takes it: the far end of a splay, say
+		// options.label   the text beside the mark; the reference as a dotted name by default, and
+		//                 none for an empty string
+		//
+		// Returns the Station object, or null - with no mark drawn and any earlier one taken
+		// away - with no survey loaded and for a reference that names no station.
+
+		this.markStation = function ( ref, options ) {
+
+			// a disposed viewer has no container to draw in
+			if ( renderer === null ) return null;
+
+			const node = getNodeByRef( ref );
+
+			if ( node === null || ! node.isStation() ) {
+
+				self.clearStationMark();
+				return null;
+
+			}
+
+			const offset = options?.offset ?? null;
+
+			if ( offset !== null && ! [ offset.x ?? 0, offset.y ?? 0, offset.z ?? 0 ].every( Number.isFinite ) ) {
+
+				throw new Error( 'the offset of a station mark is an object of x, y and z in the units of the model' );
+
+			}
+
+			if ( stationMark === null ) {
+
+				stationMark = new StationMark( ctx, ( r, o ) => self.getStationScreenPosition( r, o ?? undefined ), () => self.reducedMotion );
+
+			}
+
+			const label = ( options?.label === undefined ) ? refName( ref ) : String( options.label ?? '' );
+
+			stationMark.mark( ref, offset, label );
+
+			return publicFactory.getStation( node );
+
+		};
+
+		this.clearStationMark = function () {
+
+			if ( stationMark !== null ) stationMark.clear();
+
+		};
+
+		// what is marked, as { ref, offset, label }, or null
+
+		this.getStationMark = function () {
+
+			return ( stationMark === null ) ? null : stationMark.get();
+
+		};
+
+		// The name the loaded model has for a station named by a source that may see the survey
+		// from another level: a model compiled from a parent survey adds a level to every name,
+		// one compiled from inside it drops one, and a name written by somebody - a page's text,
+		// a list of places, a survey's comments - may have been written against either. The
+		// reference itself when it names a station of the model; otherwise the one station whose
+		// path ends with the name, or that the name ends with, as an Array of path components.
+		// Null with no survey loaded and when no station, or more than one, fits: the name is
+		// never guessed between two stations.
+
+		this.resolveStationName = function ( ref ) {
+
+			if ( survey === null ) return null;
+
+			const node = getNodeByRef( ref );
+
+			if ( node !== null && node.isStation() ) return ref;
+
+			const name = refName( ref );
+
+			if ( stationIndex === null || stationIndexSurvey !== survey ) {
+
+				stationIndex = new Map();
+				stationIndexSurvey = survey;
+
+				const walk = ( node, names ) => {
+
+					if ( node.isStation() ) {
+
+						const full = names.join( '.' );
+						const last = full.slice( full.lastIndexOf( '.' ) + 1 );
+
+						if ( ! stationIndex.has( last ) ) stationIndex.set( last, [] );
+
+						stationIndex.get( last ).push( { full: full, names: names } );
+
+					} else {
+
+						node.children.forEach( child => walk( child, names.concat( [ child.name ] ) ) );
+
+					}
+
+				};
+
+				walk( survey.surveyTree, [] );
+
+			}
+
+			const last = name.slice( name.lastIndexOf( '.' ) + 1 );
+
+			const fits = ( stationIndex.get( last ) ?? [] ).filter( c => c.full.endsWith( '.' + name ) || name.endsWith( '.' + c.full ) );
+
+			return ( fits.length === 1 ) ? fits[ 0 ].names.slice() : null;
+
+		};
+
+		// The splay of a station that best matches one measured from it - a splay has no name, so
+		// a source that means one of several gives its length, compass bearing and clino: the
+		// nearest in direction, and of two in about the same direction the nearer in length.
+		// Returns { offset, angle, matched }: the offset of its far end, as getStationSplays()
+		// gives it, the angle in degrees between its direction and the one measured, and whether
+		// that is within SPLAY_MATCH_DEGREES - enough for declination and grid convergence, which
+		// a measurement leaves out. Null when the station has no splays, with no survey loaded and
+		// for a reference that names no station.
+
+		const SPLAY_MATCH_DEGREES = 25;
+
+		this.matchStationSplay = function ( ref, shot ) {
+
+			const splays = self.getStationSplays( ref );
+
+			if ( splays === null || splays.length === 0 ) return null;
+
+			const azimuth = MathUtils.degToRad( shot?.compass ?? 0 );
+			const clino = MathUtils.degToRad( shot?.clino ?? 0 );
+			const length = shot?.length || 1;
+
+			const want = new Vector3(
+				length * Math.cos( clino ) * Math.sin( azimuth ),
+				length * Math.cos( clino ) * Math.cos( azimuth ),
+				length * Math.sin( clino )
+			);
+
+			const wantLength = want.length();
+			const v = new Vector3();
+
+			let best = null;
+
+			for ( const splay of splays ) {
+
+				v.set( splay.x, splay.y, splay.z );
+
+				const angle = ( v.lengthSq() === 0 ) ? 180 : MathUtils.radToDeg( v.angleTo( want ) );
+				const score = angle + 10 * Math.abs( Math.log( ( v.length() || 1e-6 ) / ( wantLength || 1e-6 ) ) );
+
+				if ( best === null || score < best.score ) best = { offset: splay, angle: angle, score: score };
+
+			}
+
+			return { offset: best.offset, angle: best.angle, matched: best.angle <= SPLAY_MATCH_DEGREES };
+
+		};
+
+		// Fly to a place named by a host and mark it: the one call behind a list of places, or a
+		// link in a page's text. The name is resolved as resolveStationName() resolves it; a name
+		// that is a survey section rather than a station is framed by focusSurvey() instead, with
+		// no mark. The mark is drawn at once, so it rides with the station while the camera flies.
+		//
+		// options.closeUp  true for a close-up of the station, false (the default) to centre it
+		//                  at the distance the camera is at, keeping the direction it looks from
+		// options.span     the width of the close-up, in metres (default 30); a close-up of a
+		//                  splay's end is wide enough to take in the station it was shot from
+		// options.splay    { length, compass, clino } of a splay shot from the station: the mark
+		//                  goes on the far end of the splay of the model that best matches it
+		// options.label    the text beside the mark, as markStation() takes it
+		// options.popup    as focusStation() takes it (default false)
+		//
+		// Rejects only a span that is not a number of metres above 0. Otherwise it resolves,
+		// with an Object whose kind is 'station', 'survey', 'none' (the
+		// name is neither) or 'cancelled' (another move replaced the flight). For a station, name
+		// is the dotted name the model has for it, station the Station object, and splay null or
+		// 'matched', 'closest' (the nearest splay is further off than a match) or 'missing' (the
+		// station has no splays), with angle the difference in degrees.
+
+		this.showStation = function ( ref, options ) {
+
+			const span = options?.span ?? 30;
+
+			if ( ! ( typeof span === 'number' && span > 0 && isFinite( span ) ) ) {
+
+				return Promise.reject( new Error( 'the span of a close-up must be a finite number of metres above 0' ) );
+
+			}
+
+			if ( survey === null || renderer === null ) return Promise.resolve( { kind: 'none' } );
+
+			const resolved = self.resolveStationName( ref ) ?? ref;
+			const node = getNodeByRef( resolved );
+
+			if ( node === null ) {
+
+				self.clearStationMark();
+				return Promise.resolve( { kind: 'none' } );
+
+			}
+
+			if ( ! node.isStation() ) {
+
+				self.clearStationMark();
+
+				return self.focusSurvey( resolved, { animate: options?.animate } ).then(
+					() => ( { kind: 'survey' } ),
+					() => ( { kind: 'cancelled' } )
+				);
+
+			}
+
+			const result = { kind: 'station', name: refName( resolved ), station: null, splay: null, angle: null };
+
+			let offset = null;
+
+			if ( options?.splay ) {
+
+				const best = self.matchStationSplay( resolved, options.splay );
+
+				if ( best === null ) {
+
+					result.splay = 'missing';
+
+				} else {
+
+					offset = best.offset;
+					result.angle = Math.round( best.angle );
+					result.splay = best.matched ? 'matched' : 'closest';
+
+				}
+
+			}
+
+			self.markStation( resolved, { offset: offset, label: options?.label } );
+
+			const focus = { popup: options?.popup ?? false, animate: options?.animate };
+
+			if ( options?.closeUp ) {
+
+				// a close-up of a splay's end takes in the station it was shot from as well
+
+				focus.span = ( offset === null ) ? span : Math.max( span, 3 * Math.hypot( offset.x, offset.y, offset.z ) );
+
+			} else {
+
+				focus.keepView = true;
+
+			}
+
+			return self.focusStation( resolved, focus ).then(
+				station => { result.station = station; return result; },
+				() => ( { kind: 'cancelled' } )
+			);
 
 		};
 
