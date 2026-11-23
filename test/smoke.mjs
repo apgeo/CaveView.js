@@ -594,6 +594,118 @@ try {
 	check( 'focusStation() with a wider span does not pull a closer camera back', Math.abs( anchor.kept - anchor.near ) < 1e-6 * anchor.near, `${anchor.near.toFixed( 3 )} -> ${anchor.kept.toFixed( 3 )}` );
 	check( 'focusStation() refuses a span that is not a number of metres above 0', anchor.refused );
 
+	// the viewer's own crosshair over a station, and showStation(): resolve a name, fly, mark
+
+	const stationMark = await page.evaluate( async ( { far } ) => {
+
+		const container = document.getElementById( 'scene' );
+		const node = () => container.querySelector( '.cv-station-mark' );
+		const shown = () => node() !== null && node().style.display === 'block';
+		const placedAt = () => {
+			const m = /translate\(\s*([-\d.e]+)px,\s*([-\d.e]+)px\s*\)/.exec( node()?.style.transform ?? '' );
+			return m === null ? null : { x: Number( m[ 1 ] ), y: Number( m[ 2 ] ) };
+		};
+		const frame = () => new Promise( resolve => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) );
+
+		const flag = CV2.STATION_MARK === true;
+
+		const marked = viewer.markStation( far );
+		const station = marked !== null && typeof marked.name === 'function';
+		const record = viewer.getStationMark();
+		const label = node()?.querySelector( '.cv-station-mark-label' )?.textContent ?? null;
+		const at = viewer.getStationScreenPosition( far );
+		const placed = placedAt();
+		const markedShown = shown();
+		const takesNoPointer = node() !== null && node().style.pointerEvents === 'none';
+
+		viewer.markStation( far, { label: '' } );
+		const unlabelled = node().querySelector( '.cv-station-mark-label' ).style.display === 'none';
+
+		const missing = viewer.markStation( 'no.such.station' );
+		const clearedByMissing = viewer.getStationMark() === null && ! shown();
+
+		viewer.markStation( far );
+		viewer.clearStationMark();
+		const cleared = viewer.getStationMark() === null && ! shown();
+
+		// a name written against another level of the survey: one level fewer, one level more
+
+		const parts = far.split( '.' );
+		const exact = viewer.resolveStationName( far ) === far;
+		const shorter = parts.length > 1 ? viewer.resolveStationName( parts.slice( 1 ).join( '.' ) ) : parts;
+		const longer = viewer.resolveStationName( 'enclosing.' + far );
+		const nothing = viewer.resolveStationName( 'no.such.station' );
+
+		// a splay matched by its measured direction, where the model has one
+
+		let splayCase = 'no splays in the model';
+		let splayMatched = true;
+
+		viewer.getSurveyTree().traverse( n => {
+
+			if ( splayCase !== 'no splays in the model' || ! n.isStation() ) return;
+
+			const path = n.getPath();
+			const splays = viewer.getStationSplays( path );
+
+			if ( ! splays || splays.length === 0 ) return;
+
+			const s = splays[ 0 ];
+			const length = Math.hypot( s.x, s.y, s.z );
+			const compass = ( Math.atan2( s.x, s.y ) * 180 / Math.PI + 360 ) % 360;
+			const clino = Math.asin( s.z / length ) * 180 / Math.PI;
+			const best = viewer.matchStationSplay( path, { length, compass, clino } );
+
+			splayCase = path;
+			splayMatched = best !== null && best.matched && best.angle < 1 && best.offset.x === s.x && best.offset.y === s.y && best.offset.z === s.z;
+
+		} );
+
+		const noSplayMatch = viewer.matchStationSplay( 'no.such.station', { length: 1, compass: 0, clino: 0 } ) === null;
+
+		// fly to a close-up and mark it; a section is framed with no mark; nothing is said to be nothing
+
+		const shownStation = await viewer.showStation( parts.slice( 1 ).join( '.' ), { closeUp: true, span: 25 } );
+		await frame();
+		const afterFlight = viewer.getStationScreenPosition( far );
+		const placedAfterFlight = placedAt();
+		const flownShown = shown();
+
+		const section = parts.length > 1 ? parts.slice( 0, -1 ).join( '.' ) : null;
+		const shownSection = section === null ? { kind: 'survey' } : await viewer.showStation( section );
+		const sectionUnmarked = viewer.getStationMark() === null;
+
+		const shownNothing = await viewer.showStation( 'no.such.station' );
+
+		let refused = false;
+		await viewer.showStation( far, { closeUp: true, span: 0 } ).catch( () => { refused = true; } );
+
+		return {
+			flag, station, label, markedShown, takesNoPointer, unlabelled, missing, clearedByMissing, cleared,
+			record: record !== null && record.ref === far && record.offset === null && record.label === far,
+			placedMatches: at !== null && placed !== null && Math.abs( at.x - placed.x ) < 0.5 && Math.abs( at.y - placed.y ) < 0.5,
+			exact,
+			shorter: Array.isArray( shorter ) && shorter.join( '.' ) === far,
+			longer: Array.isArray( longer ) && longer.join( '.' ) === far,
+			nothing, splayCase, splayMatched, noSplayMatch,
+			shownStation: shownStation.kind === 'station' && shownStation.name === far && shownStation.station !== null && shownStation.splay === null,
+			followsAfterFlight: flownShown && afterFlight !== null && placedAfterFlight !== null && Math.abs( afterFlight.x - placedAfterFlight.x ) < 0.5 && Math.abs( afterFlight.y - placedAfterFlight.y ) < 0.5,
+			centred: afterFlight === null ? Infinity : Math.hypot( afterFlight.x - container.clientWidth / 2, afterFlight.y - container.clientHeight / 2 ),
+			shownSection: shownSection.kind, sectionUnmarked,
+			shownNothing: shownNothing.kind,
+			refused
+		};
+
+	}, loaded );
+
+	check( 'markStation() draws a crosshair at the station, labelled with its name, that takes no pointer, and returns the Station', stationMark.flag && stationMark.station && stationMark.markedShown && stationMark.placedMatches && stationMark.label === loaded.far && stationMark.takesNoPointer && stationMark.record, JSON.stringify( { shown: stationMark.markedShown, placed: stationMark.placedMatches, label: stationMark.label, record: stationMark.record } ) );
+	check( 'markStation() with an empty label draws no label', stationMark.unlabelled );
+	check( 'markStation() of a station the model does not have answers null and takes the mark away; clearStationMark() takes it away', stationMark.missing === null && stationMark.clearedByMissing && stationMark.cleared );
+	check( 'resolveStationName() answers a name of the model as it is, finds one written a level lower or higher, and answers null for none', stationMark.exact && stationMark.shorter && stationMark.longer && stationMark.nothing === null, JSON.stringify( { shorter: stationMark.shorter, longer: stationMark.longer } ) );
+	check( 'matchStationSplay() finds a splay from its measured direction, and answers null for a station the model does not have', stationMark.splayMatched && stationMark.noSplayMatch, stationMark.splayCase );
+	check( 'showStation() resolves a name written a level lower, flies to a close-up that centres it, and the mark follows the station', stationMark.shownStation && stationMark.followsAfterFlight && stationMark.centred < 2, `${stationMark.centred.toFixed( 2 )} px off centre` );
+	check( 'showStation() frames a survey section with no mark, answers none for a name of nothing, and refuses a span of 0', stationMark.shownSection === 'survey' && stationMark.sectionUnmarked && stationMark.shownNothing === 'none' && stationMark.refused, `${stationMark.shownSection}, ${stationMark.shownNothing}` );
+
 	// a finger turns the model with the same contact it taps with: the station under it is
 	// selected as the contact ends as a tap, and a turn begun over it selects nothing
 
@@ -1366,12 +1478,17 @@ try {
 
 	changes = await fullscreenChanges( page );
 
+	// with a station marked, to see dispose() take the mark out of the page
+	const marksBefore = await page.evaluate( ( { far } ) => viewer.markStation( far ) === null ? -1 : document.querySelectorAll( '.cv-station-mark' ).length, loaded );
+
 	await page.evaluate( () => { smoke.act = () => { viewer.fullscreen = true; viewer.dispose(); }; } );
 	await press( page, '#hostact' );
 	await fullscreenChangesFrom( page, changes, 2 );
 	await page.waitForTimeout( 300 );
 
-	const disposedAsking = await page.evaluate( () => ( { anything: document.fullscreenElement !== null, marked: document.getElementById( 'wrap' ).classList.contains( 'toggle-fullscreen' ) } ) );
+	const disposedAsking = await page.evaluate( () => ( { anything: document.fullscreenElement !== null, marked: document.getElementById( 'wrap' ).classList.contains( 'toggle-fullscreen' ), marks: document.querySelectorAll( '.cv-station-mark' ).length } ) );
+
+	check( 'dispose() takes the station mark out of the page', marksBefore === 1 && disposedAsking.marks === 0, `before ${marksBefore}, after ${disposedAsking.marks}` );
 
 	check( 'a viewer disposed before the browser answered its request leaves no class and no fullscreen', ! disposedAsking.anything && ! disposedAsking.marked, `in fullscreen: ${disposedAsking.anything}, marked ${disposedAsking.marked}` );
 
@@ -1384,7 +1501,7 @@ try {
 
 	// the calls a host may still make of a viewer that has been disposed
 
-	const disposed = await page.evaluate( () => {
+	const disposed = await page.evaluate( ( { far } ) => {
 
 		const thrown = [];
 
@@ -1400,12 +1517,17 @@ try {
 
 		try { viewer.getSnapshot(); } catch ( e ) { snapshot = e.message; }
 
-		return { thrown, snapshot };
+		// a disposed viewer marks nothing, and puts nothing back in the page
+		const markedAfter = viewer.markStation( far );
+		const marksAfter = document.querySelectorAll( '.cv-station-mark' ).length;
 
-	} );
+		return { thrown, snapshot, markedAfter, marksAfter };
+
+	}, loaded );
 
 	check( 'renderView() and the other entry points do not throw after dispose()', disposed.thrown.length === 0, disposed.thrown.join( '; ' ) || 'nothing thrown' );
 	check( 'getSnapshot() after dispose() throws an Error that says the viewer was disposed', /disposed/.test( disposed.snapshot ), disposed.snapshot );
+	check( 'markStation() after dispose() answers null and puts no mark in the page', disposed.markedAfter === null && disposed.marksAfter === 0 );
 
 	const rejections1 = await page.evaluate( () => smoke.rejections );
 

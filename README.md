@@ -40,7 +40,7 @@ Every method, property, event and option is also described in the API reference,
 
 | area | what | details |
 |---|---|---|
-| **Navigation** | fly to a station or a survey section by name, or to a close-up of a station; highlight a station; where a station or a splay's end is drawn, for a mark of the host's own; a `stationHover` event | [navigation.md](fork-docs/navigation.md) |
+| **Navigation** | fly to a station or a survey section by name, or to a close-up of a station; highlight a station; a crosshair over a station or a splay's end, and one call that resolves a name written against another level of the survey, flies there and marks it; where a station or a splay's end is drawn, for a mark of the host's own; a `stationHover` event | [navigation.md](fork-docs/navigation.md) |
 | **Station pictures** | images held for a station, shown as a strip over the model on hover or focus; a camera marker on every station that has pictures; load failures reported | [station-pictures.md](fork-docs/station-pictures.md) |
 | **Live markers** | labelled markers an application adds, moves (animated, over a set duration) and removes, at a station or at a splay's far end; collapsed per station under a label the application chooses; label plates readable over any background; the accented letters of European names | [live-markers-and-trails.md](fork-docs/live-markers-and-trails.md) |
 | **Trails** | the way somebody went, routed along the survey's own legs rather than as straight lines, drawn up to a fraction of its length for replays | [live-markers-and-trails.md](fork-docs/live-markers-and-trails.md) |

@@ -24,6 +24,12 @@ allowed fullscreen. It asserts that:
   does not have, and `getStationSplays()` an Array for one it has; `focusStation()` with a `span`
   brings the camera nearer without turning it and centres the station, a wider `span` does not pull
   it back, and a `span` below zero is refused;
+- `markStation()` draws a crosshair at the station's pixel, labelled with its name (no label for an
+  empty one), that takes no pointer; a name the model lacks answers null and takes the mark away, as
+  `clearStationMark()` does; `resolveStationName()` finds a name written a level lower or higher and
+  answers null for none; `matchStationSplay()` finds a splay from its own measured direction;
+  `showStation()` flies to a close-up of a name written a level lower, centres it and the mark follows,
+  frames a section with no mark, answers `'none'` for a name of nothing and refuses a span of 0;
 - a live marker can be added, moved, framed and removed, and `frameLiveMarkers()` signals
   its end again when called with the camera already where it left it;
 - a `focusStation()` started in the same turn as such a framing is flown over several
@@ -55,7 +61,8 @@ allowed fullscreen. It asserts that:
 - a viewer disposed in the turn of its request, by a press, leaves no class and no
   fullscreen;
 - `renderView()` and the other entry points do not throw after `dispose()`, and
-  `getSnapshot()` throws an Error saying the viewer was disposed.
+  `getSnapshot()` throws an Error saying the viewer was disposed; `dispose()` takes the station mark
+  out of the page, and `markStation()` afterwards answers null and puts none back.
 
 The second page is read by somebody who prefers reduced motion (Playwright's
 `reducedMotion: 'reduce'`), in Romanian from `lib/lang-ro.json` - which the test holds

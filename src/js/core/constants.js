@@ -9,6 +9,11 @@ export const LIVE_MARKER_OFFSETS = true;
 // the 'station' event dispatched, when the contact ends as a tap rather than as it begins
 export const STATION_SELECTED_ON_TAP = true;
 
+// what a host can ask of this build: a crosshair over a station - markStation(),
+// clearStationMark(), getStationMark() - and showStation(), which resolves a name written
+// against another level of the survey, flies there and marks it, at a splay's end if asked
+export const STATION_MARK = true;
+
 export const CAMERA_NONE         = 0;
 export const CAMERA_ORTHOGRAPHIC = 1;
 export const CAMERA_PERSPECTIVE  = 2;
