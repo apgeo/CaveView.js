@@ -4,7 +4,8 @@ export type MapProxySource =
   | 'freemap-shading'
   | 'geology'
   | 'zbgis-wms-orto'
-  | 'zbgis-wms-shadow';
+  | 'zbgis-wms-shadow'
+  | 'inspire-wcs-dmr';
 
 export type MapProxyMode = 'vite' | 'php';
 

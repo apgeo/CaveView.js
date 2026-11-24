@@ -17,7 +17,7 @@ interface TileCacheEntry {
 const DB_NAME = 'caveview-map-tile-cache';
 const DB_VERSION = 1;
 const STORE_NAME = 'tiles';
-const KEY_VERSION = 'v1';
+const KEY_VERSION = 'v2';
 
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {

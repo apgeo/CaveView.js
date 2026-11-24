@@ -1,8 +1,36 @@
-# LochViewer - Speleological Viewer (v2.3.0)
+# LochViewer - Speleological Viewer (v2.4.15)
 
 [🇸🇰 Slovenská verzia nižšie / Slovak version below](#slovenská-verzia)
 
 A modern web application for 3D visualization and analysis of cave systems, built with React, Three.js, and React-Three-Fiber.
+
+## 🚀 Version 2.4: Splay SDF 3D Walls, Streamlined UI, Unified Measuring & HUD Optimization
+Version 2.4 delivers real-time Splay SDF 3D mesh generation via Marching Cubes & Web Workers, an ultra-clean pictogram-based top bar, an integrated 3-state measurement workflow with floating dockable panels, interactive splay/station snapping, non-overlapping HUD layout with top-left Compass Rose, and on-demand idle rendering optimizations.
+
+### 🕳️ Splay SDF 3D Walls (Marching Cubes & Distance Fields)
+- **Web Worker Mesh Reconstruction**: Generates watertight, smooth 3D cave meshes from laser splays using Signed Distance Fields (SDF) and parallel Marching Cubes.
+- **Parametric Smoothness & Capsule Radius**: Interactive sliders for smooth-min blending (`smin`) and capsule radius (`srad`) to adjust cave wall tightness and organic curvature.
+- **Session Cache**: Generated SDF meshes are cached in memory for instant switching without re-computation.
+- **Hypsometric Coloring**: Full support for elevation gradient (Color by height) on generated SDF walls.
+- **Share & Embed Integration**: SDF wall settings (`&sdf=1`, `&smin=...`, `&srad=...`) are preserved in shareable URLs and `<iframe>` embeds.
+
+### 🧭 Clean Pictogram Top Bar & HUD Optimization
+- **Top-Left Compass Rose**: Speleo compass rose (North indicator & live azimuth badge) is anchored in the top-left corner (`top: 18px, left: 18px`), eliminating any overlap with the bottom elevation legend (`ColorScaleLegend`).
+- **Removed Duplicate View Clutter**: Redundant view buttons `[1]`, `[2]`, `[3]`, `[4]` removed in favor of the interactive Viewport Orientation Gizmo.
+- **Pure Pictograms**: All key actions ordered into clean icons with rich tooltips: Export PNG, Orthographic/Perspective, Zoom to Fit, Centerline, Walls Model, Surface Terrain, Bounding Box, Z-Clip, Splays, Measurement, Color Palette, and Altitude Mode.
+
+### 📐 Unified 3-State Measurement & Floating Panel
+- **3-State Toggle**: One button cycles `Off` ➡️ `Distance (2 points)` ➡️ `Area / Polygon (3+ points)` ➡️ `Off`.
+- **Dockable Floating Panel (`MeasurementPanel`)**: Moved to the edge of the viewport with drag-and-drop support so it never obstructs the cave model.
+- **Detailed Point Management**: Lists points (`P1, P2...`), offers individual deletion via **✖**, instant reset button, and clipboard export.
+- **Interactive Snapping**: Precise hover highlighting (`#38bdf8`) and crosshair cursor snapping for both survey stations and splay endpoints.
+
+### 🗺️ Vertical Legend & Relative Altitude
+- **Non-overlapping Layout**: Elevation legend (`ColorScaleLegend`) sits cleanly at the bottom without interference from the compass.
+- **Relative Altitude Mode**: Elevation legend displays relative offsets (`+120 m (rel)`, `-35 m (rel)`) when relative mode (`REL`) is active.
+
+### ⚡ Foreground Idle Performance
+- **Zero-CPU Idle Rendering**: Eliminated periodic 200ms `setInterval` polling in `CameraMonitor`, delivering true on-demand rendering when idle in foreground tabs.
 
 ## 🚀 Version 2.3: Orthographic Projections, Structural Geology & High-Performance Rendering
 Version 2.3 introduces complete orthographic projection and technical view presets, 3-point tectonic measurements, precise map texture calibration, plastic cave wall shading, and multi-threaded LiDAR plan map generation.
@@ -176,9 +204,37 @@ The same works for a window opened with `window.open` (without `noopener`). The 
 
 ---
 <a name="slovenská-verzia"></a>
-# LochViewer - Speleologický Prehliadač (v2.3.0)
+# LochViewer - Speleologický Prehliadač (v2.4.15)
 
 Moderná webová aplikácia pre 3D vizualizáciu a analýzu jaskynných systémov, postavená na technológiách React, Three.js a React-Three-Fiber.
+
+## 🚀 Verzia 2.4: Splay SDF 3D Steny, Zjednodušená lišta, 3-Stavové meranie & Optimalizácia HUD
+Verzia 2.4 prináša výpočet 3D stien z laserových lúčov (Splays) pomocou Marching Cubes & Web Workerov, kompletne prečistenú hornú lištu s modernými piktogramami, 3-stavový cyklický prepínač merania, dokovateľný plávajúci panel meraní, snappovanie splayov a neprekrývajúce sa rozloženie HUD prvkov s ružicou vľavo hore.
+
+### 🕳️ Splay SDF 3D Steny (Marching Cubes & Distance Fields)
+- **Generovanie stien vo Web Workeri**: Vytváranie uzavretej, organicky vyhladenej 3D siete jaskyne z laserových splayov cez Signed Distance Fields (SDF) a paralelný Marching Cubes algoritmus.
+- **Nastaviteľná ostrosť & Polomer kapsule**: Interaktívne posuvníky pre vyhladzovanie (`smin`) a polomer kapsule (`srad`) umožňujú vyladiť presnosť a plastickosť stien.
+- **Session Cache**: Vygenerovaná sieť sa ukladá do pamäte – prepínanie zobrazenia je okamžité bez opakovaného výpočtu.
+- **Hypsometrické farbenie**: Plná podpora zafarbenia podľa výšky (Color by height) pre vygenerované SDF steny.
+- **Zdieľanie & Embed**: Všetky parametre SDF stien (`&sdf=1`, `&smin=...`, `&srad=...`) sa automaticky ukladajú do URL a `<iframe>` embedov.
+
+### 🧭 Prehľadná lišta s piktogramami & Optimalizácia HUD
+- **Smerová ružica vľavo hore**: Severka a živý azimutový ukazovateľ sú ukotvené v ľavom hornom rohu (`top: 18px, left: 18px`), čím sa úplne odstránila kolízia s výškovou legendou (`ColorScaleLegend`) v spodnej časti obrazovky.
+- **Odstránenie duplicít pohľadov**: Zrušené tlačidlá `[1]`, `[2]`, `[3]`, `[4]` (kolmé a ortogonálne pohľady sú plne dostupné cez interaktívnu osovú ružicu / Viewport Gizmo).
+- **Zjednotené piktogramy**: Prehľadné ikonky v presnom poradí: Export PNG, Ortogonál/Perspektíva, Zoom to Fit, Centerline, Model stien, Povrchový terén, Bounding Box, Rez Z, Splays, Meranie, Farebná schéma, Výškový systém.
+
+### 📐 3-Stavové meranie a Plávajúci dokovateľný panel
+- **Jednotný prepínač**: 1 tlačidlo cykluje `Vypnuté` ➡️ `Vzdialenosti (2 body)` ➡️ `Plocha / Polygón (3+ body)` ➡️ `Vypnuté`.
+- **Plávajúci panel (`MeasurementPanel`)**: Presunutý na okraj renderovanej plochy s podporou presúvania (drag & drop), aby nezakrýval 3D model.
+- **Správa bodov**: Zoznam bodov (`P1, P2...`), mazanie cez **✖**, tlačidlo resetu merania a export do schránky.
+- **Snapping na splaye a stanice**: Presné zvýraznenie (`#38bdf8`) a crosshair kurzor pre hlavné polygonové stanice aj koncové body splayov.
+
+### 🗺️ Vertikálna legenda a Relatívna výška
+- **Neprekrývajúce sa prvky**: Výšková legenda (`ColorScaleLegend`) je umiestnená v spodnej časti bez rizika prekrytia ružicou.
+- **Podpora relatívnej výšky**: Výšková legenda (`ColorScaleLegend`) dynamicky reaguje na výškový systém `REL` a zobrazuje relatívne posuny (`+120 m (rel)`, `-35 m (rel)`).
+
+### ⚡ Eliminácia zaťaženia na popredí
+- **Optimalizovaný Idle Render**: Odstránené 200ms `setInterval` pretekanie v `CameraMonitor`, čo zabezpečuje nulové zbytočné vyťaženie CPU/GPU pri nečinnosti.
 
 ## 🚀 Verzia 2.3: Ortogonálne zobrazenie, Štruktúrna geológia a Výkonný rendering
 Verzia 2.3 prináša kompletné ortogonálne (axonometrické) zobrazenie s rýchlymi technickými pohľadmi, 3-bodové tektonické merania, oficiálny GKÚ ZBGIS WMS servis, plastické tieňovanie stien a generovanie 2D máp z LiDAR modelov.

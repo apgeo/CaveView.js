@@ -1,6 +1,7 @@
 node_modules/
 build/
 dist/
+*.zip
 playwright-report/
 test-results/
 .tempmediaStorage/
@@ -21,3 +22,13 @@ test_model/map-downloader-for-therion-main/
 
 # Graphify
 graphify-out/cache/
+
+# Local test runs
+terrain_dmr5/
+.playwright-cli/
+.playwright-mcp/
+/*.png
+!docs/images/*.png
+test_models.js
+test_single_models.js
+benchmark_zlomiskovo.js

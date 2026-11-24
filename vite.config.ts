@@ -30,7 +30,6 @@ export default defineConfig({
     dedupe: ['three'],
   },
   optimizeDeps: {
-    include: ['three-geo'],
     esbuildOptions: {
       define: {
         global: 'globalThis',
@@ -52,7 +51,10 @@ export default defineConfig({
           if (normalized.includes('/node_modules/three/') || normalized.includes('/node_modules/three-mesh-bvh/')) {
             return 'vendor-three';
           }
-          if (normalized.includes('/node_modules/geotiff/') || normalized.includes('/node_modules/proj4/') || normalized.includes('/node_modules/three-geo/')) {
+          if (normalized.includes('/node_modules/three-geo/')) {
+            return 'vendor-mapbox-terrain';
+          }
+          if (normalized.includes('/node_modules/geotiff/') || normalized.includes('/node_modules/proj4/')) {
             return 'vendor-geo';
           }
           if (normalized.includes('/node_modules/gsap/')) {
@@ -69,6 +71,12 @@ export default defineConfig({
         target: 'https://zbgisws.skgeodesy.sk',
         changeOrigin: true,
         rewrite: path => path.replace(/^\/wms-proxy\/orto/, '/zbgis_ortofoto_wms/service.svc/get'),
+      },
+      // INSPIRE WCS DMR 5.0 (GKÚ SR)
+      '/wcs-proxy/el': {
+        target: 'https://inspirews.skgeodesy.sk',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/wcs-proxy\/el/, '/geoserver/el/ows'),
       },
       // Geologická mapa — ags.geology.sk (WMS 1.1.1 ArcGIS)
       '/wms-proxy/geology': {
@@ -89,7 +97,7 @@ export default defineConfig({
         rewrite: path => path.replace(/^\/xyz-proxy\/zbgis/, '/zbgis/rest/services'),
       },
       '/xyz-proxy/freemap-orto': {
-        target: 'https://ofmozaika.tiles.freemap.sk',
+        target: 'https://ortofoto.tiles.freemap.sk',
         changeOrigin: true,
         rewrite: path => path.replace(/^\/xyz-proxy\/freemap-orto/, ''),
       },

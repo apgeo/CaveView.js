@@ -1,8 +1,17 @@
 import React, { useMemo, useEffect, useState, useRef } from 'react'
 import * as THREE from 'three'
+import { computeBoundsTree, disposeBoundsTree, acceleratedRaycast } from 'three-mesh-bvh'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+
+if (!(THREE.BufferGeometry.prototype as any).computeBoundsTree) {
+  (THREE.BufferGeometry.prototype as any).computeBoundsTree = computeBoundsTree;
+  (THREE.BufferGeometry.prototype as any).disposeBoundsTree = disposeBoundsTree;
+  THREE.Mesh.prototype.raycast = acceleratedRaycast;
+}
 import { elevColor, normZ } from '@shared/utils/colorUtils'
-import type { ParsedCave, ViewerOptions, StationLabel, Vec3 } from '@shared/types'
+import { buildSplayWallGeometry } from '@shared/utils/surfaceReconstruction'
+import type { ParsedCave, ViewerOptions, Vec3 } from '@shared/types'
+import { createStationLabelMap } from '@shared/utils/stationLabelMap'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,46 +33,46 @@ const CAVE_MATERIAL_PRESETS: Record<CaveTexturePreset, CaveMaterialPreset> = {
   limestone: {
     texturePath: `${import.meta.env.BASE_URL}assets/cave_limestone.png`,
     color: '#ffffff',
-    roughness: 0.68,
+    roughness: 0.65,
     metalness: 0.0,
-    bumpScale: 0.72,
-    cavityStrength: 0.36,
-    edgeStrength: 0.11,
-    heightShadeStrength: 0.2,
-    edgeColor: '#dbeafe',
+    bumpScale: 0.5,
+    cavityStrength: 0.22,
+    edgeStrength: 0.1,
+    heightShadeStrength: 0.15,
+    edgeColor: '#e2e8f0',
   },
   dolomite: {
     texturePath: null,
-    color: '#f5efe4',
-    roughness: 0.8,
+    color: '#f8fafc',
+    roughness: 0.7,
     metalness: 0.0,
-    bumpScale: 0.48,
-    cavityStrength: 0.46,
-    edgeStrength: 0.18,
-    heightShadeStrength: 0.26,
-    edgeColor: '#fdebd3',
+    bumpScale: 0.4,
+    cavityStrength: 0.24,
+    edgeStrength: 0.12,
+    heightShadeStrength: 0.18,
+    edgeColor: '#f1f5f9',
   },
   grey_limestone: {
     texturePath: null,
-    color: '#eef6ff',
-    roughness: 0.82,
+    color: '#f1f5f9',
+    roughness: 0.7,
     metalness: 0.0,
-    bumpScale: 0.44,
-    cavityStrength: 0.5,
-    edgeStrength: 0.2,
-    heightShadeStrength: 0.28,
-    edgeColor: '#bae6fd',
+    bumpScale: 0.38,
+    cavityStrength: 0.25,
+    edgeStrength: 0.12,
+    heightShadeStrength: 0.18,
+    edgeColor: '#cbd5e1',
   },
   technical: {
     texturePath: null,
-    color: '#dbeafe',
-    roughness: 0.82,
+    color: '#f8fafc',
+    roughness: 0.65,
     metalness: 0.0,
-    bumpScale: 0.42,
-    cavityStrength: 0.56,
-    edgeStrength: 0.22,
-    heightShadeStrength: 0.3,
-    edgeColor: '#7dd3fc',
+    bumpScale: 0.35,
+    cavityStrength: 0.22,
+    edgeStrength: 0.12,
+    heightShadeStrength: 0.18,
+    edgeColor: '#93c5fd',
   },
 }
 
@@ -369,9 +378,9 @@ float scrapCeilingFactor = smoothstep(0.58, 1.0, vScrapRelHeight);
 float scrapFloorFactor = smoothstep(0.58, 1.0, 1.0 - vScrapRelHeight);
 float scrapCavity = clamp(scrapWallFactor * 0.58 + scrapCeilingFactor * 0.2 + scrapFloorFactor * 0.1, 0.0, 1.0);
 float scrapRim = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.25);
-float scrapHeightShade = mix(0.86, 1.08, clamp(vScrapRelHeight, 0.0, 1.0));
-outgoingLight *= max(0.18, 1.0 - scrapCavity * uScrapCavityStrength);
-outgoingLight *= mix(1.0, scrapHeightShade, uScrapHeightShadeStrength);
+float scrapHeightShade = mix(0.92, 1.06, clamp(vScrapRelHeight, 0.0, 1.0));
+outgoingLight *= max(0.42, 1.0 - scrapCavity * uScrapCavityStrength * 0.45);
+outgoingLight *= mix(1.0, scrapHeightShade, uScrapHeightShadeStrength * 0.7);
 outgoingLight += uScrapEdgeColor * scrapRim * uScrapEdgeStrength;`
     );
 }
@@ -394,7 +403,12 @@ function applyScrapCombinedShader(
 }
 
 export function buildScrapsGeo(cave: ParsedCave, withColors: boolean, smooth: boolean, organicLevel: number): THREE.BufferGeometry | null {
-  if (!cave.scraps?.length) return null
+  if (!cave.scraps?.length) {
+    if (cave.segments && cave.segments.some((s: any) => s.type === 'splay')) {
+      return buildSplayWallGeometry(cave, { withColors, organicLevel: Math.round(organicLevel * 2) })
+    }
+    return null
+  }
 
   let minZ = Infinity, maxZ = -Infinity
   let numVertices = 0
@@ -490,7 +504,7 @@ export function buildScrapsGeo(cave: ParsedCave, withColors: boolean, smooth: bo
 export const ClippingEdges = React.memo(({ geo, planes, active, color = "#ff4444" }: { geo: THREE.BufferGeometry | null, planes: THREE.Plane[], active: boolean, color?: string }) => {
   const lineRef = useRef<THREE.LineSegments>(null!);
   const [lineGeo] = useState(() => new THREE.BufferGeometry());
-  const [posAttr] = useState(() => new THREE.BufferAttribute(new Float32Array(30000), 3));
+  const [posAttr, setPosAttr] = useState(() => new THREE.BufferAttribute(new Float32Array(60000), 3));
   const p1 = useMemo(() => new THREE.Vector3(), []);
   const p2 = useMemo(() => new THREE.Vector3(), []);
   const points = useMemo(() => [p1, p2], [p1, p2]);
@@ -500,15 +514,29 @@ export const ClippingEdges = React.memo(({ geo, planes, active, color = "#ff4444
   }, [lineGeo, posAttr]);
 
   useEffect(() => {
-    // @ts-ignore
-    if (!active || planes.length === 0 || !geo || !geo.boundsTree || !lineRef.current) {
+    if (!geo) {
+      if (lineRef.current) lineRef.current.visible = false;
+      return;
+    }
+
+    if (!active || !planes || planes.length === 0 || !lineRef.current) {
+      if (lineRef.current) lineRef.current.visible = false;
+      return;
+    }
+
+    // Ensure boundsTree is available
+    if (!(geo as any).boundsTree && (geo as any).computeBoundsTree) {
+      (geo as any).computeBoundsTree();
+    }
+
+    if (!(geo as any).boundsTree) {
       if (lineRef.current) lineRef.current.visible = false;
       return;
     }
 
     lineRef.current.visible = true;
     let segmentCount = 0;
-    const array = posAttr.array as Float32Array;
+    let array = posAttr.array as Float32Array;
 
     planes.forEach(plane => {
       // @ts-ignore
@@ -516,12 +544,30 @@ export const ClippingEdges = React.memo(({ geo, planes, active, color = "#ff4444
         intersectsBounds: box => plane.intersectsBox(box),
         intersectsTriangle: (tri) => {
           if (intersectTrianglePlane(tri, plane, points)) {
-            const idx = segmentCount * 6;
-            if (idx + 5 < array.length) {
-              array[idx]   = points[0].x; array[idx+1] = points[0].y; array[idx+2] = points[0].z;
-              array[idx+3] = points[1].x; array[idx+4] = points[1].y; array[idx+5] = points[1].z;
-              segmentCount++;
+            // If multiple planes are active, ensure the segment is on the visible side of all other planes
+            if (planes.length > 1) {
+              for (let i = 0; i < planes.length; i++) {
+                const other = planes[i];
+                if (other === plane) continue;
+                if (other.distanceToPoint(points[0]) < -1e-4 && other.distanceToPoint(points[1]) < -1e-4) {
+                  return;
+                }
+              }
             }
+
+            const idx = segmentCount * 6;
+            if (idx + 5 >= array.length) {
+              const newArray = new Float32Array(array.length * 2);
+              newArray.set(array);
+              const newAttr = new THREE.BufferAttribute(newArray, 3);
+              lineGeo.setAttribute('position', newAttr);
+              setPosAttr(newAttr);
+              array = newArray;
+            }
+
+            array[idx]   = points[0].x; array[idx+1] = points[0].y; array[idx+2] = points[0].z;
+            array[idx+3] = points[1].x; array[idx+4] = points[1].y; array[idx+5] = points[1].z;
+            segmentCount++;
           }
         }
       });
@@ -529,7 +575,7 @@ export const ClippingEdges = React.memo(({ geo, planes, active, color = "#ff4444
 
     lineGeo.setDrawRange(0, segmentCount * 2);
     posAttr.needsUpdate = true;
-  }, [geo, planes, active]);
+  }, [geo, planes, active, posAttr, lineGeo]);
 
   return (
     <lineSegments ref={lineRef} geometry={lineGeo} renderOrder={1000} frustumCulled={false}>
@@ -538,12 +584,13 @@ export const ClippingEdges = React.memo(({ geo, planes, active, color = "#ff4444
   );
 });
 
-export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAltitude, smooth, showRender, caveTexture, renderOpacity, isMoving, options, ...props }: {
+export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAltitude, smooth, showRender, caveTexture, renderOpacity, isMoving, isFullyIdle, options, ...props }: {
   cave: ParsedCave; opacity: number
   showSolid: boolean; showWire: boolean; showAltitude: boolean; smooth: boolean; showRender: boolean
   caveTexture: CaveTexturePreset
   renderOpacity: number
   isMoving: boolean
+  isFullyIdle?: boolean
   options: ViewerOptions
   clippingPlanes?: THREE.Plane[]
   onSurfaceClick?: (origX: number, origY: number, altitude: number, screenX: number, screenY: number) => void
@@ -551,26 +598,30 @@ export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAlti
   onProcessingEnd?: () => void
 }) => {
   const { onProcessingStart, onProcessingEnd, onSurfaceClick } = props as any;
-  const [geos, setGeos] = useState<{ solid: THREE.BufferGeometry | null, alt: THREE.BufferGeometry | null }>({ solid: null, alt: null })
+  const [scrapGeo, setScrapGeo] = useState<THREE.BufferGeometry | null>(null)
   const [floorTex, setFloorTex] = useState<THREE.Texture | null>(null)
   const [floorAffine, setFloorAffine] = useState<{a:number,b:number,c:number,d:number,e:number,f:number} | null>(null)
 
   useEffect(() => {
-    if (geos.solid) {
+    if (scrapGeo) {
       // @ts-ignore
-      geos.solid.computeBoundsTree?.();
+      scrapGeo.computeBoundsTree?.();
     }
-    if (geos.alt) {
-      // @ts-ignore
-      geos.alt.computeBoundsTree?.();
-    }
-  }, [geos]);
+    return () => {
+      if (scrapGeo) {
+        // @ts-ignore
+        if (scrapGeo.boundsTree) scrapGeo.disposeBoundsTree?.();
+        scrapGeo.dispose();
+      }
+    };
+  }, [scrapGeo]);
 
   useEffect(() => {
     let active = true
     let objectUrl: string | null = null
 
     if (!options.floorMapSvg && !options.floorMapTh2) { setFloorTex(null); return }
+    const stationsByName = createStationLabelMap(cave.stationLabels)
     
     if (options.floorMapSvg) {
       const isDataUrl = options.floorMapSvg.startsWith('data:image')
@@ -606,7 +657,7 @@ export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAlti
         const svgStations = parseSVGStations(options.floorMapSvg)
         const matches: any[] = []
         svgStations.forEach(ss => {
-          const caveS = cave.stationLabels.find((l: StationLabel) => l.name === ss.name)
+          const caveS = stationsByName.get(ss.name)
           if (caveS) matches.push({ src: { x: caveS.pos.x, y: -caveS.pos.z }, dst: { x: ss.x, y: ss.y } })
         })
         if (matches.length >= 2) setFloorAffine(solveAffine(matches))
@@ -628,7 +679,7 @@ export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAlti
         scraps.forEach(s => s.lines.forEach((l: any) => { ctx.beginPath(); l.points.forEach((p: any, i: number) => { if (i===0) ctx.moveTo(p.x*scale+ox, p.y*scale+oy); else ctx.lineTo(p.x*scale+ox, p.y*scale+oy) }); ctx.stroke() }))
         const tex = new THREE.CanvasTexture(canvas); setFloorTex(tex)
         const matches: any[] = []
-        scraps.forEach(s => s.points.forEach((p: any) => { const caveS = cave.stationLabels.find(l => l.name === p.name); if (caveS) matches.push({ src: { x: caveS.pos.x, y: -caveS.pos.z }, dst: { x: p.x, y: p.y } }) }))
+        scraps.forEach(s => s.points.forEach((p: any) => { const caveS = stationsByName.get(p.name); if (caveS) matches.push({ src: { x: caveS.pos.x, y: -caveS.pos.z }, dst: { x: p.x, y: p.y } }) }))
         if (matches.length >= 2) setFloorAffine(solveAffine(matches))
       }
     }
@@ -646,25 +697,26 @@ export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAlti
   useEffect(() => {
     if (onProcessingStart) onProcessingStart('Generujem steny jaskyne...')
     
-    let currentSolid: THREE.BufferGeometry | null = null
-    let currentAlt: THREE.BufferGeometry | null = null
+    let currentGeo: THREE.BufferGeometry | null = null
 
     const timer = setTimeout(() => {
-      currentSolid = buildScrapsGeo(cave, false, smooth, options.organicLevel)
-      currentAlt = buildScrapsGeo(cave, true, smooth, options.organicLevel)
-      setGeos({ solid: currentSolid, alt: currentAlt })
+      currentGeo = buildScrapsGeo(cave, true, smooth, options.organicLevel)
+      setScrapGeo(currentGeo)
       if (onProcessingEnd) onProcessingEnd()
     }, 50)
 
     return () => {
       clearTimeout(timer)
-      if (currentSolid) currentSolid.dispose()
-      if (currentAlt) currentAlt.dispose()
+      if (currentGeo) {
+        // @ts-ignore
+        if (currentGeo.boundsTree) currentGeo.disposeBoundsTree?.();
+        currentGeo.dispose()
+      }
     }
-  }, [cave, smooth, options.organicLevel])
+  }, [cave, smooth, options.organicLevel, options.accurateScraps])
 
-  const solidGeo = geos.solid
-  const altGeo = geos.alt
+  const solidGeo = scrapGeo
+  const altGeo = scrapGeo
  
   const materialPreset = CAVE_MATERIAL_PRESETS[caveTexture] || CAVE_MATERIAL_PRESETS.limestone
   const reliefTex = useMemo(() => createCaveReliefTexture(), [])
@@ -707,8 +759,8 @@ export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAlti
     return () => tex.dispose()
   }, [materialPreset.texturePath])
 
-  const handlePointerDown = (e: any) => {
-    if (!onSurfaceClick) return
+  const handleSurfacePick = (e: any) => {
+    if (!onSurfaceClick || e.delta > 5) return
     e.stopPropagation()
     const p = e.point
     if (!p) return
@@ -721,19 +773,25 @@ export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAlti
     onSurfaceClick(realX, realY, realZ, e.clientX, e.clientY)
   }
 
+  const effectiveOpacity = opacity;
+  const effectiveTransparent = opacity < 1.0;
+  const effectiveRenderOpacity = renderOpacity;
+  const effectiveRenderTransparent = renderOpacity < 1.0;
+
   return (
     <>
       {/* ── Tieňovaný solid mesh ── */}
       {showSolid && !showRender && solidGeo && (
-        <mesh geometry={solidGeo} renderOrder={5} onPointerDown={handlePointerDown}>
+        <mesh geometry={solidGeo} renderOrder={5} onClick={onSurfaceClick ? handleSurfacePick : undefined}>
           <meshStandardMaterial
             key={`solid-${scrapFilterKey}-${scrapVisualKey}`}
             color={options.colorScraps}
             side={THREE.DoubleSide}
-            transparent={opacity < 1}
-            opacity={opacity}
+            transparent={effectiveTransparent}
+            opacity={effectiveOpacity}
             roughness={materialPreset.roughness}
             metalness={materialPreset.metalness}
+            flatShading={options.accurateScraps || !smooth}
             bumpMap={reliefMap}
             bumpScale={reliefStrength * materialPreset.bumpScale * (smooth ? 0.46 : 0.78)}
             polygonOffset
@@ -747,14 +805,14 @@ export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAlti
 
       {/* ── Realistický render mode s textúrou ── */}
       {showRender && solidGeo && (
-        <mesh geometry={solidGeo} renderOrder={4} onPointerDown={handlePointerDown}>
+        <mesh geometry={solidGeo} renderOrder={4} onClick={onSurfaceClick ? handleSurfacePick : undefined}>
           <meshStandardMaterial
             key={`render-${scrapFilterKey}-${scrapVisualKey}`}
             map={rockTex || null}
             color={materialPreset.color}
             side={THREE.DoubleSide}
-            transparent={renderOpacity < 1}
-            opacity={renderOpacity}
+            transparent={effectiveRenderTransparent}
+            opacity={effectiveRenderOpacity}
             roughness={materialPreset.roughness}
             metalness={materialPreset.metalness}
             emissive={caveTexture === 'technical' ? '#07111f' : '#000000'}
@@ -772,15 +830,16 @@ export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAlti
 
       {/* ── Farebné podľa výšky ── */}
       {showAltitude && altGeo && (
-        <mesh geometry={altGeo} renderOrder={3} onPointerDown={handlePointerDown}>
+        <mesh geometry={altGeo} renderOrder={3} onClick={onSurfaceClick ? handleSurfacePick : undefined}>
           <meshStandardMaterial
             key={`altitude-${scrapFilterKey}-${scrapVisualKey}`}
             vertexColors
             side={THREE.DoubleSide}
-            transparent={opacity < 1}
-            opacity={opacity}
+            transparent={effectiveTransparent}
+            opacity={effectiveOpacity}
             roughness={materialPreset.roughness}
             metalness={materialPreset.metalness}
+            flatShading={options.accurateScraps || !smooth}
             bumpMap={reliefMap}
             bumpScale={reliefStrength * materialPreset.bumpScale * (smooth ? 0.38 : 0.68)}
             clippingPlanes={props.clippingPlanes}
@@ -791,7 +850,7 @@ export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAlti
 
       {/* ── Pôdorysná Mapa (Projektovaná) ── */}
       {floorTex && floorAffine && solidGeo && (
-        <mesh geometry={solidGeo} renderOrder={6} onPointerDown={handlePointerDown}>
+        <mesh geometry={solidGeo} renderOrder={6} onClick={onSurfaceClick ? handleSurfacePick : undefined}>
           <meshBasicMaterial 
             map={floorTex} 
             transparent 
@@ -841,11 +900,11 @@ export const Scraps = React.memo(({ cave, opacity, showSolid, showWire, showAlti
         </mesh>
       )}
 
-      {/* ── Drôtený model ── */}
-      {(showWire || isMoving) && solidGeo && (
+      {/* ── Drôtený model / Triangle mesh (Axonometria) ── */}
+      {(showWire || options.accurateScraps) && solidGeo && (
         <mesh geometry={solidGeo} renderOrder={10}>
-          <meshBasicMaterial color={options.colorScrapsWire} wireframe depthWrite={false} transparent={true}
-            opacity={isMoving ? 0.3 : (showSolid || showAltitude ? 0.28 : 0.65)} 
+          <meshBasicMaterial color={options.colorScrapsWire} wireframe depthWrite={!showSolid && !showAltitude} transparent={true}
+            opacity={showSolid || showAltitude ? 0.65 : 0.85} 
             clippingPlanes={props.clippingPlanes} />
         </mesh>
       )}

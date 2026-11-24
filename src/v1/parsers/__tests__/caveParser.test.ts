@@ -131,5 +131,17 @@ D 10 10 10
       expect(result.hasPointColors).toBe(false);
       expect(result.hasPointNormals).toBe(true);
     });
+
+    it('parses LOX datasets and extracts splay segments correctly', async () => {
+      const fs = await import('fs');
+      const { parseLox } = await import('../caveParser');
+      if (fs.existsSync('public/zlomiskovo.lox')) {
+        const buf = fs.readFileSync('public/zlomiskovo.lox');
+        const cave = parseLox(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+        expect(cave.segments.length).toBeGreaterThan(0);
+        const splaySegs = cave.segments.filter((s: any) => s.type === 'splay');
+        expect(splaySegs.length).toBe(457);
+      }
+    });
   });
 });

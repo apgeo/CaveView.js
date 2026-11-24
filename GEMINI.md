@@ -20,6 +20,11 @@ This project uses a **Dual-Engine** architecture:
 - **LiDAR Benchmark:** The "Erna" model (6.2M points) is the primary performance benchmark. Always verify 60 FPS in v2 before committing engine changes.
 - **AST Code Search & Refactor:** Use `ast-grep` (`sg run -p ...`) for structural multi-line code search, syntax-aware refactoring, and AST inspections across TS/TSX.
 - **E2E & Visual Verification:** Use `playwright-cli` for automated browser interactions, UI validation, and screenshot captures.
+- **Automated Dual-Tier Documentation Maintenance (Mandatory):**
+  - Whenever adding a new feature, modifying UI tools, or altering rendering/mathematical logic:
+    1. **User Guide (SK & EN):** Update `docs/USER_GUIDE_SK.md`, `docs/USER_GUIDE.md`, and in-app `src/shared/components/HelpModal.tsx`.
+    2. **Developer Guide (SK & EN):** Update `docs/DEVELOPER_GUIDE_SK.md` and `docs/DEVELOPER_GUIDE.md` with mathematical formulations, data schemas, and architecture flows.
+    3. **Changelog & Versioning:** Bump patch version in `package.json` and document entries in `CHANGELOG.md`.
 
 ## graphify
 This project has a graphify knowledge graph at graphify-out/.

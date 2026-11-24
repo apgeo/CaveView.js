@@ -1,3 +1,9 @@
+## 📚 Dual-Tier Documentation Maintenance (Mandatory)
+Every feature, UI change, or algorithm modification MUST update both documentation tiers in Slovak & English:
+1. **User Guide (Tier 1):** `docs/USER_GUIDE_SK.md`, `docs/USER_GUIDE.md`, and in-app `src/shared/components/HelpModal.tsx`.
+2. **Developer Guide (Tier 2):** `docs/DEVELOPER_GUIDE_SK.md` and `docs/DEVELOPER_GUIDE.md` (formulas, data models, Web Worker protocols).
+3. **Changelog & Version:** Bump patch version in `package.json` and document in `CHANGELOG.md`.
+
 ## graphify
 
 This project has a graphify knowledge graph at graphify-out/.

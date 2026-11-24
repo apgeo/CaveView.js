@@ -18,7 +18,8 @@ export function parseLox(buffer: ArrayBuffer, onProgress?: (msg: string) => void
   const utf8    = new TextDecoder('utf-8')
 
   const stationsById  = new Map<number, Vec3>()
-  const stationMeta   = new Map<number, { name: string; z: number; isEntrance?: boolean; fullLabel?: string }>()
+  const stationMeta   = new Map<number, { name: string; z: number; isEntrance?: boolean; isFixed?: boolean; fullLabel?: string; qualifiedName?: string; surveyId?: number }>()
+  const surveys = new Map<number, { name: string; parent: number }>()
   const segments:  Segment[]     = []
   const scraps:    Scrap[]       = []
   const surfaces:  CaveSurface[] = []
@@ -87,21 +88,35 @@ export function parseLox(buffer: ArrayBuffer, onProgress?: (msg: string) => void
 
   const stations = Array.from(stationsById.values())
   const ids      = Array.from(stationsById.keys())
+  for (const meta of stationMeta.values()) {
+    const names: string[] = []
+    const visited = new Set<number>()
+    let id = meta.surveyId
+    while (id !== undefined && !visited.has(id)) {
+      visited.add(id)
+      const survey = surveys.get(id)
+      if (!survey) break
+      if (survey.name) names.push(survey.name)
+      id = survey.parent
+    }
+    meta.qualifiedName = names.length ? `${meta.name}@${names.join('.')}` : meta.name
+  }
 
   return buildResult(segments, stations, stationMeta, scraps, surfaces, ids)
 
   // ── type 1 ─ Survey ──────────────────────────────────────────────────────────
   function readSurvey() {
-    readUint()      // m_id
-    readDataPtr()   // namePtr
-    readUint()      // m_parent
+    const id = readUint()
+    const name = readString(readDataPtr())
+    const parent = readUint()
     readDataPtr()   // titlePtr
+    surveys.set(id, { name, parent })
   }
 
   // ── type 2 ─ Station ─────────────────────────────────────────────────────────
   function readStation() {
     const m_id      = readUint()
-    readUint()                   // m_surveyId
+    const surveyId = readUint()
     const namePtr    = readDataPtr()
     const commentPtr = readDataPtr()
     const rawName    = readString(namePtr)
@@ -109,7 +124,6 @@ export function parseLox(buffer: ArrayBuffer, onProgress?: (msg: string) => void
     
     const lowerText = (rawName + " " + rawComment).toLowerCase()
     const m_flags = readUint()
-    // Flags v tomto modeli: 0x02 = entrance, 0x01 = surface/point?
     const isEntrance = (m_flags & 0x02) !== 0 || 
                        lowerText.includes('vchod') || 
                        lowerText.includes('vstup') || 
@@ -131,8 +145,10 @@ export function parseLox(buffer: ArrayBuffer, onProgress?: (msg: string) => void
       name: rawName || `[${m_id}]`,
       z:    coords.z,   // original altitude before centering
       isEntrance,
+      isFixed: (m_flags & 0x04) !== 0,
+      surveyId,
       fullLabel: fullLabel || rawName
-    } as any)
+    })
   }
 
   function readCoords(): Vec3 {
@@ -838,7 +854,7 @@ export function classifyLiDAR(cave: ParsedCave) {
 function buildResult(
   segments:    Segment[],
   stations:    Vec3[],
-  stationMeta: Map<number, { name: string; z: number; isEntrance?: boolean; fullLabel?: string }>,
+  stationMeta: Map<number, { name: string; z: number; isEntrance?: boolean; isFixed?: boolean; fullLabel?: string; qualifiedName?: string }>,
   scraps:      Scrap[],
   surfaces:    CaveSurface[],
   stationIds?: number[]
@@ -900,6 +916,8 @@ function buildResult(
       name:     n,
       altitude: meta?.z        ?? (pos.z + cz),   // original altitude in metres
       isEntrance: meta?.isEntrance,
+      isFixed: meta?.isFixed,
+      qualifiedName: meta?.qualifiedName,
       fullLabel:  meta?.fullLabel
     ,
       gps
@@ -914,13 +932,15 @@ function buildResult(
   const centerOffset: Vec3 = { x: cx, y: cy, z: cz }
   const centeredSurfaces = surfaces.map(s => ({ ...s, centerOffset }))
 
-  // Convert stations to Float32Array points for rendering
-  const pointCount = centeredStations.length
-  const pointsTyped = new Float32Array(pointCount * 3)
-  for (let i = 0; i < pointCount; i++) {
-    pointsTyped[i*3] = centeredStations[i].x
-    pointsTyped[i*3+1] = centeredStations[i].y
-    pointsTyped[i*3+2] = centeredStations[i].z
+  // Convert stations to Float32Array points for rendering only if LiDAR
+  const pointCount = isLiDAR ? centeredStations.length : 0
+  const pointsTyped = isLiDAR ? new Float32Array(pointCount * 3) : undefined
+  if (isLiDAR && pointsTyped) {
+    for (let i = 0; i < pointCount; i++) {
+      pointsTyped[i*3] = centeredStations[i].x
+      pointsTyped[i*3+1] = centeredStations[i].y
+      pointsTyped[i*3+2] = centeredStations[i].z
+    }
   }
 
   return {

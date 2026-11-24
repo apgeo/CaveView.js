@@ -1,0 +1,13 @@
+# LochViewer
+
+> LochViewer is a modern web-based 3D speleological viewer for cave surveys (.lox, .3d, .plt), digital elevation models (DMR 5.0), and massive LiDAR point clouds (.ply, .las).
+
+## Key Features
+- Dual-Engine 3D Rendering (Engine v1 for mesh & survey networks, Engine v2 for massive LiDAR LOD)
+- Official Slovak Geodetic Institute (GKÚ ZBGIS) DMR 5.0 and WMS integration
+- Eye-Dome Lighting (EDL), clipping planes, cross-sections, and speleological measurements
+
+## Links
+- [LochViewer Application](https://loch.sss.sk/)
+- [User Guide](https://loch.sss.sk/docs/USER_GUIDE.md)
+- [Privacy Policy](https://loch.sss.sk/privacy.html)

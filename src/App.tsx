@@ -1,69 +1,59 @@
-import React, { useState, useRef, useCallback, useEffect, Suspense, useMemo } from 'react'
-import * as THREE from 'three'
+import { NavigationSidebar } from '@shared/components/NavigationSidebar/NavigationSidebar';
+import { ViewerToolbar } from '@shared/components/ViewerToolbar'
+import { ProjectSection } from '@shared/components/NavigationSidebar/ProjectSection';
+import { ViewSection } from '@shared/components/NavigationSidebar/ViewSection';
+import { LayersSection } from '@shared/components/NavigationSidebar/LayersSection';
+import { SurfaceSection } from '@shared/components/NavigationSidebar/SurfaceSection';
+import { AnalysisSection } from '@shared/components/NavigationSidebar/AnalysisSection';
+import { SystemSection } from '@shared/components/NavigationSidebar/SystemSection';
+import type { NavigationBindings } from '@shared/components/NavigationSidebar/types';
+
+import React, { useState, useRef, useCallback, useEffect, Suspense, useMemo } from 'react';
+import type * as THREE from 'three'
 import proj4 from 'proj4'
-import {
-  CheckCircle2 as CheckCircleIcon,
-  Circle as CircleIcon,
-  Diamond as DiamondIcon,
-  Eraser as EraserIcon,
-  Hexagon as HexagonIcon,
-  MousePointer2 as MousePointerIcon,
-  RotateCcw as RotateCcwIcon,
-  Square as SquareIcon,
-  Undo2 as UndoIcon,
-  X as XIcon,
-} from 'lucide-react'
+
 import packageJson from '../package.json'
-import { SJTSK_DEF, fetchAltitudeFromZbgis, wgs84ToJtsk } from '@shared/utils/geoUtils'
-import { tryUtmToWgs84, tryJtskToWgs84 } from "@shared/utils/coords";
-import { useEmbedHost, postToHost } from '@shared/embed/embedMessages'
-import { loadGoogleIdentity } from '@shared/utils/googleIdentity'
-import type { ParsedCave, ViewerOptions, CaveSurface, StationLabel, Vec3, ViewerCameraSnapshot, PointCloudShape } from '@shared/types'
-import type { TextureDownloadInspector } from '@shared/utils/XyzTileDownloader'
-import { clearBrowserTileCache } from '@shared/utils/tileCache'
-import { calculateVolumeAndProfile } from '@shared/utils/speleoAnalysis'
-import { calculateTectonics } from '@shared/utils/tectonics'
-import { getSjtskBoundsFromDtm } from '@shared/utils/surfaceBounds'
-import { createSurfaceTextureCalibrationFromSjtskBbox, parseSjtskBboxCalibrationText } from '@shared/utils/surfaceTextureCalibration'
-import { getDefaultPointCloudSize, getPreferredEngineForFile } from '@shared/utils/modelDefaults'
-import { renderLidarPlanMapToDataUrl, type LidarPlanMapData } from '@shared/utils/lidarPlanMap'
+import { SJTSK_DEF, fetchAltitudeFromZbgis, wgs84ToJtsk } from '@shared/utils/geoUtils';
+import { useEmbedHost, postToHost } from '@shared/embed/embedMessages';
+import { loadGoogleIdentity } from '@shared/utils/googleIdentity';
+import { tryUtmToWgs84, tryJtskToWgs84, worldToWgs84, getZbgisPointUrl } from "@shared/utils/coords";
+import type { ParsedCave, ViewerOptions, CaveSurface, StationLabel, Vec3, ViewerCameraSnapshot, ViewPreset } from '@shared/types';
+import type { TextureDownloadInspector } from '@shared/utils/XyzTileDownloader';
+import { clearBrowserTileCache } from '@shared/utils/tileCache';
+import { calculateVolumeAndProfile } from '@shared/utils/speleoAnalysis';
+import { calculateTectonics } from '@shared/utils/tectonics';
+import { getSjtskBoundsFromDtm } from '@shared/utils/surfaceBounds';
+import { createSurfaceTextureCalibrationFromSjtskBbox, parseSjtskBboxCalibrationText } from '@shared/utils/surfaceTextureCalibration';
+import { getDefaultPointCloudSize, getPreferredEngineForFile, isPlyLidarData } from '@shared/utils/modelDefaults';
+import { renderLidarPlanMapToDataUrl, type LidarPlanMapData } from '@shared/utils/lidarPlanMap';
+import { cloneLidarEditSnapshot, downsampleStrokePoints, filterLidarPointsByMask, selectProjectedLidarPoints, type LidarEditMode, type LidarScreenPoint } from '@shared/utils/lidarPointEditing';
+import type { LiDARAnomaly } from '@shared/utils/speleoAnalysis';
+import { DEFAULT_POINT_CLOUD_SHAPE } from '@v2/components/pointCloudShape';
+import { hasRenderablePointColors } from '@shared/utils/pointCloudColors';
+import { CompassRose } from '@shared/components/CompassRose';
+import { FloatingClippingSlider } from '@shared/components/FloatingClippingSlider';
+import { MeasurementPanel } from '@shared/components/MeasurementPanel';
+import { resolveStationPosition } from '@shared/utils/stationInteraction'
+import { calculateStationDepths, findReferenceStation, sampleDtmAt } from '@shared/utils/stationAltitude'
 import {
-  cloneLidarEditSnapshot,
-  downsampleStrokePoints,
-  filterLidarPointsByMask,
-  selectProjectedLidarPoints,
-  type LidarEditMode,
-  type LidarScreenPoint,
-} from '@shared/utils/lidarPointEditing'
-import type { LiDARAnomaly } from '@shared/utils/speleoAnalysis'
-import { DEFAULT_POINT_CLOUD_SHAPE, POINT_CLOUD_SHAPE_OPTIONS } from '@v2/components/pointCloudShape'
-import { hasRenderablePointColors } from '@shared/utils/pointCloudColors'
+  calculateDmr5Bounds,
+  fetchDmr5GeoTiff,
+  createDmr5Surface,
+  downloadDmrFiles,
+} from '@shared/utils/dmrDownloader'
+
+const HelpModal = React.lazy(() => import('@shared/components/HelpModal').then(m => ({ default: m.HelpModal })))
 
 const CaveViewer3D = React.lazy(() => import('@v1/components/CaveViewer3D'))
 const CaveViewerNextGen = React.lazy(() => import('@v2/components/CaveViewerNextGen'))
 const APP_VERSION = packageJson.version
 const GIT_COMMIT = typeof __GIT_COMMIT__ !== 'undefined' ? __GIT_COMMIT__ : ''
 
-const POINT_CLOUD_SHAPE_ICONS: Record<PointCloudShape, typeof SquareIcon> = {
-  square: SquareIcon,
-  sphere: CircleIcon,
-  diamond: DiamondIcon,
-  hex: HexagonIcon,
-}
 
-const POINT_CLOUD_SHAPE_LABELS_SK: Record<PointCloudShape, string> = {
-  square: 'Štvorec',
-  sphere: 'Guľôčka',
-  diamond: 'Kosoštvorec',
-  hex: 'Šesťuholník',
-}
 
-const POINT_CLOUD_SHAPE_LABELS_EN: Record<PointCloudShape, string> = {
-  square: 'Square',
-  sphere: 'Sphere',
-  diamond: 'Diamond',
-  hex: 'Hex',
-}
+
+
+
 
 type SpeleoWorkerMessage =
   | { type: 'status'; requestId: number; message: string | null }
@@ -87,6 +77,42 @@ const WELCOME_CHANGELOG = [
   {
     version: APP_VERSION,
     badge: 'Aktuálne',
+    group: 'Odstránenie SSAO a vyčistenie UI',
+    items: [
+      'Funkcia Ambient Occlusion (SSAO) úplne odstránená — nemala reálne využitie a stále pôsobila príliš tmavo',
+      'Odstránené interné pracovné označenia z popiskov (napr. "(2A)", "(2C)", "(3C)")',
+      'Prepínač Splay teraz spoločne skrýva alebo zobrazuje lúče aj ich koncové bodky',
+    ],
+  },
+  {
+    version: '2.4.20',
+    group: 'Natrvalo opravené stmavovanie modelu po zastavení kamery',
+    items: [
+      'Skutočná príčina: priehľadnosť stien (75 % default) sa po zastavení kamery zapla a presvitalo cez ňu tmavé pozadie',
+      'Nová predvolená hodnota: priehľadnosť stien 100 % (nepriehľadné) — model sa už sám od seba nestmaví',
+      'Slider "Priehľadnosť stien" ostáva k dispozícii pre tých, čo priehľadnosť chcú',
+    ],
+  },
+  {
+    version: '2.4.19',
+    group: 'Ambient Occlusion (SSAO) — svetlejšie a presnejšie',
+    items: [
+      'Pozadie/obloha sa už pri zapnutom SSAO nestmavuje (opravená detekcia hĺbky pozadia)',
+      'Odstránené plošné stmavovanie terénu a modelu — zatienenie je teraz relatívne k vzdialenosti, funguje správne pri malých aj veľkých mierkach',
+      'Jemnejší predvolený efekt (nižšia intenzita a polomer, vyššie minimálne jas)',
+    ],
+  },
+  {
+    version: '2.4.18',
+    group: 'Priehľadnosť stien a nezávislý organický model',
+    items: [
+      'Nový ovládací prvok "Priehľadnosť stien" (slider 10 – 100 %)',
+      'Organický / Vyhladený model funguje nezávisle od "Zobraziť steny"',
+      'Doplnený preklad SK/EN/FR/DE pre novú položku',
+    ],
+  },
+  {
+    version: '2.4.17',
     group: 'Kamera, Tektonika, UI & WMS mapy',
     items: [
       'Prepínanie kamery Perspektíva ↔ Ortografická projekcia v hornej lište pre axonometriu',
@@ -155,7 +181,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 }
 
-import { getBrowserLanguage, getTranslation, Language, languages } from '@shared/i18n'
+import { getBrowserLanguage, getTranslation, Language } from '@shared/i18n';
 
 // ── Google Drive Config (Vymeň za tvoje reálne kľúče v .env súbore) ──
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
@@ -194,117 +220,17 @@ function imageExtensionFromDataUrl(dataUrl: string): string {
   return match[1]
 }
 
-function formatBytes(bytes?: number): string {
-  if (!Number.isFinite(bytes) || !bytes) return '0 B'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
 
-function formatDuration(ms?: number): string {
-  if (!Number.isFinite(ms) || !ms) return '-'
-  if (ms < 1000) return `${Math.round(ms)} ms`
-  return `${(ms / 1000).toFixed(1)} s`
-}
 
-function getTextureProgress(info: TextureDownloadInspector | null): number {
-  if (!info || info.totalTiles <= 0) return 0
-  return Math.max(0, Math.min(100, Math.round((info.completedTiles / info.totalTiles) * 100)))
-}
 
-function isRemoteTextureSource(source: ViewerOptions['surfaceTextureSource']): boolean {
-  return source === 'wms-orto' || source === 'wms-shadow' || source === 'wms-geology' || source === 'wms-orto-freemap'
-}
 
-function getTextureStatusLabel(info: TextureDownloadInspector, lang: Language): string {
-  if (info.status === 'success') return lang === 'sk' ? 'Hotovo' : 'Done'
-  if (info.status === 'error') return lang === 'sk' ? 'Chyba' : 'Error'
-  return lang === 'sk' ? 'Sťahuje sa' : 'Downloading'
-}
 
-function TextureDownloadInspectorPanel({
-  info,
-  lang,
-  onClearCache,
-}: {
-  info: TextureDownloadInspector | null
-  lang: Language
-  onClearCache: () => void
-}) {
-  const progress = getTextureProgress(info)
-  const statusColor = info?.status === 'success' ? '#10b981' : info?.status === 'error' ? '#ef4444' : '#60a5fa'
-  const outputFormat = info?.outputFormat ? info.outputFormat.replace('image/', '').toUpperCase() : '-'
 
-  const Row = ({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '10px', lineHeight: 1.35 }}>
-      <span style={{ color: '#64748b' }}>{label}</span>
-      <span style={{ color: color || '#cbd5e1', textAlign: 'right', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{value}</span>
-    </div>
-  )
 
-  return (
-    <div style={{ borderTop: '1px solid rgba(148,163,184,0.16)', paddingTop: '9px', marginTop: '2px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
-        <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>troubleshoot</span>
-          {lang === 'sk' ? 'INSPEKTOR DLAŽDÍC' : 'TILE INSPECTOR'}
-        </div>
-        <button
-          type="button"
-          onClick={onClearCache}
-          className="btn-mini"
-          style={{ fontSize: '9px', padding: '2px 7px', color: '#fbbf24', borderColor: 'rgba(251,191,36,0.3)' }}
-        >
-          {lang === 'sk' ? 'Vyčistiť cache' : 'Clear cache'}
-        </button>
-      </div>
 
-      {info ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-          <div style={{ height: '4px', borderRadius: '999px', overflow: 'hidden', background: 'rgba(148,163,184,0.15)' }}>
-            <div style={{ width: `${progress}%`, height: '100%', background: statusColor, transition: 'width .2s ease' }} />
-          </div>
-          <Row label={lang === 'sk' ? 'Stav' : 'Status'} value={getTextureStatusLabel(info, lang)} color={statusColor} />
-          <Row label={lang === 'sk' ? 'Zdroj' : 'Source'} value={info.provider || info.sourceKey || '-'} />
-          <Row
-            label={info.mode === 'xyz' ? 'XYZ' : 'WMS'}
-            value={info.mode === 'xyz' && info.zoom ? `z${info.zoom} · ${info.widthPixels || '-'}x${info.heightPixels || '-'}` : `${info.widthPixels || '-'}x${info.heightPixels || '-'}`}
-          />
-          <Row
-            label={lang === 'sk' ? 'Dlaždice' : 'Tiles'}
-            value={`${info.completedTiles}/${info.totalTiles} · ok ${info.successfulTiles} · err ${info.failedTiles}`}
-          />
-          <Row
-            label="Cache"
-            value={`${info.cacheHits} hit · ${info.cacheMisses} miss · ${formatBytes(info.bytesFromCache)}`}
-          />
-          <Row
-            label={lang === 'sk' ? 'Sieť' : 'Network'}
-            value={`${info.networkTiles} · ${formatBytes(info.bytesDownloaded)}`}
-          />
-          <Row
-            label="Fallback"
-            value={`${info.fallbackTiles} tile · ${info.fallbackRequests} req`}
-            color={info.fallbackTiles > 0 ? '#fbbf24' : undefined}
-          />
-          <Row
-            label={lang === 'sk' ? 'Výstup' : 'Output'}
-            value={`${outputFormat} · ${formatDuration(info.durationMs)}`}
-          />
-          {info.message && (
-            <div style={{ color: '#fca5a5', fontSize: '10px', lineHeight: 1.35, wordBreak: 'break-word' }}>
-              {info.message}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div style={{ fontSize: '10px', color: '#64748b', lineHeight: 1.35 }}>
-          {lang === 'sk' ? 'Bez aktívneho sťahovania' : 'No active download'}
-        </div>
-      )}
-    </div>
-  )
-}
+
+
+
 
 type AppState = 'welcome' | 'loading' | 'viewer' | 'error'
 
@@ -323,29 +249,6 @@ const SUPPORTED = [
 ]
 
 
-/** Interpoluje výšku povrchu DTM pre danú world-space poziciú (x, y).
- *  Vráti výšku v metroch alebo null ak je bod mimo gridu. */
-function sampleDtmAt(surface: CaveSurface, worldX: number, worldY: number): number | null {
-  const { dtm } = surface
-  const { data, samples, lines, calib } = dtm
-  const det = calib.xx * calib.yy - calib.xy * calib.yx
-  if (Math.abs(det) < 1e-12) return null
-
-  const dx  = worldX - calib.xOrigin
-  const dy  = worldY - calib.yOrigin
-  const col = (dx * calib.yy - dy * calib.xy) / det
-  const row = (dy * calib.xx - dx * calib.yx) / det
-
-  if (col < 0 || col >= samples - 1 || row < 0 || row >= lines - 1) return null
-
-  const c0 = Math.floor(col), r0 = Math.floor(row)
-  const fc = col - c0, fr = row - r0
-  const z00 = data[r0 * samples + c0]
-  const z10 = data[r0 * samples + c0 + 1]
-  const z01 = data[(r0 + 1) * samples + c0]
-  const z11 = data[(r0 + 1) * samples + c0 + 1]
-  return z00 * (1 - fc) * (1 - fr) + z10 * fc * (1 - fr) + z01 * (1 - fc) * fr + z11 * fc * fr
-}
 
 // ─── Station detail card ─────────────────────────────────────────────────────────────
 
@@ -357,7 +260,18 @@ export interface SelStation {
   altitude:     number    // m n.m.
   pos:          Vec3      // Pridané súradnice pre 3D
   gps:          { lat: number; lon: number; zone?: number; epsg?: string } | null
-  distToSurf:   number | null   // m, kladné = jaskyňa je pod povrchom
+  distToSurf:   number | null   // m, kladné = jaskyňa je pod povrchom, záporné = nad povrchom (kolmo hore)
+  surfaceZ?:    number | null   // m n.m. nadmorská výška povrchu priamo kolmo nad bodom
+  closestSurfDist?: number | null // m, najkratšia 3D vzdialenosť k povrchu
+  closestSurfPos?: Vec3 | null    // Centrované súradnice najbližšieho bodu povrchu (pre 3D visual)
+  closestSurfWorld?: Vec3 | null  // World súradnice najbližšieho bodu povrchu
+  closestSurfAltitude?: number | null // m n.m. v najbližšom bode povrchu
+  closestHorizontalDist?: number | null // m, horizontálny posun od kolmice
+  closestSurfGps?: { lat: number; lon: number } | null // GPS súradnice najbližšieho bodu povrchu
+  entranceAlt?: number | null   // m n.m. nadmorská výška referenčného vchodu / bodu
+  denivEntrance?: number | null // m, prevýšenie / denivelácia od vchodu (altitude - entranceAlt)
+  refStationName?: string | null // meno referenčného vchodu / bodu
+  refStationType?: 'entrance_gps' | 'entrance' | 'lowest_station' | 'none'
   screenX:      number
   screenY:      number
   centerX?:     number
@@ -365,14 +279,17 @@ export interface SelStation {
   centerZ?:     number
 }
 
-function StationDetailCard({ stations, onClose, onPlaceCaver, onSetProfile, onUpdateGps, t, lang }: { 
+function StationDetailCard({ stations, onClose, onPlaceCaver, onSetProfile, onUpdateGps, onDownloadDmr, t, lang, baseAltitude, altitudeMode }: { 
   stations: SelStation[]; 
   onClose: () => void;
   onPlaceCaver: (pos: [number, number, number] | null, pose: 'standing' | 'crawling') => void;
   onSetProfile: (sts: SelStation[]) => void;
   onUpdateGps: (stIdx: number, lat: number, lon: number, alt: number) => void;
+  onDownloadDmr?: (lat: number, lon: number, extentMeters: number) => Promise<void>;
   t: (key: string) => string;
   lang: string;
+  baseAltitude?: number;
+  altitudeMode?: 'absolute' | 'relative';
 }) {
   const [posOffset, setPosOffset] = useState({ x: 0, y: 0 })
   const dragRef = useRef<{ startX: number; startY: number; isDragging: boolean }>({ startX: 0, startY: 0, isDragging: false })
@@ -457,9 +374,9 @@ function StationDetailCard({ stations, onClose, onPlaceCaver, onSetProfile, onUp
     setTimeout(() => setCopied(false), 2500)
   }
 
-  // Pôvodná poloha karty
-  const cx = Math.min(Math.max(st1.screenX, 280), window.innerWidth - 340)
-  const cy = Math.min(Math.max(st1.screenY + 20, 60), window.innerHeight - 480)
+  // Pôvodná poloha karty ukotvená na bočný okraj
+  const defaultLeft = 20
+  const defaultTop = 92
 
   const handleMouseDown = (e: React.MouseEvent) => {
     dragRef.current = {
@@ -504,8 +421,9 @@ function StationDetailCard({ stations, onClose, onPlaceCaver, onSetProfile, onUp
     : null
 
   return (
-    <div style={{
-      position: 'fixed', left: cx + posOffset.x, top: cy + posOffset.y, zIndex: 200, minWidth: 300, maxWidth: 360,
+    <div className="station-detail-card" role="region" aria-label={headerTitle} style={{
+      position: 'fixed', left: defaultLeft + posOffset.x, top: defaultTop + posOffset.y, zIndex: 200, minWidth: 300, maxWidth: 360,
+      maxHeight: 'calc(100dvh - 112px)', overflowY: 'auto',
       background: 'linear-gradient(135deg,rgba(8,15,35,.97),rgba(15,25,50,.97))',
       border: stations.length === 3 ? '1px solid rgba(192,132,252,.5)' : '1px solid rgba(79,195,247,.35)',
       borderRadius: 14, padding: '16px 18px',
@@ -559,14 +477,20 @@ function StationDetailCard({ stations, onClose, onPlaceCaver, onSetProfile, onUp
             )}
             {stations.length === 1 && (
               st.idx !== -1 ? (
-                <Row label={t('stations.title')} value={`#${st.idx}`} sub={`(${st.name})`} />
+                <Row label={t('stations.title')} value={st.name} />
               ) : (
                 <Row label={t('stations.coordinates')} value={st.name} />
               )
             )}
+            {stations.length === 1 && <Row label={t('stations.coordinates')}
+              value={`X ${st.origX.toFixed(2)} · Y ${st.origY.toFixed(2)}`} />}
             
             {(!editGps || stations.length > 1) ? (
-              <Row label={t('stations.altitude')} value={`${st.altitude.toFixed(2)} m`} sub="n.m." />
+              <Row
+                label={t('stations.altitude')}
+                value={`${st.altitude.toFixed(2)} m`}
+                sub={st.gps ? 'm n.m.' : 'Z (rel)'}
+              />
             ) : (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid rgba(255,255,255,.06)' }}>
                 <span style={{ fontSize: 11, color: '#94a3b8' }}>{t('stations.altitude')}</span>
@@ -577,11 +501,125 @@ function StationDetailCard({ stations, onClose, onPlaceCaver, onSetProfile, onUp
               </div>
             )}
 
-            {st.distToSurf !== null && stations.length === 1 && (
+            {/* 1. Denivelácia od vchodu / referenčného bodu (+/- hodnota) */}
+            {stations.length === 1 && (
               <Row
-                label={t('stations.depth')}
-                value={Math.abs(st.distToSurf).toFixed(1) + ' m'}
-                sub={st.distToSurf >= 0 ? `(${t('terrain.title').toLowerCase()})` : `(nad ${t('terrain.title').toLowerCase()})`}
+                label={st.refStationType === 'lowest_station'
+                  ? `${t('stations.refDenivelation')} ${st.refStationName || ''}`.trim()
+                  : t('stations.entranceDenivelation')}
+                value={st.denivEntrance !== null && st.denivEntrance !== undefined
+                  ? `${st.denivEntrance >= 0 ? '+' : ''}${st.denivEntrance.toFixed(2)} m`
+                  : (baseAltitude !== undefined ? `${(st.altitude - baseAltitude) >= 0 ? '+' : ''}${(st.altitude - baseAltitude).toFixed(2)} m` : t('measuring.unavailable'))}
+                sub={st.refStationName ? (
+                  `${st.refStationType === 'entrance_gps' ? 'vchod s GPS' : st.refStationType === 'entrance' ? 'vchod' : 'ref. bod'} ${st.refStationName}${st.entranceAlt !== null && st.entranceAlt !== undefined ? ` (${st.entranceAlt.toFixed(1)} m)` : ''}`
+                ) : undefined}
+              />
+            )}
+
+            {/* 2. Najkratšia 3D vzdialenosť k povrchu (minimálna hrúbka masívu) */}
+            {stations.length === 1 && (
+              <div style={{
+                background: 'rgba(245, 158, 11, 0.08)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                borderRadius: 8,
+                padding: '8px 10px',
+                margin: '6px 0'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: '#fbbf24', fontWeight: 600 }}>
+                    ★ {t('stations.closestSurfaceDist')}
+                  </span>
+                  <span style={{ fontSize: 13, color: '#fef08a', fontWeight: 700, fontFamily: 'monospace' }}>
+                    {st.closestSurfDist === null || st.closestSurfDist === undefined ? t('measuring.unavailable') : `${st.closestSurfDist.toFixed(1)} m`}
+                  </span>
+                </div>
+
+                {st.closestSurfDist !== null && st.closestSurfDist !== undefined ? (
+                  <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', color: '#cbd5e1' }}>
+                      <span>{t('stations.minRockCover')}</span>
+                      <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#fde68a' }}>
+                        {st.closestHorizontalDist != null && `${t('stations.horizontalOffset')}: ${st.closestHorizontalDist.toFixed(1)} m`}
+                        {st.closestSurfAltitude != null && ` • ${t('stations.surfaceAltitude')}: ${st.closestSurfAltitude.toFixed(1)} m`}
+                      </span>
+                    </div>
+
+                    {st.closestSurfGps && (
+                      <div style={{
+                        marginTop: 4,
+                        paddingTop: 4,
+                        borderTop: '1px dashed rgba(245, 158, 11, 0.25)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 3
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ color: '#d97706', fontWeight: 600, fontSize: 10 }}>{t('stations.surfaceGps')}:</span>
+                          <span style={{ color: '#fde68a', fontFamily: 'monospace', fontSize: 10 }}>
+                            {st.closestSurfGps.lat.toFixed(6)}°, {st.closestSurfGps.lon.toFixed(6)}°
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 14, marginTop: 2, alignItems: 'center' }}>
+                          <a
+                            href={`https://maps.google.com/?q=${st.closestSurfGps.lat.toFixed(6)},${st.closestSurfGps.lon.toFixed(6)}`}
+                            target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 10, color: '#38bdf8', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                          >
+                            🗺️ {t('ui.googleMaps')}
+                          </a>
+                          <a
+                            href={getZbgisPointUrl(st.closestSurfGps.lat, st.closestSurfGps.lon)}
+                            target="_blank" rel="noopener noreferrer"
+                            style={{ fontSize: 10, color: '#f59e0b', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                          >
+                            🏔️ {t('ui.zbgisLidar')}
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 3 }}>
+                    <div style={{ fontSize: 10, color: '#64748b' }}>
+                      {t('stations.noSurfaceDtm')}
+                    </div>
+                    {st.gps && onDownloadDmr && (
+                      <button
+                        type="button"
+                        onClick={() => onDownloadDmr(st.gps!.lat, st.gps!.lon, 500)}
+                        style={{
+                          background: 'rgba(245, 158, 11, 0.15)',
+                          border: '1px solid rgba(245, 158, 11, 0.4)',
+                          borderRadius: '4px',
+                          color: '#f59e0b',
+                          fontSize: '10px',
+                          padding: '3px 6px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          alignSelf: 'flex-start',
+                          marginTop: '2px',
+                        }}
+                        title={lang === 'sk' ? "Stiahnuť terén DMR 5.0 (GKÚ SR LiDAR) pre okolie tohto bodu" : "Download DMR 5.0 terrain around this point"}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>cloud_download</span>
+                        <span>{lang === 'sk' ? 'Stiahnuť DMR 5.0 (500m)' : 'Download DMR 5.0 (500m)'}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 3. Vertikálna hĺbka pod povrchom (kolmo hore) */}
+            {stations.length === 1 && (
+              <Row
+                label={t('stations.surfaceDepth')}
+                value={st.distToSurf === null || st.distToSurf === undefined ? t('measuring.unavailable') : `${Math.abs(st.distToSurf).toFixed(1)} m`}
+                sub={st.distToSurf === null || st.distToSurf === undefined
+                  ? t('stations.noSurfaceDtm')
+                  : `${st.distToSurf >= 0 ? t('stations.underSurface') : t('stations.aboveSurface')}${st.surfaceZ !== null && st.surfaceZ !== undefined ? ` (${t('stations.surfaceAltitude')}: ${st.surfaceZ.toFixed(1)} m)` : ''}`}
               />
             )}
 
@@ -607,13 +645,20 @@ function StationDetailCard({ stations, onClose, onPlaceCaver, onSetProfile, onUp
                     <>
                       <Row label="Latitude" value={`${st.gps.lat.toFixed(6)}°`} />
                       <Row label="Longitude" value={`${st.gps.lon.toFixed(6)}°`} />
-                      <div style={{ marginTop: 4 }}>
+                      <div style={{ marginTop: 6, display: 'flex', gap: 14, alignItems: 'center' }}>
                         <a
                           href={`https://maps.google.com/?q=${st.gps.lat.toFixed(6)},${st.gps.lon.toFixed(6)}`}
                           target="_blank" rel="noopener noreferrer"
-                          style={{ fontSize: 11, color: '#4fc3f7', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
+                          style={{ fontSize: 11, color: '#4fc3f7', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                         >
                           🗺️ {t('ui.googleMaps')}
+                        </a>
+                        <a
+                          href={getZbgisPointUrl(st.gps.lat, st.gps.lon)}
+                          target="_blank" rel="noopener noreferrer"
+                          style={{ fontSize: 11, color: '#f59e0b', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        >
+                          🏔️ {t('ui.zbgisLidar')}
                         </a>
                       </div>
                     </>
@@ -786,7 +831,7 @@ function StationDetailCard({ stations, onClose, onPlaceCaver, onSetProfile, onUp
 
       {/* Footer hint */}
       <div style={{ marginTop: 12, fontSize: 10, color: '#64748b', textAlign: 'center' }}>
-        {stations.length === 1 ? t('ui.hint1') : stations.length === 2 ? t('ui.hint2') : (lang === 'sk' ? 'Kliknutím na ďalší bod začnete nové meranie' : 'Click another point to start a new measurement')}
+        {t('toolbar.inspectHint')}
       </div>
     </div>
   )
@@ -804,52 +849,7 @@ const MemoizedStatusBadge = React.memo(({ isMoving }: { isMoving: boolean }) => 
 ))
 
 // ─── Color Picker Component (Opravený — neblokuje UI) ─────────────────────────
-const ColorPicker = ({ value, onChange, label, t }: { value: string, onChange: (c: string) => void, label?: string, t: (k: string) => string }) => {
-  const [isOpen, setIsOpen] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const palette = ['#fbbf24', '#ef4444', '#ffffff']
 
-  useEffect(() => {
-    if (!isOpen) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setIsOpen(false)
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isOpen])
-
-  return (
-    <div ref={containerRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', marginLeft: 8 }}>
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        title={label || t('ui.changeColor')}
-        style={{ 
-          width: 22, height: 16, borderRadius: 3, background: value, 
-          border: '1px solid rgba(255,255,255,0.3)', cursor: 'pointer',
-          padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'
-        }}
-      >
-        <span style={{ fontSize: 9, filter: 'invert(1) grayscale(1) contrast(100)' }}>🎨</span>
-      </button>
-
-      {isOpen && (
-        <div style={{ 
-          position: 'absolute', top: '100%', right: 0, marginTop: 6, zIndex: 1001,
-          background: '#1e293b', border: '1px solid #334155', borderRadius: 8,
-          padding: 8, boxShadow: '0 10px 25px rgba(0,0,0,0.5)', display: 'flex', gap: 6
-        }}>
-          {palette.map(c => (
-            <div key={c} onClick={() => { onChange(c); setIsOpen(false) }}
-              style={{ width: 20, height: 20, borderRadius: 4, background: c, cursor: 'pointer', border: '1px solid rgba(255,255,255,0.1)' }} />
-          ))}
-          <div style={{ width: 1, background: 'rgba(255,255,255,0.1)', margin: '0 2px' }} />
-          <input type="color" value={value} onChange={e => onChange(e.target.value)} onBlur={() => setIsOpen(false)}
-            style={{ width: 22, height: 22, padding: 0, border: 'none', background: 'none', cursor: 'pointer' }} />
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ─── Scale Bar UI Component (Stabilná — mimo Canvasu) ─────────────────────────
 const ScaleBar = ({ cameraData }: { cameraData: { dist: number, fov: number, height: number } | null }) => {
@@ -874,14 +874,24 @@ const ScaleBar = ({ cameraData }: { cameraData: { dist: number, fov: number, hei
 }
 
 // ─── Color Scale Legend (Zobrazenie výšok pre farby) ─────────────────────────
-const ColorScaleLegend = ({ caveLegend, surfLegend, lang }: { 
+const ColorScaleLegend = ({ caveLegend, surfLegend, lang, baseAltitude, altitudeMode }: { 
   caveLegend: { minAlt: number, maxAlt: number } | null, 
   surfLegend: { minAlt: number, maxAlt: number } | null,
-  lang: string
+  lang: string,
+  baseAltitude?: number,
+  altitudeMode?: 'absolute' | 'relative'
 }) => {
   if (!caveLegend && !surfLegend) return null
   
   const gradient = 'linear-gradient(to top, #142ea6 0%, #197ad9 18%, #1fc7b8 35%, #2ede61 50%, #ccf01a 65%, #f7990d 80%, #e01a1a 100%)'
+  const isRel = altitudeMode === 'relative'
+  const base = baseAltitude ?? 0
+
+  const formatAlt = (val: number) => {
+    if (!isRel) return `${Math.round(val)} m`
+    const diff = Math.round(val - base)
+    return `${diff > 0 ? '+' : ''}${diff} m`
+  }
 
   return (
     <div style={{
@@ -892,13 +902,15 @@ const ColorScaleLegend = ({ caveLegend, surfLegend, lang }: {
       {caveLegend && (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <div style={{ fontSize: 9, color: '#fff', textShadow: '0 1px 2px #000', marginBottom: 4, fontWeight: 600 }}>
-             {Math.round(caveLegend.maxAlt)} m
+             {formatAlt(caveLegend.maxAlt)}
           </div>
           <div style={{ width: 12, height: 100, background: gradient, borderRadius: 2, border: '1px solid rgba(255,255,255,0.3)' }} />
           <div style={{ fontSize: 9, color: '#fff', textShadow: '0 1px 2px #000', marginTop: 4, fontWeight: 600 }}>
-             {Math.round(caveLegend.minAlt)} m
+             {formatAlt(caveLegend.minAlt)}
           </div>
-          <div style={{ fontSize: 8, color: '#fff', textShadow: '0 1px 2px #000', marginTop: 2, fontWeight: 700, letterSpacing: '0.02em' }}>{lang === 'sk' ? 'Jaskyňa' : 'Cave'}</div>
+          <div style={{ fontSize: 8, color: '#fff', textShadow: '0 1px 2px #000', marginTop: 2, fontWeight: 700, letterSpacing: '0.02em' }}>
+            {lang === 'sk' ? 'Jaskyňa' : 'Cave'}{isRel ? ' (rel)' : ''}
+          </div>
         </div>
       )}
       {surfLegend && (
@@ -956,12 +968,47 @@ export default function App() {
   const [showStationCard, setShowStationCard] = useState(false)
   const [activeProfilePoints, setActiveProfilePoints] = useState<SelStation[] | null>(null)
   const [cave, setCave] = useState<ParsedCave | null>(null)
+  const isPlyLidar = useMemo(() => isPlyLidarData(loadedFile?.ext, cave), [loadedFile?.ext, cave])
+  const refStationInfo = useMemo(() => cave ? findReferenceStation(cave) : null, [cave])
+  const baseAltitude = useMemo(() => {
+    if (refStationInfo && refStationInfo.type !== 'none') return refStationInfo.altitude
+    if (!cave) return undefined
+    return cave.stations?.[0] ? (cave.stations[0].z + (cave.centerOffset?.z || 0)) : undefined
+  }, [cave, refStationInfo])
   const [isDragging, setIsDragging] = useState(false)
   const [progress, setProgress] = useState(0)
   const [loadingStatus, setLoadingStatus] = useState<string>('')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [selectedStations, setSelectedStations] = useState<SelStation[]>([])
-  const [isMeasuringMode, setIsMeasuringMode] = useState(false)
+  const [measurementMode, setMeasurementMode] = useState<'off' | 'distance' | 'polygon'>('off')
+  const isMeasuringMode = measurementMode !== 'off'
+  const [profilePicking, setProfilePicking] = useState(false)
+  const startProfilePick = useCallback(() => {
+    setOpts(prev => ({ ...prev, autoRotate: false, showProfileClipping: true, profileClipOffset: 0 }))
+    setActiveProfilePoints(null)
+    setSelectedStations([])
+    setMeasurementMode('distance')
+    setProfilePicking(true)
+  }, [])
+  const setProfileClipping = useCallback((on: boolean) => {
+    if (!on) {
+      setProfilePicking(false)
+      setOpts(prev => ({ ...prev, showProfileClipping: false }))
+      return
+    }
+    if (activeProfilePoints?.length === 2) setOpts(prev => ({ ...prev, showProfileClipping: true }))
+    else startProfilePick()
+  }, [activeProfilePoints, startProfilePick])
+
+  const cycleMeasurementMode = () => {
+    setOpts(prev => ({ ...prev, autoRotate: false }))
+    setMeasurementMode(prev => {
+      if (prev === 'off') return 'distance'
+      if (prev === 'distance') return 'polygon'
+      return 'off'
+    })
+    setSelectedStations([])
+  }
   // Embed / Share
   const [isEmbedMode] = useState(() => new URLSearchParams(window.location.search).get('embed') === 'true')
   const [embedAllowSidebar] = useState(() => new URLSearchParams(window.location.search).get('sidebar') === '1')
@@ -982,34 +1029,55 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false)
   const [manualMatches, setManualMatches] = useState<{ src: { x: number; y: number }; dst: { x: number; y: number } }[] | null>(null)
 
+  useEffect(() => {
+    document.documentElement.lang = lang
+  }, [lang])
+
   // GDrive states
   const [lastLoadedBuffer, setLastLoadedBuffer] = useState<ArrayBuffer | null>(null)
   const [gdriveStatus, setGdriveStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle')
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
-  const [activeViewPreset, setActiveViewPreset] = useState<'top' | 'front' | 'side' | 'iso' | null>(null)
+  const [helpDialogOpen, setHelpDialogOpen] = useState(false)
+  const [activeViewPreset, setActiveViewPreset] = useState<ViewPreset | null>(null)
 
   useEffect(() => {
     const savedLang = localStorage.getItem('cv-language');
     if (savedLang) return; 
 
-    const browserLang = navigator.language.split('-')[0] as Language;
-    const supported: Language[] = ['sk', 'en', 'fr', 'de'];
-    
-    if (supported.includes(browserLang) && browserLang !== lang) {
-      console.log('Browser language detection:', browserLang);
-      setLang(browserLang);
+    const detected = getBrowserLanguage();
+    if (detected !== lang) {
+      setLang(detected);
     }
   }, []);
 
   const t = useCallback((key: string) => getTranslation(lang, key), [lang])
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+
   const [isModelMoving, setIsModelMoving] = useState(false)
-  const [sidebarTab, setSidebarTab] = useState<'cave' | 'terrain' | 'analysis'>('cave')
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {})
+    } else {
+      document.exitFullscreen().catch(() => {})
+    }
+  }, [])
   const [cameraData, setCameraData] = useState<ViewerCameraSnapshot | null>(null)
   const [processingInfo, setProcessingInfo] = useState<string | null>(null)
   const [appStatus, setAppStatus] = useState<{ msg: string; type: 'info' | 'error' | 'success' | 'progress'; progress?: number } | null>(null)
   const [downloadableTexture, setDownloadableTexture] = useState<{ dataUrl: string, bbox: string } | null>(null)
   const [textureDownloadInfo, setTextureDownloadInfo] = useState<TextureDownloadInspector | null>(null)
+  const [isDmrDownloading, setIsDmrDownloading] = useState(false)
+  const [lastDownloadedDmr, setLastDownloadedDmr] = useState<{
+    tifBuffer: ArrayBuffer;
+    tfwText: string;
+    filename: string;
+    minZ: number;
+    maxZ: number;
+    width: number;
+    height: number;
+    heightSystem?: 'bpv' | 'etrs89';
+    quasigeoidUndulation?: number;
+  } | null>(null)
   const [currentTheme, setCurrentTheme] = useState<string>('precision')
   
   // Speleological & LiDAR analysis states
@@ -1025,7 +1093,7 @@ export default function App() {
   const [lidarKeepSelectionCount, setLidarKeepSelectionCount] = useState(0)
   const [lidarEditBusy, setLidarEditBusy] = useState(false)
   const [lidarEditRemovedCount, setLidarEditRemovedCount] = useState(0)
-  const [selectedSegmentProfile, setSelectedSegmentProfile] = useState<any | null>(null)
+  const [selectedSegmentProfile, setSelectedSegmentProfile] = useState<ReturnType<typeof calculateVolumeAndProfile> | null>(null)
 
   const lidarWorkerRef = useRef<Worker | null>(null)
   const lidarMapWorkerRef = useRef<Worker | null>(null)
@@ -1079,7 +1147,15 @@ export default function App() {
   }, [cameraData])
   const [opts, setOpts] = useState<ViewerOptions>({
     engine:              'v1',
+    enableScrapsBatching: true,
+    enableSplayWalls:    false,
+    splayVoxelSize:      0.22,
+    splaySmoothK:        0.06,
+    splayCapsuleRadius:  0.10,
+    splayAltitude:       true,
+    enableEDL:           false,
     cameraProjection:    'perspective',
+    altitudeMode:        'absolute',
     showSplay:           false,
     showStations:        true,
     showStationNames:    false,
@@ -1091,11 +1167,11 @@ export default function App() {
     colorGrid:           '#222222',
     colorBoundingBox:    '#990000',
     showBoundingBox:     false,
-    colorBackground:     '#020617',
-    colorBackground2:    '#1e40af',
+    colorBackground:     '#103258', // Modrý technický gradient (hore)
+    colorBackground2:    '#1d5b9b', // Svetlejšia modrá (dole)
     // Cave scraps
     showScraps:          true,
-    scrapsOpacity:       0.75,
+    scrapsOpacity:       1.0,
     scrapsSolid:         true,
     scrapsWireframe:     false,
     scrapsAltitude:      false,
@@ -1161,7 +1237,7 @@ export default function App() {
     surfaceOffset:       { x: 0, y: 0, z: 0 },
     colorSplay:          '#78909c',
     colorTraverse:       '#4fc3f7',
-    colorScraps:         '#94a3b8',
+    colorScraps:         '#cbd5e1',
     colorScrapsWire:     '#6a9fd8',
     colorStations:       '#fbbf24',
     colorStationNames:   '#fbbf24',
@@ -1230,6 +1306,11 @@ export default function App() {
     });
     setTimeout(() => setAppStatus(null), 1800);
   }, [lang]);
+
+  const splayCount = useMemo(() => {
+    if (!cave || !cave.segments) return 0;
+    return cave.segments.filter((s: any) => s.type === 'splay').length;
+  }, [cave]);
 
   const runLiDARAnalysis = useCallback(() => {
     if (!cave?.points || cave.pointCount === 0) return;
@@ -1444,6 +1525,22 @@ export default function App() {
           if (next === 'perspective') setActiveViewPreset(null)
           return { ...p, cameraProjection: next }
         })
+      } else if (e.key === 'c' || e.key === 'C') {
+        setOpts(p => {
+          if (p.engine === 'v2' && isPlyLidar) {
+            const modes: Array<ViewerOptions['pointCloudColorMode']> = ['original', 'elevation', 'natural']
+            const curIdx = modes.indexOf(p.pointCloudColorMode || 'original')
+            const nextMode = modes[(curIdx + 1) % modes.length]
+            return { ...p, pointCloudColorMode: nextMode }
+          } else {
+            return { ...p, scrapsAltitude: !p.scrapsAltitude }
+          }
+        })
+      } else if (e.key === 'h' || e.key === 'H') {
+        setOpts(p => ({
+          ...p,
+          altitudeMode: p.altitudeMode === 'relative' ? 'absolute' : 'relative'
+        }))
       } else if (e.key === '1') {
         setOpts(p => ({ ...p, cameraProjection: 'orthographic' }))
         setActiveViewPreset('top')
@@ -1463,8 +1560,8 @@ export default function App() {
     }
 
     const handleSetViewEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<{ view: 'top' | 'front' | 'side' | 'iso' }>
-      if (customEvent.detail?.view) {
+      const customEvent = e as CustomEvent<{ view: ViewPreset | 'fit' }>
+      if (customEvent.detail?.view && customEvent.detail.view !== 'fit') {
         setActiveViewPreset(customEvent.detail.view)
       }
     }
@@ -1484,7 +1581,8 @@ export default function App() {
 
   const getActiveViewerCanvas = useCallback((): HTMLCanvasElement | null => {
     const id = opts.engine === 'v2' ? 'nextgen-cave-canvas' : 'main-cave-canvas';
-    const canvasById = document.getElementById(id) as HTMLCanvasElement | null;
+    // R3F puts the id on its wrapper div, not on the <canvas> itself.
+    const canvasById = document.querySelector<HTMLCanvasElement>(`#${id} canvas`);
     if (canvasById) return canvasById;
     const canvases = Array.from(document.querySelectorAll('canvas')) as HTMLCanvasElement[];
     return canvases.find(canvas => {
@@ -1492,6 +1590,23 @@ export default function App() {
       return rect.width > 0 && rect.height > 0 && !String(canvas.className || '').includes('bg-canvas');
     }) || null;
   }, [opts.engine]);
+
+  const handleExportScreenshot = useCallback(() => {
+    const canvas = getActiveViewerCanvas();
+    if (!canvas) return;
+    try {
+      const dataUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      const safeName = 'cave_view';
+      a.download = `${safeName}_${new Date().toISOString().slice(0, 10)}.png`;
+      a.href = dataUrl;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Screenshot export failed:', err);
+    }
+  }, [getActiveViewerCanvas]);
 
   const getLidarPointerPoint = useCallback((event: React.PointerEvent<HTMLElement>): LidarScreenPoint | null => {
     const canvas = getActiveViewerCanvas();
@@ -1706,7 +1821,7 @@ export default function App() {
     applyLidarEditStroke(stroke, lidarEditMode);
   }, [applyLidarEditStroke, lidarEditMode]);
 
-  // ─── DEFINÍCIA ŠABLÓN ────────────────────────────────────────────────────────
+  // ─── DEFINÍCIA ŠABLÓN (STITCH CAD & FIELDWORK) ───────────────────────────────
   const THEMES = {
     classic: {
       colorBackground:   '#050505',
@@ -1719,44 +1834,44 @@ export default function App() {
       showEntrances: true,
       showEntranceLabels: true,
       colorGrid:         '#224422',
-      colorScraps:       '#94a3b8',
+      colorScraps:       '#cbd5e1',
       colorScrapsWire:   '#6a9fd8',
       colorTerrainWire:  '#6ab04c',
       colorBoundingBox:  '#990000',
       surfaceColor:      '#e2e8f0',
     },
     precision: {
-      colorBackground:   '#020617', // Deep blue/black top
-      colorBackground2:  '#1e40af', // Vibrant blue bottom
+      colorBackground:   '#103258', // Modrý technický gradient (hore)
+      colorBackground2:  '#1d5b9b', // Svetlejšia modrá (dole)
       colorTraverse:     '#ffffff',
-      colorSplay:        '#a5f3fc',
+      colorSplay:        '#00d2ff', // Electric Cyan
       colorStations:     '#fbbf24',
-      colorStationNames: '#fbbf24',
-      colorStationAlt:   '#a5f3fc',
+      colorStationNames: '#f8fafc',
+      colorStationAlt:   '#38bdf8',
       showEntrances: true,
       showEntranceLabels: true,
-      colorGrid:         '#161e2b',
-      colorScraps:       '#94a3b8',
-      colorScrapsWire:   '#a5f3fc',
-      colorTerrainWire:  '#1e293b',
-      colorBoundingBox:  '#990000',
+      colorGrid:         '#1e293b',
+      colorScraps:       '#cbd5e1',
+      colorScrapsWire:   '#00d2ff',
+      colorTerrainWire:  '#10b981', // Subterranean Emerald
+      colorBoundingBox:  '#ef4444',
       surfaceColor:      '#dee2f2',
     },
     light: {
-      colorBackground:   '#f8fafc',
-      colorBackground2:  undefined,
-      colorTraverse:     '#2a5585',
-      colorSplay:        '#64748b',
-      colorStations:     '#fbbf24',
-      colorStationNames: '#1e293b',
-      colorStationAlt:   '#0891b2',
+      colorBackground:   '#f7f3eb', // Jemná svetlá piesková (hore)
+      colorBackground2:  '#d5c4ad', // Tmavšia piesková (dole)
+      colorTraverse:     '#0f2b48', // Centerline Survey Vectors (Dark Navy)
+      colorSplay:        '#0284c7', // Volumetric rays
+      colorStations:     '#ea580c',
+      colorStationNames: '#1c1917',
+      colorStationAlt:   '#0284c7',
       showEntrances: true,
       showEntranceLabels: true,
-      colorGrid:         '#cbd5e1',
-      colorScraps:       '#94a3b8',
-      colorScrapsWire:   '#475569',
-      colorTerrainWire:  '#166534',
-      colorBoundingBox:  '#990000',
+      colorGrid:         '#c2b3a0', // Teplá piesková mriežka
+      colorScraps:       '#a89988',
+      colorScrapsWire:   '#0284c7',
+      colorTerrainWire:  '#059669',
+      colorBoundingBox:  '#dc2626',
       surfaceColor:      '#ffffff',
     }
   }
@@ -1884,7 +1999,7 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const lastClickRef = useRef<{time: number, idx: number}>({time: 0, idx: -1})
 
-  const handleStationClick = useCallback((idx: number, screenX: number, screenY: number, ctrlKey: boolean, point?: THREE.Vector3) => {
+  const handleStationClick = useCallback((idx: number, screenX: number, screenY: number, ctrlKey: boolean, point?: Vec3) => {
     if (!cave) return
     const now = Date.now()
     if (idx >= 0 && now - lastClickRef.current.time < 300 && lastClickRef.current.idx === idx) {
@@ -1892,64 +2007,89 @@ export default function App() {
     }
     lastClickRef.current = { time: now, idx }
 
-    let sl: StationLabel | null = null;
-    let ox: number, oy: number, alt: number;
-    let name: string = '';
-
-    if (point) {
-      // Direct point from LiDAR (v2)
-      ox = point.x + (cave.centerOffset?.x || 0);
-      oy = -point.z + (cave.centerOffset?.y || 0); 
-      alt = point.y + (cave.centerOffset?.z || 0);
-      name = `P (${point.x.toFixed(1)}, ${point.y.toFixed(1)}, ${point.z.toFixed(1)})`;
-    } else {
-      sl = cave.stationLabels[idx];
-      if (!sl) return;
-      ox = sl.pos.x + (cave.centerOffset?.x || 0);
-      oy = sl.pos.y + (cave.centerOffset?.y || 0);
-      alt = sl.altitude;
-      name = sl.name;
-    }
+    const resolved = resolveStationPosition(cave, idx, point)
+    if (!resolved) return
+    const sl = cave.stationLabels[idx]
+    const ox = resolved.position.x + cave.centerOffset.x
+    const oy = resolved.position.y + cave.centerOffset.y
+    const alt = resolved.position.z + cave.centerOffset.z
+    const name = resolved.name
 
     // Filter interaction
-    const isPolygon = !point && sl && sl.name !== ''
-    if (!isMeasuringMode && !ctrlKey && !isPolygon) return
+    const isPolygon = resolved.station
+    if (!isMeasuringMode && !ctrlKey && !isPolygon && !point) return
 
     let gps: { lat: number; lon: number; zone?: number; epsg?: string } | null = null;
-    gps = tryUtmToWgs84(ox, oy);
+    gps = sl?.gps ?? tryUtmToWgs84(ox, oy);
     if (!gps) {
       gps = tryJtskToWgs84(ox, oy);
     }
 
-    let distToSurf: number | null = null
-    if (cave.surfaces?.length > 0) {
-      const surf = cave.surfaces[0]
-      const zSurf = sampleDtmAt(surf, ox, oy)
-      if (zSurf !== null) distToSurf = zSurf - alt
-    }
+    const depthInfo = calculateStationDepths(
+      cave,
+      { x: ox, y: oy, z: alt },
+      { caveCalibrationOffset: opts.caveCalibrationOffset, surfaceOffset: opts.surfaceOffset }
+    )
 
-    if (sl && sl.name) postToHost({ type: 'lochviewer:station', name: sl.name, x: ox, y: oy, z: alt })
+    const closestPosCentered = depthInfo.closestSurfWorld ? {
+      x: depthInfo.closestSurfWorld.x - cave.centerOffset.x,
+      y: depthInfo.closestSurfWorld.y - cave.centerOffset.y,
+      z: depthInfo.closestSurfWorld.z - cave.centerOffset.z,
+    } : null
+
+    const closestGps = depthInfo.closestSurfWorld ? (
+      worldToWgs84(depthInfo.closestSurfWorld.x, depthInfo.closestSurfWorld.y, { x: ox, y: oy, gps: gps || undefined })
+    ) : null
+
+    if (resolved.station && sl?.name) postToHost({ type: 'lochviewer:station', name: sl.name, x: ox, y: oy, z: alt })
 
     const newSt: SelStation = { 
-      idx, name, origX: ox, origY: oy, altitude: alt, gps, distToSurf, screenX, screenY,
-      pos: point ? { x: point.x, y: -point.z, z: point.y } : sl!.pos,
+      idx, name, origX: ox, origY: oy, altitude: alt, gps,
+      distToSurf: depthInfo.distToSurf,
+      surfaceZ: depthInfo.surfaceZ,
+      closestSurfDist: depthInfo.closestSurfDist,
+      closestSurfPos: closestPosCentered,
+      closestSurfWorld: depthInfo.closestSurfWorld,
+      closestSurfAltitude: depthInfo.closestSurfAltitude,
+      closestHorizontalDist: depthInfo.closestHorizontalDist,
+      closestSurfGps: closestGps,
+      denivEntrance: depthInfo.denivEntrance,
+      refStationName: depthInfo.refStationName,
+      refStationType: depthInfo.refStationType,
+      entranceAlt: depthInfo.entranceAlt,
+      screenX, screenY,
+      pos: resolved.position,
       centerX: cave.centerOffset.x, centerY: cave.centerOffset.y, centerZ: cave.centerOffset.z
     }
     
     setSelectedStations(prev => {
-      if (!isMeasuringMode && !ctrlKey) return [newSt]
-      if (prev.length === 1 && (prev[0].origX !== newSt.origX || prev[0].origY !== newSt.origY || prev[0].altitude !== newSt.altitude)) {
-        return [prev[0], newSt]
+      if (measurementMode === 'off' && !ctrlKey) return [newSt]
+      if (measurementMode === 'distance') {
+        if (prev.length >= 2) return [prev[0], newSt]
+        return [...prev, newSt]
       }
-      if (prev.length === 2 && 
-          (prev[0].origX !== newSt.origX || prev[0].origY !== newSt.origY || prev[0].altitude !== newSt.altitude) &&
-          (prev[1].origX !== newSt.origX || prev[1].origY !== newSt.origY || prev[1].altitude !== newSt.altitude)) {
-        return [prev[0], prev[1], newSt]
+      if (measurementMode === 'polygon') {
+        const isDuplicate = prev.some(p => Math.abs(p.origX - newSt.origX) < 0.001 && Math.abs(p.origY - newSt.origY) < 0.001 && Math.abs(p.altitude - newSt.altitude) < 0.001)
+        if (isDuplicate) return prev
+        return [...prev, newSt]
       }
       return [newSt]
     })
-    setShowStationCard(true)
-  }, [cave, isMeasuringMode]);
+    if (measurementMode === 'off') {
+      setShowStationCard(true)
+    }
+  }, [cave, isMeasuringMode, measurementMode, opts.caveCalibrationOffset, opts.surfaceOffset]);
+
+  useEffect(() => {
+    if (!profilePicking) return
+    if (measurementMode !== 'distance') { setProfilePicking(false); return }
+    if (selectedStations.length !== 2) return
+    setActiveProfilePoints([...selectedStations])
+    setOpts(p => ({ ...p, showProfileClipping: true, profileClipOffset: 0 }))
+    setProfilePicking(false)
+    setMeasurementMode('off')
+    setSelectedStations([])
+  }, [profilePicking, measurementMode, selectedStations])
 
   useEffect(() => {
     if (!cave || selectedStations.length !== 2) {
@@ -1999,37 +2139,59 @@ export default function App() {
       gps = tryJtskToWgs84(origX, origY);
     }
 
+    const depthInfo = calculateStationDepths(
+      cave,
+      { x: origX, y: origY, z: altitude },
+      { caveCalibrationOffset: opts.caveCalibrationOffset, surfaceOffset: opts.surfaceOffset }
+    )
+
     const sid = `Z${surfNextId.current++}`
+    const surfPos = {
+      x: origX - cave.centerOffset.x - opts.caveCalibrationOffset.x,
+      y: origY - cave.centerOffset.y - opts.caveCalibrationOffset.y,
+      z: altitude - cave.centerOffset.z - opts.caveCalibrationOffset.z
+    }
     const newSt: SelStation = {
       idx: -1,
       name: sid,
       origX, origY, altitude,
-      gps, distToSurf: 0,
+      gps,
+      distToSurf: 0,
+      surfaceZ: altitude,
+      closestSurfDist: 0,
+      closestSurfPos: surfPos,
+      closestSurfWorld: { x: origX, y: origY, z: altitude },
+      closestSurfAltitude: altitude,
+      closestHorizontalDist: 0,
+      closestSurfGps: gps,
+      denivEntrance: depthInfo.denivEntrance,
+      refStationName: depthInfo.refStationName,
+      refStationType: depthInfo.refStationType,
+      entranceAlt: depthInfo.entranceAlt,
       screenX, screenY,
-      pos: {
-        x: origX - (cave.centerOffset?.x || 0),
-        y: origY - (cave.centerOffset?.y || 0),
-        z: altitude - (cave.centerOffset?.z || 0)
-      },
+      pos: surfPos,
       centerX: cave.centerOffset?.x || 0, centerY: cave.centerOffset?.y || 0, centerZ: cave.centerOffset?.z || 0
     }
     
     setSurfPointCache(prev => ({ ...prev, [sid]: newSt }))
 
     setSelectedStations(prev => {
-      if (!isMeasuringMode && !ctrlKey) return [newSt]
-      if (prev.length === 1 && (prev[0].origX !== newSt.origX || prev[0].origY !== newSt.origY || prev[0].altitude !== newSt.altitude)) {
-        return [prev[0], newSt]
+      if (measurementMode === 'off' && !ctrlKey) return [newSt]
+      if (measurementMode === 'distance') {
+        if (prev.length >= 2) return [prev[0], newSt]
+        return [...prev, newSt]
       }
-      if (prev.length === 2 && 
-          (prev[0].origX !== newSt.origX || prev[0].origY !== newSt.origY || prev[0].altitude !== newSt.altitude) &&
-          (prev[1].origX !== newSt.origX || prev[1].origY !== newSt.origY || prev[1].altitude !== newSt.altitude)) {
-        return [prev[0], prev[1], newSt]
+      if (measurementMode === 'polygon') {
+        const isDuplicate = prev.some(p => Math.abs(p.origX - newSt.origX) < 0.001 && Math.abs(p.origY - newSt.origY) < 0.001 && Math.abs(p.altitude - newSt.altitude) < 0.001)
+        if (isDuplicate) return prev
+        return [...prev, newSt]
       }
       return [newSt]
     })
-    setShowStationCard(true)
-  }, [cave, isMeasuringMode])
+    if (measurementMode === 'off') {
+      setShowStationCard(true)
+    }
+  }, [cave, isMeasuringMode, measurementMode, opts.caveCalibrationOffset, opts.surfaceOffset])
 
   useEffect(() => {
     if (selectedStations.length > 0) {
@@ -2069,55 +2231,81 @@ export default function App() {
     const newOffsetZ = alt - refPos.z
     const newCenterOffset = { x: newOffsetX, y: newOffsetY, z: newOffsetZ }
 
-    setCave((prev: ParsedCave | null) => {
-      if (!prev) return null
-      
-      // 3. Prepočítaj VŠETKY stationLabels (georeferencujeme celý model)
-      const newStationLabels = prev.stationLabels.map(sl => {
-        const ox = sl.pos.x + newOffsetX
-        const oy = sl.pos.y + newOffsetY
-        const newAlt = sl.pos.z + newOffsetZ
-        const newGps = tryJtskToWgs84(ox, oy)
-        return {
-          ...sl,
-          gps: newGps || null,
-          altitude: newAlt
-        }
-      })
-
-      // 4. Aktualizuj povrchy (surfaces)
-      const newSurfaces = prev.surfaces.map(s => ({
-        ...s,
-        centerOffset: newCenterOffset
-      }))
-
-      return { 
-        ...prev, 
-        centerOffset: newCenterOffset, 
-        stationLabels: newStationLabels,
-        surfaces: newSurfaces
+    // 3. Prepočítaj VŠETKY stationLabels (georeferencujeme celý model)
+    const newStationLabels = cave.stationLabels.map(sl => {
+      const ox = sl.pos.x + newOffsetX
+      const oy = sl.pos.y + newOffsetY
+      const newAlt = sl.pos.z + newOffsetZ
+      const newGps = tryJtskToWgs84(ox, oy)
+      return {
+        ...sl,
+        gps: newGps || null,
+        altitude: newAlt
       }
     })
+
+    // 4. Aktualizuj povrchy (surfaces)
+    const newSurfaces = cave.surfaces.map(s => ({
+      ...s,
+      centerOffset: newCenterOffset
+    }))
+
+    const updatedCave: ParsedCave = { 
+      ...cave, 
+      centerOffset: newCenterOffset, 
+      stationLabels: newStationLabels,
+      surfaces: newSurfaces
+    }
+
+    setCave(updatedCave)
     
     // 5. Aktualizácia vybraných staníc pre okamžitú odozvu v UI
     setSelectedStations(prev => prev.map(s => {
       const ox = s.pos.x + newOffsetX
       const oy = s.pos.y + newOffsetY
       const altNew = s.pos.z + newOffsetZ
-      const gpsNew = tryJtskToWgs84(ox, oy)
+      const gpsNew = tryJtskToWgs84(ox, oy) || tryUtmToWgs84(ox, oy)
       
+      const depthInfo = calculateStationDepths(
+        updatedCave,
+        { x: ox, y: oy, z: altNew },
+        { caveCalibrationOffset: opts.caveCalibrationOffset, surfaceOffset: opts.surfaceOffset }
+      )
+
+      const closestPosCentered = depthInfo.closestSurfWorld ? {
+        x: depthInfo.closestSurfWorld.x - newOffsetX,
+        y: depthInfo.closestSurfWorld.y - newOffsetY,
+        z: depthInfo.closestSurfWorld.z - newOffsetZ,
+      } : null
+
+      const closestGps = depthInfo.closestSurfWorld ? (
+        worldToWgs84(depthInfo.closestSurfWorld.x, depthInfo.closestSurfWorld.y, { x: ox, y: oy, gps: gpsNew || undefined })
+      ) : null
+
       return { 
         ...s, 
         origX: ox, 
         origY: oy, 
         altitude: altNew, 
         gps: gpsNew || null,
+        distToSurf: depthInfo.distToSurf,
+        surfaceZ: depthInfo.surfaceZ,
+        closestSurfDist: depthInfo.closestSurfDist,
+        closestSurfPos: closestPosCentered,
+        closestSurfWorld: depthInfo.closestSurfWorld,
+        closestSurfAltitude: depthInfo.closestSurfAltitude,
+        closestHorizontalDist: depthInfo.closestHorizontalDist,
+        closestSurfGps: closestGps,
+        denivEntrance: depthInfo.denivEntrance,
+        refStationName: depthInfo.refStationName,
+        refStationType: depthInfo.refStationType,
+        entranceAlt: depthInfo.entranceAlt,
         centerX: newOffsetX,
         centerY: newOffsetY,
         centerZ: newOffsetZ
       }
     }))
-  }, [cave, selectedStations])
+  }, [cave, selectedStations, opts.caveCalibrationOffset, opts.surfaceOffset])
 
   const stationMeta = new Map<number, { name: string; z: number; isEntrance?: boolean }>()
   const findStationByName = (name: string): SelStation | null => {
@@ -2134,13 +2322,36 @@ export default function App() {
 
     const gps = tryUtmToWgs84(origX, origY) || tryJtskToWgs84(origX, origY) || null
 
-    let distToSurf: number | null = null
-    if (cave.surfaces?.length > 0) {
-      const zSurf = sampleDtmAt(cave.surfaces[0], origX, origY)
-      if (zSurf !== null) distToSurf = zSurf - altitude
-    }
+    const depthInfo = calculateStationDepths(
+      cave,
+      { x: origX, y: origY, z: altitude },
+      { caveCalibrationOffset: opts.caveCalibrationOffset, surfaceOffset: opts.surfaceOffset }
+    )
+
+    const closestPosCentered = depthInfo.closestSurfWorld ? {
+      x: depthInfo.closestSurfWorld.x - (cave.centerOffset?.x || 0),
+      y: depthInfo.closestSurfWorld.y - (cave.centerOffset?.y || 0),
+      z: depthInfo.closestSurfWorld.z - (cave.centerOffset?.z || 0),
+    } : null
+
+    const closestGps = depthInfo.closestSurfWorld ? (
+      worldToWgs84(depthInfo.closestSurfWorld.x, depthInfo.closestSurfWorld.y, { x: origX, y: origY, gps: gps || undefined })
+    ) : null
+
     return { 
-      idx, name: sl.name, origX, origY, altitude, gps, distToSurf, 
+      idx, name: sl.name, origX, origY, altitude, gps,
+      distToSurf: depthInfo.distToSurf,
+      surfaceZ: depthInfo.surfaceZ,
+      closestSurfDist: depthInfo.closestSurfDist,
+      closestSurfPos: closestPosCentered,
+      closestSurfWorld: depthInfo.closestSurfWorld,
+      closestSurfAltitude: depthInfo.closestSurfAltitude,
+      closestHorizontalDist: depthInfo.closestHorizontalDist,
+      closestSurfGps: closestGps,
+      denivEntrance: depthInfo.denivEntrance,
+      refStationName: depthInfo.refStationName,
+      refStationType: depthInfo.refStationType,
+      entranceAlt: depthInfo.entranceAlt,
       screenX: window.innerWidth/2 - 140, screenY: window.innerHeight/2 - 150,
       pos: sl.pos,
       centerX: cave.centerOffset?.x || 0, centerY: cave.centerOffset?.y || 0, centerZ: cave.centerOffset?.z || 0
@@ -2161,6 +2372,7 @@ export default function App() {
 
   // particle background
   useEffect(() => {
+    if (appState !== 'welcome' && appState !== 'error') return
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
@@ -2190,7 +2402,7 @@ export default function App() {
     }
     draw()
     return () => { cancelAnimationFrame(id); window.removeEventListener('resize', resize) }
-  }, [])
+  }, [appState])
 
   const getExt = (name: string) => '.' + name.split('.').pop()!.toLowerCase()
 
@@ -2224,7 +2436,7 @@ export default function App() {
     }
 
     revokeCaveObjectUrls(lidarOriginalCaveRef.current)
-    const isPLY = parsed.pointCount > 0
+    const isPLY = isPlyLidarData(loadedFile?.ext, parsed)
     lidarUndoCaveRef.current = null
     lidarKeepMaskRef.current = null
     setLidarKeepSelectionCount(0)
@@ -2247,6 +2459,7 @@ export default function App() {
       clearSurfaceTextureUrl(prev.surfaceTextureUrl)
       return { 
         ...prev, 
+        engine: isPLY ? prev.engine : 'v1',
         clippingHeight: parsed.bounds.max.z + (parsed.centerOffset?.z || 0),
         // Pre PLY zapneme steny a vypneme stanice/merania
         showScraps: isPLY ? true : prev.showScraps,
@@ -2280,6 +2493,8 @@ export default function App() {
     }
 
     // PLY is a point-cloud workflow; STL is a mesh/scrap workflow and belongs to v1 wall rendering.
+    setSelectedStations([])
+    setMeasurementMode('off')
     if (ext === '.ply' || ext === '.stl') {
       const isStl = ext === '.stl';
       setOpts(prev => ({ 
@@ -2319,7 +2534,7 @@ export default function App() {
       setLoadingStatus('loading_file')
 
       const buf = await file.arrayBuffer()
-      setLastLoadedBuffer(buf.slice(0))
+      setLastLoadedBuffer(buf)
       setProgress(50)
 
       // We use a clone for the worker because it will be transferred
@@ -2380,7 +2595,7 @@ export default function App() {
       setProgress(40)
       const contentLength = Number(resp.headers.get('content-length') || 0)
       const buf = await resp.arrayBuffer()
-      setLastLoadedBuffer(buf.slice(0)) 
+      setLastLoadedBuffer(buf) 
       setProgress(60)
       setLoadedFile({ name: label, size: buf.byteLength, ext })
 
@@ -2603,6 +2818,69 @@ export default function App() {
     }
   };
 
+  const handleDownloadDmr5 = useCallback(async (lat: number, lon: number, extentMeters = 500, heightSystem: 'bpv' | 'etrs89' = 'bpv') => {
+    try {
+      setIsDmrDownloading(true);
+      const bounds = calculateDmr5Bounds(lat, lon, extentMeters);
+      setAppStatus({ msg: `Sťahujem výškový model DMR 5.0 (${bounds.width}×${bounds.height} m)...`, type: 'progress' });
+
+      const tifBuffer = await fetchDmr5GeoTiff(bounds.minE, bounds.maxE, bounds.minN, bounds.maxN);
+
+      setAppStatus({ msg: 'Spracovávam DMR 5.0 GeoTIFF a generujem 3D povrch...', type: 'progress' });
+      const { surface, tfwText, quasigeoidUndulation } = await createDmr5Surface(tifBuffer, bounds.minE, bounds.maxN, cave, { heightSystem });
+
+      setCave((prev: ParsedCave | null) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          surfaces: [surface],
+          hasSurface: true,
+        };
+      });
+
+      setOpts(prev => ({
+        ...prev,
+        showSurfaceMesh: true,
+        showSurfaceNetwork: false,
+      }));
+
+      const sysSuffix = heightSystem === 'bpv' ? 'bpv' : 'etrs89';
+      const filename = `dmr5_${lat.toFixed(4)}_${lon.toFixed(4)}_${extentMeters}m_${sysSuffix}`;
+      setLastDownloadedDmr({
+        tifBuffer,
+        tfwText,
+        filename,
+        minZ: surface.bounds?.minZ || 0,
+        maxZ: surface.bounds?.maxZ || 0,
+        width: bounds.width,
+        height: bounds.height,
+        heightSystem,
+        quasigeoidUndulation,
+      });
+
+      const sysText = heightSystem === 'bpv'
+        ? `Bpv m n.m. (-${quasigeoidUndulation.toFixed(1)} m kvázigeoid)`
+        : 'ETRS89 elipsoidické';
+      setAppStatus({
+        msg: `DMR 5.0 úspešne načítaný (${bounds.width}×${bounds.height} m, ${(surface.bounds?.minZ || 0).toFixed(1)} – ${(surface.bounds?.maxZ || 0).toFixed(1)} m n.m., ${sysText})`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      console.error('[DMR5] Download error:', err);
+      setAppStatus({
+        msg: `Chyba pri sťahovaní DMR 5.0: ${err?.message || String(err)}`,
+        type: 'error',
+      });
+    } finally {
+      setIsDmrDownloading(false);
+    }
+  }, [cave]);
+
+  const handleSaveDmrFiles = useCallback(() => {
+    if (!lastDownloadedDmr) return;
+    downloadDmrFiles(lastDownloadedDmr.tifBuffer, lastDownloadedDmr.tfwText, lastDownloadedDmr.filename);
+  }, [lastDownloadedDmr]);
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setIsDragging(false)
     const files = Array.from(e.dataTransfer.files)
@@ -2658,17 +2936,32 @@ export default function App() {
   useEffect(() => {
     if (appState !== 'viewer') return
     const p = new URLSearchParams(window.location.search)
-    if (!p.has('terrain') && !p.has('theme')) return // no state encoded, skip
+    if (!p.has('terrain') && !p.has('theme') && !p.has('sdf') && !p.has('scraps')) return // no state encoded, skip
 
     const terrain = p.get('terrain')
+    const labelMode = p.get('labels')
+    const stationLabelMode = labelMode === 'off' || labelMode === 'short' || labelMode === 'full' || labelMode === 'altitude' || labelMode === 'gps' ? labelMode : undefined
     setOpts(prev => ({
       ...prev,
+      // Engine & Projection
+      engine:              (p.get('eng') === 'v2' && loadedFile?.ext?.toLowerCase() === '.ply') ? 'v2' : (loadedFile?.ext?.toLowerCase() === '.ply' ? prev.engine : 'v1'),
+      cameraProjection:    p.get('proj') === 'ortho' ? 'orthographic' : prev.cameraProjection,
+      // Advanced toggles
+      enableScrapsBatching: p.has('batch') ? p.get('batch') !== '0' : prev.enableScrapsBatching,
+      enableEDL:           p.has('edl') ? p.get('edl') !== '0' : prev.enableEDL,
+      // Splay SDF Walls (2D) & parameters
+      enableSplayWalls:    p.get('sdf') === '1',
+      splaySmoothK:        p.has('smin') ? parseFloat(p.get('smin')!) : prev.splaySmoothK,
+      splayCapsuleRadius:  p.has('srad') ? parseFloat(p.get('srad')!) : prev.splayCapsuleRadius,
+      splayVoxelSize:      p.has('svox') ? parseFloat(p.get('svox')!) : prev.splayVoxelSize,
+      splayAltitude:       p.has('salt') ? p.get('salt') === '1' : (prev.splayAltitude ?? true),
       // Theme
       ...(p.get('theme') ? (() => { const th = p.get('theme') as keyof typeof THEMES; return THEMES[th] ?? {} })() : {}),
       // Terrain surface
       showSurfaceMesh:     terrain === 'shaded',
       showSurfaceNetwork:  terrain === 'network',
       showSurfaceTexture:  terrain === 'texture',
+      surfaceTextureSource: (p.get('tsrc') as any) || prev.surfaceTextureSource,
       showSurfaceMeshWire: p.get('wire') === '1',
       surfaceOpacity:      p.has('surfop') ? parseFloat(p.get('surfop')!) : prev.surfaceOpacity,
       surfaceColor:        p.get('surfcol') ? '#' + p.get('surfcol') : prev.surfaceColor,
@@ -2692,6 +2985,7 @@ export default function App() {
       colorScraps:         p.get('cscraps') ? '#' + p.get('cscraps') : prev.colorScraps,
       colorScrapsWire:     p.get('cswire') ? '#' + p.get('cswire') : prev.colorScrapsWire,
       // Survey
+      showCenterline:      p.get('cline') !== '0',
       showTraverse:        p.get('trvrs') !== '0',
       traverseAltitude:    p.get('talt') === '1',
       traverseRadius:      p.has('tradius') ? parseFloat(p.get('tradius')!) : prev.traverseRadius,
@@ -2699,6 +2993,8 @@ export default function App() {
       colorTraverse:       p.get('ctrvrs') ? '#' + p.get('ctrvrs') : prev.colorTraverse,
       colorSplay:          p.get('csplay') ? '#' + p.get('csplay') : prev.colorSplay,
       // Stations
+      showFixedStations:   p.get('fixed') === '1',
+      stationLabelMode,
       showStations:        p.get('stations') !== '0',
       showStationNames:    p.get('snames') === '1',
       showStationAlt:      p.get('salta') === '1',
@@ -2720,22 +3016,37 @@ export default function App() {
       profileClipFlip:     p.get('pflip') === '1',
       profileClipOffset:   p.has('poff') ? parseFloat(p.get('poff')!) : prev.profileClipOffset,
       excludeModelFromClipping: p.get('excl') === '1',
-      // Auto-rotate
+      // Auto-rotation
       autoRotate:          p.get('rot') === '1',
       autoRotateSpeed:     p.has('rotspd') ? parseFloat(p.get('rotspd')!) : prev.autoRotateSpeed,
     }))
-  }, [appState])
+  }, [appState, loadedFile?.ext])
 
   // ── State → URL encoder ──────────────────────────────────────────────────────
   const encodeState = (o: ViewerOptions, modelParam: string): URLSearchParams => {
     const p = new URLSearchParams()
     p.set('model', modelParam)
     p.set('embed', 'true')
+    // Engine & Projection
+    if (o.engine === 'v2' && isPlyLidar) p.set('eng', 'v2')
+    if (o.cameraProjection === 'orthographic') p.set('proj', 'ortho')
+    // Advanced rendering
+    if (o.enableScrapsBatching === false) p.set('batch', '0')
+    if (o.enableEDL === false) p.set('edl', '0')
+    // Splay SDF Walls (2D) & Parameters
+    if (o.enableSplayWalls) {
+      p.set('sdf', '1')
+      if (o.splayAltitude === false) p.set('salt', '0')
+      if (o.splaySmoothK !== undefined && o.splaySmoothK !== 0.06) p.set('smin', String(o.splaySmoothK))
+      if (o.splayCapsuleRadius !== undefined && o.splayCapsuleRadius !== 0.10) p.set('srad', String(o.splayCapsuleRadius))
+      if (o.splayVoxelSize !== undefined && o.splayVoxelSize !== 0.22) p.set('svox', String(o.splayVoxelSize))
+    }
     // Theme
     p.set('theme', currentTheme)
     // Terrain
     const terrain = o.showSurfaceTexture ? 'texture' : o.showSurfaceNetwork ? 'network' : 'shaded'
     p.set('terrain', terrain)
+    if (o.surfaceTextureSource && o.surfaceTextureSource !== 'custom') p.set('tsrc', o.surfaceTextureSource)
     if (o.showSurfaceMeshWire) p.set('wire', '1')
     if (o.surfaceOpacity !== 0.8) p.set('surfop', String(o.surfaceOpacity))
     const defSurfCol = '#e2e8f0'
@@ -2750,7 +3061,7 @@ export default function App() {
     if (o.scrapsAltitude) p.set('salt', '1')
     if (o.showRenderCave) p.set('cave3d', '1')
     if (o.caveTexture !== 'limestone') p.set('ctex', o.caveTexture)
-    if (o.scrapsOpacity !== 0.85) p.set('scrop', String(o.scrapsOpacity))
+    if (o.scrapsOpacity !== 1.0) p.set('scrop', String(o.scrapsOpacity))
     if (o.scrapsRelief !== 0.35) p.set('srelief', String(o.scrapsRelief))
     if (o.scrapsViewMode !== 'all') p.set('sview', o.scrapsViewMode)
     if (o.scrapsHeightThreshold !== 0.1) p.set('sth', String(o.scrapsHeightThreshold))
@@ -2760,6 +3071,7 @@ export default function App() {
     if (o.colorScraps !== '#2a5585') p.set('cscraps', o.colorScraps.replace('#', ''))
     if (o.colorScrapsWire !== '#6a9fd8') p.set('cswire', o.colorScrapsWire.replace('#', ''))
     // Survey
+    if (o.showCenterline === false) p.set('cline', '0')
     if (!o.showTraverse) p.set('trvrs', '0')
     if (o.traverseAltitude) p.set('talt', '1')
     if (o.traverseRadius !== 0.3) p.set('tradius', String(o.traverseRadius))
@@ -2767,6 +3079,8 @@ export default function App() {
     if (o.colorTraverse !== '#ffffff') p.set('ctrvrs', o.colorTraverse.replace('#', ''))
     if (o.colorSplay !== '#78909c') p.set('csplay', o.colorSplay.replace('#', ''))
     // Stations
+    if (o.showFixedStations) p.set('fixed', '1')
+    if (o.stationLabelMode) p.set('labels', o.stationLabelMode)
     if (!o.showStations) p.set('stations', '0')
     if (o.showStationNames) p.set('snames', '1')
     if (o.showStationAlt) p.set('salta', '1')
@@ -2780,7 +3094,7 @@ export default function App() {
     if (o.showBoundingBox) p.set('bbox', '1')
     if (o.colorGrid !== '#224422') p.set('cgrid', o.colorGrid.replace('#', ''))
     // Colors
-    if (o.colorBackground !== '#020617') p.set('bg', o.colorBackground.replace('#', ''))
+    if (o.colorBackground !== '#103258') p.set('bg', o.colorBackground.replace('#', ''))
     // Clipping / Rezy
     if (o.showClipping) p.set('clip', '1')
     if (o.showClipping) p.set('cliph', String(o.clippingHeight))
@@ -2937,11 +3251,11 @@ export default function App() {
   }
 
   const toggleOpt = (key: keyof ViewerOptions) =>
-    setOpts(prev => ({ ...prev, [key]: !prev[key] }))
+    setOpts(prev => ({ ...prev, [key]: !prev[key], ...(['showStationNames', 'showStationAlt'].includes(key) ? { stationLabelMode: undefined } : {}) }))
 
   // Compute stats for Legend
   const legendCave = useMemo(() => {
-    if (!cave || (!opts.scrapsAltitude && !opts.traverseAltitude)) return null
+    if (!cave || (!opts.scrapsAltitude && !opts.traverseAltitude && !(opts.splayAltitude && opts.enableSplayWalls))) return null
     let minZ = Infinity, maxZ = -Infinity
     if (cave.scraps?.length) {
       for (const sc of cave.scraps) {
@@ -2984,15 +3298,148 @@ export default function App() {
   const formatSize = (bytes: number) =>
     bytes > 1024 * 1024 ? (bytes / 1024 / 1024).toFixed(2) + ' MB' : (bytes / 1024).toFixed(1) + ' KB'
 
+  const handleProcessingEnd = useCallback(() => setProcessingInfo(null), [])
+  const handleTextureReady = useCallback((dataUrl: string, bbox: string) => setDownloadableTexture({ dataUrl, bbox }), [])
+  const handleSurfaceOffsetChange = useCallback((offset: Vec3) => setOpts(prev => ({ ...prev, surfaceOffset: offset })), [])
+  const manualConnectionMemo = useMemo(() => {
+    if (selectedStations.length !== 2 || !selectedStations[0] || !selectedStations[1] || !cave) return null
+    return {
+      p1: selectedStations[0].pos,
+      p2: selectedStations[1].pos,
+    }
+  }, [selectedStations, cave])
+
   // ── RENDER ──────────────────────────────────────────────────────────────────
+  const navigationBindings = cave ? {
+    t,
+    lang,
+    isPlyLidar,
+    loadedFile,
+    cave,
+    handleExportScreenshot,
+    isEmbedMode,
+    openShareDialog,
+    opts,
+    toggleOpt,
+    setOpts,
+    isRecording,
+    setIsRecording,
+    setActiveViewPreset,
+    activeViewPreset,
+    setFitTrigger,
+    splayCount,
+    appStatus,
+    setAppStatus,
+    lidarEditMode,
+    setLidarEditMode,
+    lidarEditBusy,
+    lidarBrushSize,
+    setLidarBrushSize,
+    lidarKeepSelectionCount,
+    applyLidarKeepSelection,
+    clearLidarKeepSelection,
+    undoLidarEdit,
+    lidarUndoCaveRef,
+    resetLidarEdits,
+    lidarOriginalCaveRef,
+    lidarEditRemovedCount,
+    contourLevels,
+    trackObjectUrl,
+    clearSurfaceTextureUrl,
+    textureDownloadInfo,
+    handleClearTileCache,
+    textureFileInputRef,
+    shiftTexture,
+    calibFileInputRef,
+    handleCalibFile,
+    handleTextureFile,
+    shiftCave,
+    tiffFileInputRef,
+    handleTiffFile,
+    tfwFileInputRef,
+    activeProfilePoints,
+    profilePicking,
+    startProfilePick,
+    setProfileClipping,
+    measurementMode,
+    cycleMeasurementMode,
+    selectedStations,
+    setSelectedStations,
+    isLiDARAnalyzing,
+    cancelLiDARAnalysis,
+    runLiDARAnalysis,
+    isLidarMapGenerating,
+    cancelLidarPlanMap,
+    generateLidarPlanMap,
+    anomalies,
+    setActiveAnomalyId,
+    activeAnomalyId,
+    selectedSegmentProfile,
+    toggleFullscreen,
+    applyTheme,
+    currentTheme,
+    setLang,
+    setHelpDialogOpen,
+    handleFile,
+    loadFromUrl,
+    handleReset,
+    downloadableTexture,
+    downloadGeneratedTexture,
+    handleDownloadDmr5,
+    isDmrDownloading,
+    lastDownloadedDmr,
+    handleSaveDmrFiles,
+  } satisfies NavigationBindings : null
+
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
+        :root {
+          --cv-bg: #0b0f17;
+          --cv-surface: #0f131c;
+          --cv-surface-low: #181c24;
+          --cv-surface-card: #1c2028;
+          --cv-surface-high: #262a33;
+          --cv-surface-highest: #31353e;
+          --cv-text: #dfe2ee;
+          --cv-text-muted: #94a3b8;
+          --cv-primary: #00d2ff;
+          --cv-primary-dim: #a5e7ff;
+          --cv-secondary: #10b981;
+          --cv-border: rgba(255, 255, 255, 0.08);
+          --cv-border-strong: #334155;
+          --cv-font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+          --cv-font-mono: 'JetBrains Mono', monospace;
+        }
+
+        .theme-light {
+          --cv-bg: #f7f3eb;
+          --cv-surface: #ffffff;
+          --cv-surface-low: #f2ece2;
+          --cv-surface-card: #ffffff;
+          --cv-surface-high: #e8ded0;
+          --cv-surface-highest: #d9cdbd;
+          --cv-text: #1c1917;
+          --cv-text-muted: #78716c;
+          --cv-primary: #0284c7;
+          --cv-primary-dim: #0369a1;
+          --cv-secondary: #059669;
+          --cv-border: rgba(60, 45, 30, 0.12);
+          --cv-border-strong: #d5c4ad;
+        }
+
         *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:'Inter',system-ui,sans-serif;background:#050810;color:#e2e8f0;overflow:hidden}
+        body{font-family:var(--cv-font-sans);background:var(--cv-bg);color:var(--cv-text);overflow:hidden}
         .bg-canvas{position:fixed;inset:0;pointer-events:none;z-index:0}
+
+        .cad-card{background:var(--cv-surface-card);border:1px solid var(--cv-border);border-radius:8px;padding:.75rem;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+        .theme-light .cad-card{background:#fff;box-shadow:0 2px 8px rgba(15,23,42,.06)}
+        .cad-metric-box{background:var(--cv-surface-low);border:1px solid var(--cv-border);border-radius:6px;padding:.35rem .5rem;text-align:center}
+        .theme-light .cad-metric-box{background:#f8fafc}
+        .cad-metric-label{display:block;font-size:9px;font-family:var(--cv-font-mono);text-transform:uppercase;letter-spacing:.05em;color:var(--cv-text-muted)}
+        .cad-metric-val{font-size:12px;font-weight:700;font-family:var(--cv-font-mono);font-variant-numeric:tabular-nums;color:var(--cv-primary)}
 
         /* WELCOME */
         .app{position:relative;z-index:1;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
@@ -3005,11 +3452,11 @@ export default function App() {
         .changelog-title { font-size: 12px; font-weight: 800; color: #f8fafc; text-transform: uppercase; letter-spacing: .2em; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 10px; }
         .changelog-ver { font-size: 13px; font-weight: 700; color: #6366f1; margin-top: 2rem; margin-bottom: 0.8rem; border-bottom: 1px solid rgba(99,102,241,0.1); padding-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }
         .changelog-ver:first-of-type { margin-top: 0; }
-        .changelog-badge { font-size: 8px; background: #3b82f6; color: white; padding: 2px 5px; border-radius: 3px; text-transform: uppercase; letter-spacing:.08em; }
+        .changelog-badge { font-size: 8px; background: #1d4ed8; color: white; padding: 2px 5px; border-radius: 3px; text-transform: uppercase; letter-spacing:.08em; }
         .changelog-list { list-style: none; padding: 0; margin: 0; }
         .changelog-item { font-size: 11.5px; color: #94a3b8; margin-bottom: 0.7rem; line-height: 1.6; display: flex; gap: 10px; }
         .changelog-item:before { content: "→"; color: #6366f1; flex-shrink: 0; font-weight: bold; }
-        .changelog-group { font-size: 9px; font-weight: 800; color: #475569; text-transform: uppercase; margin: 1rem 0 0.5rem 0; letter-spacing: 0.1em; background: rgba(255,255,255,0.03); padding: 2px 6px; border-radius: 3px; display: inline-block; }
+        .changelog-group { font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase; margin: 1rem 0 0.5rem 0; letter-spacing: 0.1em; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 3px; display: inline-block; }
         .logo-icon{font-size:4rem;filter:drop-shadow(0 0 28px rgba(99,179,237,.55));animation:float 4s ease-in-out infinite}
         @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
         .logo-title{font-size:2.8rem;font-weight:800;letter-spacing:-.02em;background:linear-gradient(135deg,#63b3ed 0%,#9f7aea 50%,#63b3ed 100%);background-size:200% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:shimmer 4s linear infinite}
@@ -3047,11 +3494,12 @@ export default function App() {
         .prog-pct{font-size:.82rem;color:#718096}
 
         /* VIEWER */
-        .viewer-shell{width:100vw;height:100vh;display:flex;flex-direction:column;overflow:hidden}
-        .topbar{height:50px;background:rgba(5,8,16,.95);border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:1rem;padding:0 1.1rem;flex-shrink:0;backdrop-filter:blur(8px)}
-        .tb-logo{font-size:1rem;font-weight:700;color:#63b3ed;white-space:nowrap}
-        .tb-file{font-size:.77rem;color:#718096;background:rgba(255,255,255,.05);padding:.22rem .65rem;border-radius:6px;border:1px solid rgba(255,255,255,.08);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .tb-badge{font-size:.7rem;font-weight:700;padding:.2rem .5rem;border-radius:4px;background:rgba(99,179,237,.15);color:#63b3ed;border:1px solid rgba(99,179,237,.3)}
+        .viewer-shell{width:100vw;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--cv-bg);color:var(--cv-text)}
+        .topbar{height:48px;background:rgba(15,19,28,0.92);border-bottom:1px solid var(--cv-border);display:flex;align-items:center;gap:0.85rem;padding:0 1.1rem;flex-shrink:0;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+        .theme-light .topbar{background:rgba(255,255,255,0.94);border-bottom:1px solid var(--cv-border)}
+        .tb-logo{font-size:1rem;font-weight:800;color:var(--cv-primary);white-space:nowrap;letter-spacing:-0.02em}
+        .tb-file{font-size:.77rem;color:var(--cv-text);background:var(--cv-surface-low);padding:.25rem .65rem;border-radius:6px;border:1px solid var(--cv-border);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--cv-font-mono)}
+        .tb-badge{font-size:.7rem;font-weight:700;font-family:var(--cv-font-mono);padding:.2rem .5rem;border-radius:4px;background:rgba(0,210,255,0.12);color:var(--cv-primary);border:1px solid rgba(0,210,255,0.25)}
         .tb-space{flex:1; display: flex; align-items: center; justify-content: center;}
         .status-bar { display: flex; align-items: center; gap: 10px; background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 2px 10px; max-width: 500px; min-width: 200px; height: 30px; margin: 0 10px; transition: all 0.3s ease; overflow: hidden; }
         .status-msg { font-size: 11px; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; display: flex; align-items: center; gap: 6px; }
@@ -3061,16 +3509,68 @@ export default function App() {
         .status-error { color: #fca5a5 !important; border-color: rgba(239, 68, 68, 0.3) !important; background: rgba(239, 68, 68, 0.1) !important; }
         .status-success { color: #6ee7b7 !important; border-color: rgba(16, 185, 129, 0.3) !important; background: rgba(16, 185, 129, 0.1) !important; }
         .status-progress { color: #93c5fd !important; }
-        .tb-stat{font-size:.75rem;color:#4a5568}
-        .btn-back{display:flex;align-items:center;gap:.4rem;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#a0aec0;border-radius:8px;padding:.38rem .85rem;font-size:.78rem;font-weight:500;cursor:pointer;font-family:inherit;transition:all .2s;white-space:nowrap}
-        .btn-back:hover{background:rgba(255,255,255,.1);color:#e2e8f0}
+        .tb-stat{font-size:.75rem;color:var(--cv-text-muted);font-family:var(--cv-font-mono);font-variant-numeric:tabular-nums}
+        .btn-back{display:flex;align-items:center;gap:.4rem;background:var(--cv-surface-low);border:1px solid var(--cv-border);color:var(--cv-text);border-radius:6px;padding:.38rem .75rem;font-size:.78rem;font-weight:500;cursor:pointer;font-family:inherit;transition:all .18s;white-space:nowrap}
+        .btn-back:hover{background:var(--cv-surface-high);border-color:var(--cv-primary);color:#fff}
 
         .viewer-body{flex:1;display:flex;overflow:hidden;position:relative}
-        .canvas-wrap{flex:1;position:relative}
+        .canvas-wrap{flex:1;position:relative;min-width:0}
 
         /* Sidebar */
-        .sidebar-container { display: flex; flex-shrink: 0; z-index: 100; }
-        .sidebar{width:230px;background:rgba(8,12,24,.97);border-left:1px solid rgba(255,255,255,.05);padding:.9rem;display:flex;flex-direction:column;gap:1rem;overflow-y:auto;flex-shrink:0;height:100%;max-height:100%}
+        .sidebar-container { display: flex; flex-shrink: 0; z-index: 100; height: 100%; max-height: 100%; overflow: hidden; }
+        .sidebar{width:320px;background:var(--cv-surface);border-left:1px solid var(--cv-border);display:flex;flex-direction:column;height:100%;max-height:100%;flex-shrink:0;overflow:hidden;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+        .theme-light .sidebar{background:var(--cv-surface);border-left:1px solid var(--cv-border);color:var(--cv-text)}
+        .sidebar-pinned-header{flex-shrink:0;position:sticky;top:0;background:var(--cv-surface);border-bottom:1px solid var(--cv-border);padding:0.85rem 1rem 0.65rem;display:flex;flex-direction:column;gap:0.65rem;z-index:50}
+        .sidebar-dataset-banner{display:flex;flex-direction:column;gap:0.45rem}
+        .sidebar-dataset-top{display:flex;align-items:center;justify-content:space-between}
+        .sidebar-dataset-title{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--cv-text-muted)}
+        .sidebar-close-btn{background:transparent;border:1px solid transparent;color:var(--cv-text-muted);cursor:pointer;border-radius:4px;padding:2px 4px;display:flex;align-items:center;justify-content:center;transition:all .15s ease}
+        .sidebar-close-btn:hover{background:var(--cv-surface-high);color:var(--cv-text);border-color:var(--cv-border)}
+        .sidebar-dataset-grid{display:grid;gap:6px}
+        .sidebar-stat-card{background:var(--cv-surface-card);border:1px solid var(--cv-border);border-radius:6px;padding:5px 4px;text-align:center}
+        .sidebar-stat-label{display:block;font-size:8.5px;text-transform:uppercase;letter-spacing:0.04em;color:var(--cv-text-muted);font-family:var(--cv-font-mono)}
+        .sidebar-stat-val{display:block;font-size:11.5px;font-weight:700;color:var(--cv-text);font-family:var(--cv-font-mono);font-variant-numeric:tabular-nums;margin-top:1px}
+        .sidebar-stat-val.accent{color:var(--cv-primary)}
+        .sidebar-tab-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--cv-surface-low);border:1px solid var(--cv-border);padding:3px;border-radius:8px}
+        .sidebar-tab-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 4px;border-radius:6px;border:none;background:transparent;color:var(--cv-text-muted);font-size:10px;font-weight:600;cursor:pointer;transition:all .15s ease}
+        .sidebar-tab-btn:hover{color:var(--cv-text);background:rgba(255,255,255,0.04)}
+        .theme-light .sidebar-tab-btn:hover{background:rgba(0,0,0,0.04)}
+        .sidebar-tab-btn.active{background:var(--cv-surface-card);color:var(--cv-primary);font-weight:700;box-shadow:0 1px 4px rgba(0,0,0,0.2);border:1px solid var(--cv-border)}
+        .theme-light .sidebar-tab-btn.active{box-shadow:0 1px 4px rgba(15,23,42,0.08)}
+        .sidebar-scrollable-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0.85rem 1rem 2.5rem;display:flex;flex-direction:column;gap:0.75rem}
+        .sidebar-scrollable-body::-webkit-scrollbar{width:5px}
+        .sidebar-scrollable-body::-webkit-scrollbar-track{background:transparent}
+        .sidebar-scrollable-body::-webkit-scrollbar-thumb{background:var(--cv-border);border-radius:10px}
+        .sidebar-scrollable-body::-webkit-scrollbar-thumb:hover{background:var(--cv-primary)}
+
+        /* Unified CAD Card Styles */
+        .cad-card{background:var(--cv-surface-card);border:1px solid var(--cv-border);border-radius:8px;padding:11px 12px;box-shadow:0 2px 8px rgba(0,0,0,0.12);transition:border-color .18s ease,box-shadow .18s ease}
+        .theme-light .cad-card{background:#ffffff;border-color:rgba(60,45,30,0.12);box-shadow:0 1px 3px rgba(60,45,30,0.06),0 4px 12px rgba(60,45,30,0.04)}
+        .cad-card:hover{border-color:rgba(0,210,255,0.22)}
+        .theme-light .cad-card:hover{border-color:rgba(2,132,199,0.35)}
+        .cad-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+        .cad-card-title{display:flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--cv-text)}
+        .cad-card-title .material-symbols-outlined{font-size:16px;color:var(--cv-primary)}
+        .cad-subcard{background:var(--cv-surface-low);border:1px solid var(--cv-border);border-radius:6px;padding:8px 10px;margin-top:8px}
+        .theme-light .cad-subcard{background:#f5efe6;border-color:#dfd5c6}
+        .theme-light .sidebar-stat-card{background:#f5efe6;border-color:#dfd5c6}
+        .cad-control-row{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:600;color:var(--cv-text);margin-bottom:5px}
+        .cad-control-label{font-size:11px;color:var(--cv-text);font-weight:600;display:flex;align-items:center;gap:6px}
+        .cad-control-value{font-family:var(--cv-font-mono);font-size:11px;font-weight:700;color:var(--cv-primary);font-variant-numeric:tabular-nums}
+        .cad-slider{width:100%;height:4px;background:var(--cv-surface-high);border-radius:4px;appearance:none;-webkit-appearance:none;cursor:pointer;accent-color:var(--cv-primary)}
+        .theme-light .cad-slider{background:#d5c4ad}
+        .cad-slider::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--cv-primary);cursor:pointer;box-shadow:0 0 6px var(--cv-primary-glow)}
+        .cad-tool-btn{background:var(--cv-surface-low);border:1px solid var(--cv-border);color:var(--cv-text-muted);padding:5px 8px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;transition:all .15s ease}
+        .cad-tool-btn:hover{background:var(--cv-surface-high);color:var(--cv-text);border-color:rgba(0,210,255,0.3)}
+        .cad-tool-btn.active{background:rgba(0,210,255,0.16);border-color:var(--cv-primary);color:var(--cv-primary);font-weight:700}
+        .theme-light .cad-tool-btn.active{background:rgba(2,132,199,0.12);border-color:var(--cv-primary);color:var(--cv-primary)}
+        .cad-select{background:var(--cv-surface-high);color:var(--cv-text);border:1px solid var(--cv-border);border-radius:4px;font-size:10px;padding:3px 6px;outline:none;font-family:inherit}
+        .theme-light .cad-select{background:#fff;border-color:var(--cv-border);color:var(--cv-text)}
+        .btn-mini{background:var(--cv-surface-low);border:1px solid var(--cv-border);color:var(--cv-text);border-radius:4px;padding:3px 7px;font-size:10px;font-weight:600;cursor:pointer;transition:all .15s ease;display:inline-flex;align-items:center;justify-content:center;gap:3px}
+        .btn-mini:hover{background:var(--cv-surface-high);color:var(--cv-primary);border-color:var(--cv-primary)}
+        .btn-mini.active{background:rgba(0,210,255,0.16);border-color:var(--cv-primary);color:var(--cv-primary);font-weight:700}
+        .theme-light .btn-mini.active{background:rgba(2,132,199,0.12);border-color:var(--cv-primary);color:var(--cv-primary)}
+
         .mobile-sidebar-close{display:none;align-items:center;justify-content:center;gap:.45rem;position:fixed;right:calc(1rem + env(safe-area-inset-right));bottom:calc(1rem + env(safe-area-inset-bottom));z-index:10001;min-height:48px;max-width:calc(100vw - 2rem);padding:0 1rem;border:1px solid rgba(248,113,113,.5);border-radius:8px;background:rgba(220,38,38,.94);color:#fff;font-size:.95rem;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 14px 36px rgba(0,0,0,.48);backdrop-filter:blur(8px);transition:background .2s,transform .2s,box-shadow .2s}
         .mobile-sidebar-close:hover{background:#dc2626;box-shadow:0 16px 42px rgba(0,0,0,.58)}
         .mobile-sidebar-close:active{transform:translateY(1px)}
@@ -3108,26 +3608,29 @@ export default function App() {
         .lidar-edit-floating span{font-variant-numeric:tabular-nums;color:#5eead4}
         .sidebar::-webkit-scrollbar{width:5px}
         .sidebar::-webkit-scrollbar-track{background:rgba(0,0,0,0.1)}
-        .sidebar::-webkit-scrollbar-thumb{background:rgba(99,179,237,0.3);border-radius:10px}
-        .sidebar::-webkit-scrollbar-thumb:hover{background:rgba(99,179,237,0.5)}
-        .s-label{font-size:.72rem;font-weight:900;color:#f8fafc;text-transform:uppercase;letter-spacing:.15em;margin-bottom:.8rem;margin-top:1.5rem;border-left:4px solid #3b82f6;padding-left:10px;display:flex;align-items:center;background:rgba(59,130,246,0.05);padding-top:4px;padding-bottom:4px;border-radius:0 4px 4px 0}
-        .s-label:first-of-type { margin-top: 0.5rem; }
-        .info-row{display:flex;justify-content:space-between;font-size:.75rem;padding:.28rem 0;border-bottom:1px solid rgba(255,255,255,.04);color:#718096}
-        .info-val{color:#63b3ed;font-weight:600}
+        .sidebar::-webkit-scrollbar-thumb{background:rgba(0,210,255,0.25);border-radius:10px}
+        .sidebar::-webkit-scrollbar-thumb:hover{background:rgba(0,210,255,0.45)}
+        .s-label{font-size:.6875rem;font-weight:700;font-family:var(--cv-font-mono);color:var(--cv-text);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem;margin-top:1.1rem;border-left:3px solid var(--cv-primary);padding-left:8px;display:flex;align-items:center;background:rgba(0,210,255,0.04);padding-top:3px;padding-bottom:3px;border-radius:0 4px 4px 0}
+        .theme-light .s-label{color:#0f172a;background:rgba(2,132,199,0.06);border-left-color:var(--cv-primary)}
+        .s-label:first-of-type { margin-top: 0.3rem; }
+        .info-row{display:flex;justify-content:space-between;font-size:.75rem;padding:.32rem 0;border-bottom:1px solid var(--cv-border);color:var(--cv-text-muted);font-family:var(--cv-font-sans)}
+        .info-val{color:var(--cv-primary);font-weight:600;font-family:var(--cv-font-mono);font-variant-numeric:tabular-nums}
 
-        .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:.35rem 0;border-bottom:1px solid rgba(255,255,255,.04)}
-        .toggle-label{display:flex;align-items:center;gap:.5rem;font-size:.78rem;color:#a0aec0;cursor:pointer}
+        .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:.35rem 0;border-bottom:1px solid var(--cv-border)}
+        .toggle-label{display:flex;align-items:center;gap:.5rem;font-size:.78rem;color:var(--cv-text);cursor:pointer}
         .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-        .switch{width:32px;height:17px;background:rgba(255,255,255,.1);border-radius:100px;position:relative;cursor:pointer;transition:background .2s;border:1px solid rgba(255,255,255,.1);flex-shrink:0}
-        .switch.on{background:rgba(66,153,225,.6);border-color:rgba(66,153,225,.5)}
-        .switch::after{content:'';position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
-        .switch.on::after{transform:translateX(15px)}
+        .switch{width:32px;height:16px;padding:0;appearance:none;background:var(--cv-surface-high);border-radius:9999px;position:relative;cursor:pointer;transition:all .2s cubic-bezier(0.16,1,0.3,1);border:1px solid var(--cv-border);flex-shrink:0}
+        .switch:focus-visible{outline:2px solid var(--cv-primary);outline-offset:3px}
+        .switch.on{background:var(--cv-primary);border-color:var(--cv-primary);box-shadow:0 0 8px rgba(0,210,255,0.35)}
+        .switch::after{content:'';position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:#fff;transition:transform .2s cubic-bezier(0.16,1,0.3,1);box-shadow:0 1px 3px rgba(0,0,0,.4)}
+        .switch.on::after{transform:translateX(16px)}
 
-        .slider-row{padding:.45rem 0;border-bottom:1px solid rgba(255,255,255,.04)}
-        .slider-top{display:flex;justify-content:space-between;font-size:.76rem;color:#a0aec0;margin-bottom:.3rem}
-        .slider-val{color:#63b3ed;font-weight:600}
-        input[type=range]{width:100%;height:3px;-webkit-appearance:none;background:rgba(255,255,255,.1);border-radius:100px;outline:none;cursor:pointer}
-        input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#4299e1;cursor:pointer;box-shadow:0 0 6px rgba(66,153,225,.5)}
+        .slider-row{padding:.45rem 0;border-bottom:1px solid var(--cv-border)}
+        .slider-top{display:flex;justify-content:space-between;font-size:.76rem;color:var(--cv-text-muted);margin-bottom:.3rem}
+        .slider-val{color:var(--cv-primary);font-weight:600;font-family:var(--cv-font-mono);font-variant-numeric:tabular-nums}
+        input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:var(--cv-surface-high);border-radius:9999px;outline:none;cursor:pointer}
+        input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--cv-primary);cursor:pointer;box-shadow:0 0 8px rgba(0,210,255,0.45);transition:transform .1s}
+        input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.15)}
 
         .welcome-samples{width:100%;display:flex;flex-direction:column;gap:1.5rem;max-width:720px}
         .demo-title{font-size:.62rem;font-weight:700;color:#4a5568;text-transform:uppercase;letter-spacing:.1em;margin-bottom:.5rem;text-align:center}
@@ -3303,7 +3806,7 @@ export default function App() {
         .embed-fullscreen-btn { background: rgba(99,179,237,0.12); border: 1px solid rgba(99,179,237,0.25); border-radius: 6px; color: #63b3ed; font-size: 14px; padding: 4px 8px; cursor: pointer; text-decoration: none; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
         .embed-fullscreen-btn:hover { background: rgba(99,179,237,0.25); }
 
-        @media (max-width: 1023px) {
+        @media (max-width: 768px) {
           .sidebar-container { display: none; }
           .sidebar-container.open { 
             display: flex; position: fixed; inset: 0; z-index: 9999; width: 100vw; height: 100vh;
@@ -3324,11 +3827,13 @@ export default function App() {
           .hide-mobile-flex { display: none !important; }
           .btn-fit { display: none !important; }
           .show-mobile-flex { display: flex !important; }
+          .mobile-drawer-header { display: block !important; }
         }
         .show-mobile-flex { display: none; }
+        .mobile-drawer-header { display: none; }
       `}</style>
 
-      <canvas ref={canvasRef} className="bg-canvas" style={{ background: opts.colorBackground }} />
+      <canvas ref={canvasRef} className="bg-canvas" style={{ background: opts.colorBackground2 ? `linear-gradient(to bottom, ${opts.colorBackground}, ${opts.colorBackground2})` : opts.colorBackground }} />
 
       <div className="app">
 
@@ -3364,7 +3869,7 @@ export default function App() {
                 >
                   📁 {t('welcome.selectFile')}
                 </button>
-                <input ref={fileInputRef} type="file" accept=".lox,.3d,.plt,.ply,.stl" onChange={e => {
+                <input ref={fileInputRef} type="file" aria-label={t('welcome.selectFile')} accept=".lox,.3d,.plt,.ply,.stl" onChange={e => {
                   const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''
                 }} />
               </div>
@@ -3388,7 +3893,7 @@ export default function App() {
                       ☁️ LiDAR
                     </button>
                     <button className="btn-demo" style={{ borderColor: '#818cf8', color: '#a5b4fc', background: 'rgba(99,102,241,0.05)' }} 
-                      onClick={() => loadFromUrl('/dmr5.tif', 'dmr5.tif')} type="button">
+                      onClick={() => loadFromUrl(`${import.meta.env.BASE_URL}dmr5.tif`, 'dmr5.tif')} type="button">
                       🌍 TIFF
                     </button>
                   </div>
@@ -3401,6 +3906,31 @@ export default function App() {
                       🏔️ {t('welcome.bigModel')}
                     </button>
                   </div>
+                </div>
+
+                {/* User Guide / Help button on welcome screen */}
+                <div style={{ marginTop: '16px', textAlign: 'center' }}>
+                  <button
+                    onClick={() => setHelpDialogOpen(true)}
+                    style={{
+                      background: 'rgba(59, 130, 246, 0.1)',
+                      border: '1px solid rgba(59, 130, 246, 0.3)',
+                      borderRadius: '8px',
+                      color: '#60a5fa',
+                      padding: '8px 16px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      transition: 'all 0.2s'
+                    }}
+                    type="button"
+                  >
+                    <span>📖</span>
+                    <span>{lang === 'sk' ? 'Otvoriť používateľskú príručku (Návod)' : 'Open User Guide & Documentation'}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -3449,57 +3979,56 @@ export default function App() {
 
         {/* ── VIEWER ── */}
         {appState === 'viewer' && cave && (
-          <div className="viewer-shell">
+          <div className={`viewer-shell theme-${currentTheme}`}>
             {/* Top bar — hidden in embed mode */}
             {!isEmbedMode && (
-            <div className="topbar">
-              {/* Menu Button pre Mobily (prvá položka) */}
-              <button className="btn-menu btn-back" style={{ display: 'none', marginRight: 8, background: 'rgba(255,255,255,0.15)', borderWidth: 0, padding: '0.4rem 0.7rem' }} onClick={() => setIsMobileMenuOpen(true)}>
-                <span>☰</span>
-              </button>
-
-              <span className="tb-logo">LV 3D</span>
-              <span className="tb-file" title={loadedFile?.name}>{loadedFile?.name}</span>
-              <MemoizedStatusBadge isMoving={isModelMoving} />
-              <span className="tb-badge hide-mobile">{loadedFile?.ext?.replace('.', '')?.toUpperCase()}</span>
-              
-              {downloadableTexture && (
-                <button
-                  onClick={downloadGeneratedTexture}
-                  style={{
-                    marginLeft: '8px',
-                    padding: '4px 12px',
-                    background: '#2563eb',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    fontSize: '11px',
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-                  }}
-                  title={lang === 'sk' ? "Stiahnuť textúru a kalibračný súbor" : "Download texture with calibration"}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>download</span>
-                  {lang === 'sk' ? 'Textúra' : 'Texture'}
-                </button>
-              )}
-
-              <div className="hide-mobile-flex" style={{ display: 'flex', gap: '4px', background: '#0f172a', padding: '2px', borderRadius: '6px', border: '1px solid #1e293b' }}>
-                {(['classic', 'precision', 'light'] as const).map(th => (
-                  <button key={th} onClick={() => applyTheme(th as any)}
-                    style={{ flex: 1, padding: '4px 8px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                      background: currentTheme === th ? '#334155' : 'transparent',
-                      color: currentTheme === th ? '#f8fafc' : '#64748b' }}>
-                    {t(`themes.${th}`)}
-                  </button>
-                ))}
+            <div className="topbar" style={{ position: 'relative', zIndex: 110 }}>
+              {/* Brand Logo LOCH 3D with radar icon */}
+              <div 
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
+                title={lang === 'sk' ? 'LochViewer 3D' : 'LochViewer 3D'}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '20px', color: 'var(--cv-primary)' }}>radar</span>
+                <span className="tb-logo" style={{ fontSize: '13px', fontWeight: 800, letterSpacing: '-0.02em' }}>LOCH 3D</span>
               </div>
 
-              <div className="tb-space">
+              {/* Active Dataset Pill */}
+              <div className="hide-mobile-flex" style={{
+                alignItems: 'center',
+                gap: '6px',
+                background: 'var(--cv-surface-low)',
+                padding: '3px 8px',
+                borderRadius: '6px',
+                border: '1px solid var(--cv-border)',
+                flexShrink: 0
+              }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', display: 'inline-block', boxShadow: '0 0 6px rgba(16,185,129,0.7)' }} />
+                <span style={{ fontSize: '11px', fontFamily: 'var(--cv-font-mono)', fontWeight: 600, color: 'var(--cv-text)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={loadedFile?.name}>
+                  {loadedFile?.name}
+                </span>
+                <span style={{ fontSize: '9px', fontFamily: 'var(--cv-font-mono)', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', background: 'rgba(0,210,255,0.12)', color: 'var(--cv-primary)' }}>
+                  {loadedFile?.ext?.replace('.', '')?.toUpperCase()}
+                </span>
+                <MemoizedStatusBadge isMoving={isModelMoving} />
+              </div>
+
+              {navigationBindings && <ViewerToolbar bindings={navigationBindings}
+                onOpen={() => fileInputRef.current?.click()}
+                canReload={Boolean(lastLoadedBuffer && loadedFile)}
+                onReload={() => {
+                  if (lastLoadedBuffer && loadedFile) void handleFile(new File([lastLoadedBuffer], loadedFile.name))
+                }} />}
+              <input hidden ref={fileInputRef} type="file" accept=".lox,.3d,.plt,.ply,.stl"
+                onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (file) void handleFile(file)
+                  e.target.value = ''
+                }} />
+              {/* Hairline divider */}
+              <div className="hide-mobile" style={{ width: '1px', height: '18px', background: 'var(--cv-border)', margin: '0 2px', flexShrink: 0 }} />
+
+              {/* Status / Message Center */}
+              <div className="tb-space" style={{ position: 'absolute', top: 54, right: 12, maxWidth: 'min(500px, 80vw)', zIndex: 110 }}>
                 {appStatus && (
                   <div className={`status-bar status-${appStatus.type} hide-mobile`}>
                     <div className="status-msg">
@@ -3524,7 +4053,7 @@ export default function App() {
               </div>
 
               {isRecording && (
-                <div className="recording-status hide-mobile" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(239, 68, 68, 0.15)', padding: '4px 12px', borderRadius: '20px', border: '1px solid rgba(239, 68, 68, 0.3)', marginRight: '10px' }}>
+                <div className="recording-status hide-mobile" style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(239, 68, 68, 0.15)', padding: '4px 12px', borderRadius: '20px', border: '1px solid rgba(239, 68, 68, 0.3)', marginRight: '8px' }}>
                   <div className="record-dot" />
                   <span style={{ fontSize: '11px', fontWeight: 600, color: '#fca5a5' }}>
                     {lang === 'sk' ? 'NAHRÁVA SA...' : 'RECORDING...'}
@@ -3541,255 +4070,6 @@ export default function App() {
                 </div>
               )}
 
-              {downloadableTexture && (
-                <button
-                  className="btn-back hide-mobile-flex"
-                  style={{
-                    background: 'rgba(16,185,129,0.1)',
-                    color: '#10b981',
-                    borderColor: 'rgba(16,185,129,0.3)',
-                    marginRight: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}
-                  onClick={() => {
-                    const link = document.createElement('a');
-                    link.href = downloadableTexture.dataUrl;
-                    link.download = `surface_map_${opts.surfaceTextureSource}.${imageExtensionFromDataUrl(downloadableTexture.dataUrl)}`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                  }}
-                  title={lang === 'sk' ? 'Stiahnuť textúru povrchu' : 'Download surface texture'}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '18px', display: 'block' }}>download</span>
-                  <span>{lang === 'sk' ? 'Uložiť mapu' : 'Save Map'}</span>
-                </button>
-              )}
-
-              {/* Camera Projection & View Presets Group */}
-              <div className="hide-mobile-flex" style={{ display: 'flex', alignItems: 'center', gap: '5px', marginRight: '6px' }}>
-                {/* Perspective ↔ Orthographic Toggle */}
-                <div style={{ display: 'flex', gap: '2px', background: '#0f172a', padding: '2px', borderRadius: '6px', border: '1px solid #1e293b' }}>
-                  <button
-                    onClick={() => {
-                      setOpts(p => ({ ...p, cameraProjection: 'perspective' }))
-                      setActiveViewPreset(null)
-                    }}
-                    title={lang === 'sk' ? 'Perspektívna projekcia (3D hĺbka) [Kláves O]' : 'Perspective projection (3D depth) [Key O]'}
-                    style={{
-                      padding: '4px 8px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
-                      background: opts.cameraProjection === 'perspective' ? '#334155' : 'transparent',
-                      color: opts.cameraProjection === 'perspective' ? '#f8fafc' : '#64748b'
-                    }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: '14px', display: 'block' }}>view_in_ar</span>
-                    <span>{lang === 'sk' ? 'Perspektíva' : 'Persp'}</span>
-                  </button>
-                  <button
-                    onClick={() => setOpts(p => ({ ...p, cameraProjection: 'orthographic' }))}
-                    title={lang === 'sk' ? 'Ortogonálna projekcia (technické axonometrické zobrazenie bez skreslenia) [Kláves O]' : 'Orthographic projection (technical axonometric view without distortion) [Key O]'}
-                    style={{
-                      padding: '4px 8px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px',
-                      background: opts.cameraProjection === 'orthographic' ? '#0284c7' : 'transparent',
-                      color: opts.cameraProjection === 'orthographic' ? '#ffffff' : '#64748b',
-                      boxShadow: opts.cameraProjection === 'orthographic' ? '0 1px 4px rgba(2,132,199,0.4)' : 'none'
-                    }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: '14px', display: 'block' }}>deployed_code</span>
-                    <span>{lang === 'sk' ? 'Ortogonálne' : 'Ortho'}</span>
-                    <span style={{ fontSize: '7.5px', background: opts.cameraProjection === 'orthographic' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>O</span>
-                  </button>
-                </div>
-
-                {/* View Angle Presets: Plan (1), Profile (2), Section (3), 3D (4) */}
-                <div style={{ display: 'flex', gap: '2px', background: '#0f172a', padding: '2px', borderRadius: '6px', border: '1px solid #1e293b' }}>
-                  <button
-                    onClick={() => {
-                      setOpts(p => ({ ...p, cameraProjection: 'orthographic' }))
-                      setActiveViewPreset('top')
-                      window.dispatchEvent(new CustomEvent('cave-set-view', { detail: { view: 'top' } }))
-                    }}
-                    title={lang === 'sk' ? 'Pôdorys (kolmý pohľad zhora) [Kláves 1]' : 'Plan (Top view) [Key 1]'}
-                    style={{
-                      padding: '4px 6px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px',
-                      background: opts.cameraProjection === 'orthographic' && activeViewPreset === 'top' ? '#0369a1' : 'transparent',
-                      color: opts.cameraProjection === 'orthographic' && activeViewPreset === 'top' ? '#ffffff' : '#94a3b8',
-                      boxShadow: opts.cameraProjection === 'orthographic' && activeViewPreset === 'top' ? '0 0 6px rgba(3,105,161,0.5)' : 'none'
-                    }}>
-                    <span style={{ fontSize: '11px' }}>📐</span>
-                    <span>{lang === 'sk' ? 'Pôdorys' : 'Plan'}</span>
-                    <span style={{ fontSize: '7.5px', opacity: 0.7, background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>1</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setOpts(p => ({ ...p, cameraProjection: 'orthographic' }))
-                      setActiveViewPreset('front')
-                      window.dispatchEvent(new CustomEvent('cave-set-view', { detail: { view: 'front' } }))
-                    }}
-                    title={lang === 'sk' ? 'Pozdĺžny profil (pohľad spredu) [Kláves 2]' : 'Profile (Front view) [Key 2]'}
-                    style={{
-                      padding: '4px 6px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px',
-                      background: opts.cameraProjection === 'orthographic' && activeViewPreset === 'front' ? '#0369a1' : 'transparent',
-                      color: opts.cameraProjection === 'orthographic' && activeViewPreset === 'front' ? '#ffffff' : '#94a3b8',
-                      boxShadow: opts.cameraProjection === 'orthographic' && activeViewPreset === 'front' ? '0 0 6px rgba(3,105,161,0.5)' : 'none'
-                    }}>
-                    <span style={{ fontSize: '11px' }}>↔️</span>
-                    <span>{lang === 'sk' ? 'Profil' : 'Profile'}</span>
-                    <span style={{ fontSize: '7.5px', opacity: 0.7, background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>2</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setOpts(p => ({ ...p, cameraProjection: 'orthographic' }))
-                      setActiveViewPreset('side')
-                      window.dispatchEvent(new CustomEvent('cave-set-view', { detail: { view: 'side' } }))
-                    }}
-                    title={lang === 'sk' ? 'Priečny profil (pohľad zboku) [Kláves 3]' : 'Section (Side view) [Key 3]'}
-                    style={{
-                      padding: '4px 6px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px',
-                      background: opts.cameraProjection === 'orthographic' && activeViewPreset === 'side' ? '#0369a1' : 'transparent',
-                      color: opts.cameraProjection === 'orthographic' && activeViewPreset === 'side' ? '#ffffff' : '#94a3b8',
-                      boxShadow: opts.cameraProjection === 'orthographic' && activeViewPreset === 'side' ? '0 0 6px rgba(3,105,161,0.5)' : 'none'
-                    }}>
-                    <span style={{ fontSize: '11px' }}>↕️</span>
-                    <span>{lang === 'sk' ? 'Bokorys' : 'Section'}</span>
-                    <span style={{ fontSize: '7.5px', opacity: 0.7, background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>3</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setActiveViewPreset('iso')
-                      window.dispatchEvent(new CustomEvent('cave-set-view', { detail: { view: 'iso' } }))
-                    }}
-                    title={lang === 'sk' ? '3D Izometrický / Axonometrický pohľad [Kláves 4]' : '3D Isometric view [Key 4]'}
-                    style={{
-                      padding: '4px 6px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px',
-                      background: activeViewPreset === 'iso' ? '#0369a1' : 'transparent',
-                      color: activeViewPreset === 'iso' ? '#ffffff' : '#94a3b8',
-                      boxShadow: activeViewPreset === 'iso' ? '0 0 6px rgba(3,105,161,0.5)' : 'none'
-                    }}>
-                    <span style={{ fontSize: '11px' }}>🧊</span>
-                    <span>3D</span>
-                    <span style={{ fontSize: '7.5px', opacity: 0.7, background: 'rgba(255,255,255,0.1)', padding: '1px 3px', borderRadius: '3px' }}>4</span>
-                  </button>
-                </div>
-              </div>
-
-              <button
-                className={`btn-back hide-mobile-flex${isMeasuringMode ? ' active' : ''}`}
-                style={{
-                  background: isMeasuringMode ? '#6366f1' : 'rgba(99,179,237,0.1)',
-                  color: isMeasuringMode ? '#fff' : '#63b3ed',
-                  borderColor: isMeasuringMode ? '#818cf8' : 'rgba(99,179,237,0.3)',
-                  marginRight: '10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-                onClick={() => setIsMeasuringMode(!isMeasuringMode)}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: '18px', display: 'block' }}>straighten</span>
-                <span>{t('sidebar.measure')}</span>
-              </button>
-              
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                {/* NextGen Navigation Controls */}
-                {opts.engine === 'v2' && (
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    <button 
-                      onClick={() => window.dispatchEvent(new CustomEvent('cave-navigation-undo'))}
-                      style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', color: '#fff', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                      title="Undo Movement (Ctrl+Z)"
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>undo</span>
-                    </button>
-                    <button 
-                      onClick={() => setFitTrigger(prev => prev + 1)}
-                      style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', color: '#fff', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                      title="Fit to Screen"
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>fit_screen</span>
-                    </button>
-                  </div>
-                )}
-
-                <div className="hide-mobile-flex" style={{ display: 'flex', gap: '4px', background: 'rgba(30,41,59,0.5)', padding: '2px', borderRadius: '6px' }}>
-                  {(['sk', 'en', 'fr', 'de'] as Language[]).map(l => (
-                    <button key={l} onClick={() => setLang(l)}
-                      style={{ padding: '4px 6px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                        background: lang === l ? '#6366f1' : 'transparent',
-                        color: lang === l ? 'white' : '#94a3b8' }}>
-                      {l.toUpperCase()}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="show-mobile-flex" style={{ alignItems: 'center', gap: '4px' }}>
-                  <button
-                    onClick={() => {
-                      setOpts(p => {
-                        const next = p.cameraProjection === 'orthographic' ? 'perspective' : 'orthographic'
-                        if (next === 'perspective') setActiveViewPreset(null)
-                        return { ...p, cameraProjection: next }
-                      })
-                    }}
-                    style={{
-                      background: opts.cameraProjection === 'orthographic' ? '#0284c7' : 'rgba(30,41,59,0.8)',
-                      border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', color: '#fff', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center'
-                    }}
-                    title={opts.cameraProjection === 'orthographic' ? 'Ortogonálne' : 'Perspektíva'}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
-                      {opts.cameraProjection === 'orthographic' ? 'deployed_code' : 'view_in_ar'}
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setOpts(p => ({ ...p, cameraProjection: 'orthographic' }))
-                      setActiveViewPreset('top')
-                      window.dispatchEvent(new CustomEvent('cave-set-view', { detail: { view: 'top' } }))
-                    }}
-                    style={{
-                      background: opts.cameraProjection === 'orthographic' && activeViewPreset === 'top' ? '#0369a1' : 'rgba(30,41,59,0.8)',
-                      border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', color: '#fff', padding: '6px 8px', fontSize: '13px', cursor: 'pointer', display: 'flex', alignItems: 'center'
-                    }}
-                    title="Pôdorys / Plan View"
-                  >
-                    <span>📐</span>
-                  </button>
-                </div>
-
-                <button 
-                  className="show-mobile-flex"
-                  onClick={() => setFitTrigger(prev => prev + 1)}
-                  style={{ background: '#3b82f6', border: '1px solid #2563eb', borderRadius: '6px', color: '#fff', padding: '6px', cursor: 'pointer', alignItems: 'center', justifyContent: 'center' }}
-                  title="Fit to screen"
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '18px', display: 'block' }}>fit_screen</span>
-                </button>
-
-                {/* Share button - only when model is loaded from a public URL */}
-                {!isEmbedMode && (
-                  <button
-                    onClick={openShareDialog}
-                    className="hide-mobile-flex"
-                    style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '6px', color: '#818cf8', padding: '6px 12px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                    title={lang === 'sk' ? 'Zdieľať ako iframe' : 'Share as iframe'}
-                  >
-                    <span className="material-symbols-outlined" style={{ fontSize: '16px', display: 'block' }}>share</span>
-                    <span>{lang === 'sk' ? 'Zdieľať' : 'Share'}</span>
-                  </button>
-                )}
-
-                <button 
-                  onClick={handleReset}
-                  style={{ background: '#ef4444', border: '1px solid #dc2626', borderRadius: '6px', color: '#fff', padding: '6px 12px', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600' }}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '16px', display: 'block' }}>close</span>
-                  <span>{t('ui.close')}</span>
-                </button>
-              </div>
             </div>
             )}
 
@@ -3801,7 +4081,7 @@ export default function App() {
                   </div>
                 }>
                   <ErrorBoundary>
-                    {opts.engine === 'v1' ? (
+                    {opts.engine === 'v1' || !isPlyLidar ? (
                       <CaveViewer3D
                         cave={cave}
                         options={opts}
@@ -3812,30 +4092,16 @@ export default function App() {
                         contourInterval={contourLevels.major}
                         minorInterval={contourLevels.minor}
                         onProcessingStart={setProcessingInfo}
-                        onProcessingEnd={() => setProcessingInfo(null)}
+                        onProcessingEnd={handleProcessingEnd}
                         onStatusChange={setAppStatus}
-                        onTextureReady={(dataUrl, bbox) => setDownloadableTexture({ dataUrl, bbox })}
+                        onTextureReady={handleTextureReady}
                         onTextureDownloadInfo={setTextureDownloadInfo}
                         fitTrigger={fitTrigger}
                         selectedStations={selectedStations}
                         activeProfilePoints={activeProfilePoints}
                         isMeasuringMode={isMeasuringMode}
-                        manualConnection={
-                          selectedStations.length === 2 && selectedStations[0] && selectedStations[1]
-                            ? {
-                                p1: { 
-                                  x: selectedStations[0].origX - (cave.centerOffset?.x || 0), 
-                                  y: selectedStations[0].origY - (cave.centerOffset?.y || 0), 
-                                  z: selectedStations[0].altitude - (cave.centerOffset?.z || 0) 
-                                },
-                                p2: { 
-                                  x: selectedStations[1].origX - (cave.centerOffset?.x || 0), 
-                                  y: selectedStations[1].origY - (cave.centerOffset?.y || 0), 
-                                  z: selectedStations[1].altitude - (cave.centerOffset?.z || 0) 
-                                }
-                              }
-                            : null
-                        }
+                        manualConnection={manualConnectionMemo}
+                        lang={lang}
                       />
                     ) : (
                       <CaveViewerNextGen
@@ -3850,13 +4116,14 @@ export default function App() {
                         isMeasuringMode={isMeasuringMode}
                         anomalies={anomalies}
                         activeAnomalyId={activeAnomalyId}
-                        onSurfaceOffsetChange={(offset) => setOpts(prev => ({ ...prev, surfaceOffset: offset }))}
+                        onSurfaceOffsetChange={handleSurfaceOffsetChange}
+                        lang={lang}
                       />
                     )}
 	                  </ErrorBoundary>
 	                </Suspense>
 
-                {lidarEditMode !== 'off' && cave.pointCount > 0 && (
+                {lidarEditMode !== 'off' && isPlyLidar && cave.pointCount > 0 && (
                   <div
                     className={`lidar-edit-overlay mode-${lidarEditMode}${lidarEditBusy ? ' busy' : ''}`}
                     onPointerDown={beginLidarEditStroke}
@@ -3894,8 +4161,31 @@ export default function App() {
                   </div>
                 )}
 
-	                {/* Station detail card overlay */}
-                {selectedStations.length > 0 && showStationCard && (
+                {/* Dedicated Measurement Panel (Distance or Polygon Mode) */}
+                {measurementMode !== 'off' && (
+                  <MeasurementPanel
+                    mode={measurementMode}
+                    stations={selectedStations}
+                    onDeletePoint={(idx) => setSelectedStations(prev => prev.filter((_, i) => i !== idx))}
+                    onClear={() => setSelectedStations([])}
+                    onSwap={() => setSelectedStations(prev => [...prev].reverse())}
+                    onModeChange={mode => { setMeasurementMode(mode); setSelectedStations([]); setOpts(p => ({ ...p, autoRotate: false })) }}
+                    onClose={() => {
+                      setMeasurementMode('off')
+                      setSelectedStations([])
+                    }}
+                    onSetProfile={(sts) => {
+                      setActiveProfilePoints([...sts])
+                      setOpts(p => ({ ...p, showProfileClipping: true, profileClipOffset: 0 }))
+                    }}
+                    lang={lang}
+                    baseAltitude={baseAltitude}
+                    altitudeMode={opts.altitudeMode}
+                  />
+                )}
+
+                {/* Station detail card overlay (Single Station Inspection) */}
+                {measurementMode === 'off' && selectedStations.length > 0 && showStationCard && (
                     <StationDetailCard
                       stations={selectedStations}
                       onClose={() => setShowStationCard(false)}
@@ -3906,1786 +4196,53 @@ export default function App() {
                         setShowStationCard(false)
                       }}
                       onUpdateGps={handleUpdateGps}
+                      onDownloadDmr={handleDownloadDmr5}
                       t={t}
                       lang={lang}
+                      baseAltitude={baseAltitude}
+                      altitudeMode={opts.altitudeMode}
                     />
                 )}
+
+                {/* ─── Speleo Compass Rose (Severka & Azimuth) ─── */}
+                <div style={{ position: 'absolute', top: isEmbedMode ? '50px' : '18px', left: '18px', zIndex: 30, transition: 'top 0.25s ease, left 0.25s ease' }}>
+                  <CompassRose
+                    cameraData={cameraData}
+                    lang={lang}
+                    size={54}
+                    onResetNorth={() => window.dispatchEvent(new CustomEvent('cave-set-view', { detail: { view: 'top' } }))}
+                  />
+                </div>
+
+                {/* ─── Floating Z-Slice Overlay Slider ─── */}
+                <FloatingClippingSlider
+                  cave={cave}
+                  opts={opts}
+                  setOpts={setOpts}
+                  lang={lang}
+                  onClose={() => setOpts(p => ({ ...p, showClipping: false }))}
+                />
               </div>
 
-              {/* Sidebar container — hidden in embed mode unless sidebar=1 is in URL */}
-              {(!isEmbedMode || embedAllowSidebar) && <div className={`sidebar-container ${isMobileMenuOpen ? 'open' : ''}`}>
-                <aside className="sidebar">
-                  {isMobileMenuOpen && (
-                    <div style={{ marginBottom: '1rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                        <span style={{ fontSize: '1.2rem', fontWeight: 800, color: '#e2e8f0' }}>{t('sidebar.control')}</span>
-                        <button className="btn-back" style={{ background: '#ef4444', color: '#fff', border: 'none' }} onClick={() => setIsMobileMenuOpen(false)}>✖ {t('ui.close')}</button>
-                      </div>
-                      
-                      <div className="s-label" style={{ marginBottom: '8px' }}>Rýchle nastavenia (Mobil)</div>
-                      
-                      <button
-                        className={`btn-back${isMeasuringMode ? ' active' : ''}`}
-                        style={{ width: '100%', marginBottom: '10px', background: isMeasuringMode ? '#6366f1' : 'rgba(99,179,237,0.1)', color: isMeasuringMode ? '#fff' : '#63b3ed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
-                        onClick={() => { setIsMeasuringMode(!isMeasuringMode); setIsMobileMenuOpen(false); }}
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>straighten</span>
-                        <span>{t('sidebar.measure')}</span>
-                      </button>
-
-                      <div style={{ display: 'flex', gap: '4px', background: '#0f172a', padding: '4px', borderRadius: '8px', marginBottom: '10px' }}>
-                        {(['classic', 'precision', 'light'] as const).map(th => (
-                          <button key={th} onClick={() => applyTheme(th as any)}
-                            style={{ flex: 1, padding: '8px', fontSize: '11px', fontWeight: 'bold', borderRadius: '6px', border: 'none', cursor: 'pointer', background: currentTheme === th ? '#334155' : 'transparent', color: currentTheme === th ? '#f8fafc' : '#64748b' }}>
-                            {t(`themes.${th}`)}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '4px', background: 'rgba(30,41,59,0.5)', padding: '4px', borderRadius: '8px', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1rem' }}>
-                        {(['sk', 'en', 'fr', 'de'] as Language[]).map(l => (
-                          <button key={l} onClick={() => setLang(l)}
-                            style={{ flex: 1, padding: '8px', fontSize: '11px', fontWeight: 'bold', borderRadius: '6px', border: 'none', cursor: 'pointer', background: lang === l ? '#6366f1' : 'transparent', color: lang === l ? 'white' : '#94a3b8' }}>
-                            {l.toUpperCase()}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div style={{ background: 'rgba(30,41,59,0.5)', padding: '10px', borderRadius: '8px', marginBottom: '1rem' }}>
-                        <div className="toggle-row" style={{ marginBottom: '8px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: '16px', verticalAlign: 'middle', marginRight: '6px' }}>label</span>
-                            {lang === 'sk' ? 'Výšky vrstevníc' : 'Contour labels'}
-                          </span>
-                          <div className={`switch${opts.showContourLabels ? ' on' : ''}`}
-                            onClick={() => toggleOpt('showContourLabels')} role="switch"
-                            aria-checked={opts.showContourLabels} tabIndex={0} />
-                        </div>
-                        <div className="toggle-row" style={{ marginBottom: '8px' }}>
-                          <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: '16px', verticalAlign: 'middle', marginRight: '6px' }}>tag</span>
-                            {t('stations.names')}
-                          </span>
-                          <div className={`switch${opts.showStationNames ? ' on' : ''}`}
-                            onClick={() => toggleOpt('showStationNames')} role="switch"
-                            aria-checked={opts.showStationNames} tabIndex={0} />
-                        </div>
-                        <div className="toggle-row">
-                          <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: '16px', verticalAlign: 'middle', marginRight: '6px' }}>height</span>
-                            {t('stations.altitude')}
-                          </span>
-                          <div className={`switch${opts.showStationAlt ? ' on' : ''}`}
-                            onClick={() => toggleOpt('showStationAlt')} role="switch"
-                            aria-checked={opts.showStationAlt} tabIndex={0} />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                <div>
-                  <div className="s-label">{t('file.title')}</div>
-                  <div className="info-row"><span>{t('file.format')}</span><span className="info-val">{loadedFile?.ext.replace('.', '').toUpperCase()}</span></div>
-                  <div className="info-row"><span>{t('file.segments')}</span><span className="info-val">{cave.segmentCount.toLocaleString()}</span></div>
-                  <div className="info-row"><span>{t('file.stations')}</span><span className="info-val">{cave.stationCount.toLocaleString()}</span></div>
-                  {cave.scrapCount > 0 && (
-                    <div className="info-row"><span>{t('file.scraps')}</span><span className="info-val">{cave.scrapCount.toLocaleString()}</span></div>
-                  )}
-                </div>
-
-                {/* ─── SIDEBAR TAB BAR ─────────────────────────────────────────────────────── */}
-                <div style={{
-                  display: 'flex', gap: '2px', background: 'rgba(15,23,42,0.9)', padding: '4px',
-                  borderRadius: '10px', border: '1px solid rgba(51,65,85,0.6)', margin: '12px 0 16px',
-                  position: 'sticky', top: 0, zIndex: 10, backdropFilter: 'blur(8px)'
-                }}>
-                  {([
-                    { id: 'cave',     icon: 'domain',      label: lang === 'sk' ? 'Jaskyňa' : 'Cave' },
-                    { id: 'terrain',  icon: 'terrain',     label: lang === 'sk' ? 'Terén' : 'Terrain' },
-                    { id: 'analysis', icon: 'architecture', label: lang === 'sk' ? 'Analýza' : 'Analysis' },
-                  ] as const).map(tab => (
-                    <button key={tab.id} onClick={() => setSidebarTab(tab.id)}
-                      style={{
-                        flex: 1, padding: '7px 4px', fontSize: '10px', fontWeight: 700, borderRadius: '7px',
-                        border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
-                        background: sidebarTab === tab.id ? '#1e3a5f' : 'transparent',
-                        color: sidebarTab === tab.id ? '#60a5fa' : '#64748b',
-                        boxShadow: sidebarTab === tab.id ? '0 1px 6px rgba(59,130,246,0.25)' : 'none',
-                        transition: 'all 0.15s ease'
-                      }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>{tab.icon}</span>
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* ═══════════════════════════════════════════════════════════════════════════ */}
-                {/* TAB 1: JASKYŇA & 3D ZOBRAZENIE                                           */}
-                {/* ═══════════════════════════════════════════════════════════════════════════ */}
-                {sidebarTab === 'cave' && <div>
-
-                {/* ── ANALÝZA PRIESTOROVÝCH REZOV ── */}
-                <div style={{ marginBottom: '20px' }}>
-                    <div className="s-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: '18px', display: 'block' }}>content_cut</span>
-                      <span>{t('clipping.title')}</span>
-                    </div>
-                    
-                    <div style={{ padding: '12px', background: 'rgba(30,41,59,0.5)', borderRadius: '8px', border: '1px solid rgba(51,65,85,0.5)' }}>
-                      <div className="toggle-row" style={{ marginBottom: '12px' }}>
-                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>{t('clipping.horiz')}</span>
-                        <div className={`switch${opts.showClipping ? ' on' : ''}`}
-                          onClick={() => toggleOpt('showClipping')} role="switch"
-                          aria-checked={opts.showClipping} tabIndex={0}
-                        />
-                      </div>
-
-                      {opts.showClipping && (
-                        <div style={{ marginBottom: '16px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8', marginBottom: '6px' }}>
-                            <span>{t('clipping.height')}</span>
-                            <span style={{ color: '#818cf8', fontWeight: 'bold' }}>{opts.clippingHeight.toFixed(1)} m</span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <button onClick={() => setOpts(p => ({ ...p, clippingHeight: p.clippingHeight - 1 }))}
-                              style={{ width: '24px', height: '24px', borderRadius: '4px', border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>-</button>
-                            <input type="range" className="flex-1 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                              min={(cave.bounds.min.z + (cave.centerOffset?.z || 0)) - 10} max={(cave.bounds.max.z + (cave.centerOffset?.z || 0)) + 10}
-                              step={0.1} value={opts.clippingHeight} onChange={(e) => setOpts(p => ({ ...p, clippingHeight: parseFloat(e.target.value) }))} />
-                            <button onClick={() => setOpts(p => ({ ...p, clippingHeight: p.clippingHeight + 1 }))}
-                              style={{ width: '24px', height: '24px', borderRadius: '4px', border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>+</button>
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="toggle-row">
-                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>{t('clipping.vert')}</span>
-                        <div className={`switch${opts.showProfileClipping ? ' on' : ''}`}
-                          onClick={() => toggleOpt('showProfileClipping')} role="switch"
-                          aria-checked={opts.showProfileClipping} tabIndex={0}
-                        />
-                      </div>
-                      
-                      {opts.showProfileClipping && activeProfilePoints && (
-                        <div style={{ marginTop: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8', marginBottom: '6px' }}>
-                            <span>{t('clipping.offset')}</span>
-                            <span style={{ color: '#818cf8', fontWeight: 'bold' }}>{opts.profileClipOffset.toFixed(1)} m</span>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                            <button onClick={() => setOpts(p => ({ ...p, profileClipOffset: p.profileClipOffset - 0.5 }))}
-                              style={{ width: '24px', height: '24px', borderRadius: '4px', border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>-</button>
-                            <input type="range" className="flex-1 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                              min={-50} max={50} step={0.1} value={opts.profileClipOffset}
-                              onChange={(e) => setOpts(p => ({ ...p, profileClipOffset: parseFloat(e.target.value) }))} />
-                            <button onClick={() => setOpts(p => ({ ...p, profileClipOffset: p.profileClipOffset + 0.5 }))}
-                              style={{ width: '24px', height: '24px', borderRadius: '4px', border: '1px solid #334155', background: '#1e293b', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>+</button>
-                          </div>
-
-                          <button 
-                            onClick={() => toggleOpt('profileClipFlip')}
-                            style={{ width: '100%', padding: '6px', background: '#1e293b', color: '#94a3b8', fontSize: '10px', border: '1px solid #334155', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: '14px', display: 'block' }}>swap_horiz</span>
-                            <span>{t('clipping.flip')}</span>
-                          </button>
-                        </div>
-                      )}
-
-                      {(opts.showClipping || opts.showProfileClipping) && (
-                        <>
-                          <div style={{ marginTop: '8px', paddingTop: '10px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                            <div className="toggle-row" style={{ marginBottom: '8px' }}>
-                              <label className="toggle-label" style={{ fontSize: '10px', color: '#94a3b8' }}>
-                                <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>border_outer</span>
-                                {lang === 'sk' ? 'Hrana rezu jaskyne' : 'Cave clipping edge'}
-                              </label>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <input type="color" value={opts.colorClippingEdges} 
-                                  onChange={(e) => setOpts(p => ({ ...p, colorClippingEdges: e.target.value }))}
-                                  style={{ width: '20px', height: '20px', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }} />
-                                <div className={`switch${opts.showClippingEdges ? ' on' : ''}`}
-                                  onClick={() => toggleOpt('showClippingEdges')} role="switch"
-                                  aria-checked={opts.showClippingEdges} tabIndex={0} />
-                              </div>
-                            </div>
-
-                            <div className="toggle-row" style={{ marginBottom: '12px' }}>
-                              <label className="toggle-label" style={{ fontSize: '10px', color: '#94a3b8' }}>
-                                <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>landscape</span>
-                                {lang === 'sk' ? 'Hrana rezu povrchu' : 'Surface clipping edge'}
-                              </label>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <input type="color" value={opts.colorSurfaceClippingEdges} 
-                                  onChange={(e) => setOpts(p => ({ ...p, colorSurfaceClippingEdges: e.target.value }))}
-                                  style={{ width: '20px', height: '20px', padding: 0, border: 'none', background: 'none', cursor: 'pointer' }} />
-                                <div className={`switch${opts.showSurfaceClippingEdges ? ' on' : ''}`}
-                                  onClick={() => toggleOpt('showSurfaceClippingEdges')} role="switch"
-                                  aria-checked={opts.showSurfaceClippingEdges} tabIndex={0} />
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div className="toggle-row" style={{ marginTop: '4px' }}>
-                            <label className="toggle-label" style={{ fontSize: '10px', color: '#94a3b8' }}>
-                              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>visibility_off</span>
-                              {lang === 'sk' ? 'Vynechať jaskyňu z rezu' : 'Exclude cave from clip'}
-                            </label>
-                            <div className={`switch${opts.excludeModelFromClipping ? ' on' : ''}`}
-                              onClick={() => toggleOpt('excludeModelFromClipping')} role="switch"
-                              aria-checked={opts.excludeModelFromClipping} tabIndex={0} />
-                          </div>
-                        </>
-                      )}
-                    </div>
-                </div>
-
-                {/* ── VRSTVY (survey) ── */}
-                <div>
-                  <div className="s-label">{t('survey.title')}</div>
-                    <div className="toggle-row">
-                      <label className="toggle-label">
-                        <div className="dot" style={{ background: opts.colorSplay }} />
-                        {t('survey.splay')}
-                        <ColorPicker t={t} value={opts.colorSplay} onChange={(c) => setOpts(p => ({ ...p, colorSplay: c }))} />
-                      </label>
-                      <div className={`switch${opts.showSplay ? ' on' : ''}`}
-                        onClick={() => toggleOpt('showSplay')} role="switch"
-                        aria-checked={opts.showSplay} tabIndex={0} />
-                    </div>
-                    <div className="toggle-row">
-                      <label className="toggle-label">
-                        <div className="dot" style={{ background: opts.colorGrid }} />
-                        {t('survey.grid')}
-                        <ColorPicker t={t} value={opts.colorGrid} onChange={(c) => setOpts(p => ({ ...p, colorGrid: c }))} />
-                      </label>
-                      <div className={`switch${opts.showGrid ? ' on' : ''}`}
-                        onClick={() => toggleOpt('showGrid')} role="switch"
-                        aria-checked={opts.showGrid} tabIndex={0} />
-                    </div>
-                    <div className="toggle-row">
-                      <label className="toggle-label">{t('survey.gizmo')}</label>
-                      <div className={`switch${opts.showGizmo ? ' on' : ''}`}
-                        onClick={() => toggleOpt('showGizmo')} role="switch"
-                        aria-checked={opts.showGizmo} tabIndex={0} />
-                    </div>
-                    <div className="toggle-row">
-                      <label className="toggle-label">{t('survey.bbox')}</label>
-                      <div className={`switch${opts.showBoundingBox ? ' on' : ''}`}
-                        onClick={() => toggleOpt('showBoundingBox')} role="switch"
-                        aria-checked={opts.showBoundingBox} tabIndex={0} />
-                    </div>
-                    <div className="toggle-row">
-                      <label className="toggle-label">{t('survey.altitude')}</label>
-                      <div className={`switch${opts.traverseAltitude ? ' on' : ''}`}
-                        onClick={() => toggleOpt('traverseAltitude')} role="switch"
-                        aria-checked={opts.traverseAltitude} tabIndex={0} />
-                    </div>
-                    <div className="toggle-row">
-                      <label className="toggle-label">
-                        <div className="dot" style={{ background: opts.colorTraverse }} />
-                        {t('survey.tubes')}
-                        <ColorPicker t={t} value={opts.colorTraverse} onChange={(c) => setOpts(p => ({ ...p, colorTraverse: c }))} />
-                      </label>
-                      <div className={`switch${opts.showTraverse ? ' on' : ''}`}
-                        onClick={() => toggleOpt('showTraverse')} role="switch"
-                        aria-checked={opts.showTraverse} tabIndex={0} />
-                    </div>
-
-                    {opts.showTraverse && (
-                      <div style={{ marginTop: '8px', padding: '0 4px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#64748b', marginBottom: '4px' }}>
-                          <span>{t('survey.tubes')} - {t('terrain.wire').toLowerCase()}</span>
-                          <span style={{ color: '#4fc3f7' }}>{(opts.traverseRadius * 100).toFixed(0)} cm</span>
-                        </div>
-                        <input type="range" min={0.01} max={1.5} step={0.01}
-                          value={opts.traverseRadius}
-                          onChange={e => setOpts(p => ({ ...p, traverseRadius: Number(e.target.value) }))}
-                          className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500" />
-                      </div>
-                    )}
-                </div>
-
-                {/* ── STENY JASKYNE (scraps / point cloud) ── */}
-                {(cave.scrapCount > 0 || cave.pointCount > 0) && (
-                  <div>
-                    <div className="s-label">
-                      <div className="dot" style={{ background: opts.colorScraps }} />
-                      {t('cave.title')}
-                      <ColorPicker t={t} value={opts.colorScraps} onChange={(c) => setOpts(p => ({ ...p, colorScraps: c }))} />
-                    </div>
-
-                    {/* MAIN NEXTGEN SWITCH - only for point-cloud models */}
-	                    {cave.pointCount > 0 && (
-	                      <div className="toggle-row" style={{ background: 'rgba(99,102,241,0.1)', padding: '8px', borderRadius: '8px', marginBottom: '12px', border: '1px solid rgba(99,102,241,0.2)' }}>
-                        <label className="toggle-label" style={{ color: '#a5b4fc', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>blur_on</span>
-                          {lang === 'sk' ? 'LIDAR NEXTGEN' : 'LiDAR NEXTGEN'}
-                        </label>
-                        <div className={`switch${opts.engine === 'v2' ? ' on' : ''}`}
-                          onClick={() => setOpts(p => ({ ...p, engine: p.engine === 'v2' ? 'v1' : 'v2' }))} role="switch"
-                          aria-checked={opts.engine === 'v2'} tabIndex={0} />
-	                      </div>
-	                    )}
-
-                    {cave.pointCount > 0 && (
-                      <div className={`lidar-edit-panel${lidarEditMode !== 'off' ? ' active' : ''}`}>
-                        <div className="lidar-edit-header">
-                          <span className="lidar-edit-title">
-                            <EraserIcon aria-hidden="true" />
-                            {lang === 'sk' ? 'LiDAR editácia' : 'LiDAR editing'}
-                          </span>
-                          <span className="lidar-edit-count">{cave.pointCount.toLocaleString()}</span>
-                        </div>
-
-                        <div className="lidar-edit-toolbar">
-                          <button
-                            type="button"
-                            className={`lidar-edit-btn danger${lidarEditMode === 'erase' ? ' active' : ''}`}
-                            onClick={() => setLidarEditMode(mode => mode === 'erase' ? 'off' : 'erase')}
-                            disabled={lidarEditBusy}
-                            title={lang === 'sk' ? 'Guma' : 'Eraser'}
-                          >
-                            <EraserIcon aria-hidden="true" />
-                            <span>{lang === 'sk' ? 'Guma' : 'Erase'}</span>
-                          </button>
-                          <button
-                            type="button"
-                            className={`lidar-edit-btn keep${lidarEditMode === 'keep' ? ' active' : ''}`}
-                            onClick={() => setLidarEditMode(mode => mode === 'keep' ? 'off' : 'keep')}
-                            disabled={lidarEditBusy}
-                            title={lang === 'sk' ? 'Ponechať označené body' : 'Keep marked points'}
-                          >
-                            <MousePointerIcon aria-hidden="true" />
-                            <span>{lang === 'sk' ? 'Ponechať' : 'Keep'}</span>
-                          </button>
-                        </div>
-
-                        <div className="lidar-brush-row">
-                          <label>{lang === 'sk' ? 'Štetec' : 'Brush'}</label>
-                          <input
-                            type="range"
-                            min={16}
-                            max={120}
-                            step={2}
-                            value={lidarBrushSize}
-                            onChange={event => setLidarBrushSize(Number(event.target.value))}
-                            disabled={lidarEditBusy}
-                          />
-                          <span>{lidarBrushSize}px</span>
-                        </div>
-
-                        {lidarEditMode === 'keep' && (
-                          <div className="lidar-keep-row">
-                            <span>{lidarKeepSelectionCount.toLocaleString()}</span>
-                            <button
-                              type="button"
-                              className="lidar-edit-btn keep"
-                              onClick={applyLidarKeepSelection}
-                              disabled={lidarEditBusy || lidarKeepSelectionCount === 0}
-                              title={lang === 'sk' ? 'Použiť výber' : 'Apply selection'}
-                            >
-                              <CheckCircleIcon aria-hidden="true" />
-                              <span>{lang === 'sk' ? 'Použiť' : 'Apply'}</span>
-                            </button>
-                            <button
-                              type="button"
-                              className="lidar-icon-btn"
-                              onClick={clearLidarKeepSelection}
-                              disabled={lidarEditBusy || lidarKeepSelectionCount === 0}
-                              title={lang === 'sk' ? 'Zrušiť výber' : 'Clear selection'}
-                              aria-label={lang === 'sk' ? 'Zrušiť výber' : 'Clear selection'}
-                            >
-                              <XIcon aria-hidden="true" />
-                            </button>
-                          </div>
-                        )}
-
-                        <div className="lidar-edit-toolbar secondary">
-                          <button
-                            type="button"
-                            className="lidar-edit-btn"
-                            onClick={undoLidarEdit}
-                            disabled={lidarEditBusy || !lidarUndoCaveRef.current}
-                            title={lang === 'sk' ? 'Vrátiť poslednú úpravu' : 'Undo last edit'}
-                          >
-                            <UndoIcon aria-hidden="true" />
-                            <span>Undo</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="lidar-edit-btn"
-                            onClick={resetLidarEdits}
-                            disabled={lidarEditBusy || !lidarOriginalCaveRef.current || lidarEditRemovedCount === 0}
-                            title={lang === 'sk' ? 'Obnoviť pôvodný LiDAR' : 'Restore original LiDAR'}
-                          >
-                            <RotateCcwIcon aria-hidden="true" />
-                            <span>Reset</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-	                    {/* CASE A: NEXTGEN IS ON (v2 Engine) */}
-                    {opts.engine === 'v2' && cave.pointCount > 0 ? (
-                      <div style={{ padding: '0 4px' }}>
-                        <div style={{ marginBottom: 12 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                            <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>{lang === 'sk' ? 'VEĽKOSŤ BODOV' : 'POINT SIZE'}</label>
-                            <span style={{ fontSize: 10, color: '#818cf8', fontWeight: 700 }}>{opts.pointCloudSize.toFixed(2)}</span>
-                          </div>
-                          <input type="range" min={0.0} max={2.0} step={0.05}
-                            value={opts.pointCloudSize}
-                            onChange={e => setOpts(p => ({ ...p, pointCloudSize: Number(e.target.value) }))}
-                            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
-                        </div>
-
-                        <div style={{ marginBottom: 12 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                            <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>{lang === 'sk' ? 'JAS MODELU' : 'BRIGHTNESS'}</label>
-                            <span style={{ fontSize: 10, color: '#818cf8', fontWeight: 700 }}>{opts.pointCloudBrightness.toFixed(2)}</span>
-                          </div>
-                          <input type="range" min={0.1} max={3.0} step={0.1}
-                            value={opts.pointCloudBrightness}
-                            onChange={e => setOpts(p => ({ ...p, pointCloudBrightness: Number(e.target.value) }))}
-                            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
-                        </div>
-
-                        <div style={{ marginBottom: 12 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                            <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>{lang === 'sk' ? 'PLASTICITA' : 'PLASTICITY'}</label>
-                            <span style={{ fontSize: 10, color: '#818cf8', fontWeight: 700 }}>{opts.pointCloudPlasticity.toFixed(1)}</span>
-                          </div>
-                          <input type="range" min={0.5} max={2.5} step={0.1}
-                            value={opts.pointCloudPlasticity}
-                            onChange={e => setOpts(p => ({ ...p, pointCloudPlasticity: Number(e.target.value) }))}
-                            className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
-                        </div>
-
-                        <div style={{ marginBottom: 12 }}>
-                          <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                            {lang === 'sk' ? 'TVAR BODOV' : 'POINT SHAPE'}
-                          </label>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                            {POINT_CLOUD_SHAPE_OPTIONS.map(option => {
-                              const shape = option.id;
-                              const ShapeIcon = POINT_CLOUD_SHAPE_ICONS[shape];
-                              const active = (opts.pointCloudShape ?? DEFAULT_POINT_CLOUD_SHAPE) === shape;
-                              const label = lang === 'sk' ? POINT_CLOUD_SHAPE_LABELS_SK[shape] : POINT_CLOUD_SHAPE_LABELS_EN[shape];
-                              return (
-                                <button key={shape} onClick={() => setOpts(p => ({ ...p, pointCloudShape: shape }))}
-                                  title={label}
-                                  style={{ flex: '1 1 45%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px', minHeight: 30, fontSize: '9px', padding: '5px 3px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                                    background: active ? '#6366f1' : 'rgba(30,41,59,0.5)', color: 'white' }}>
-                                  <ShapeIcon size={13} strokeWidth={2.2} aria-hidden="true" />
-                                  <span>{label}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        <div style={{ marginBottom: 12 }}>
-                          <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                            {lang === 'sk' ? 'REŽIM FARIEB' : 'COLOR MODE'}
-                          </label>
-                          <div style={{ display: 'flex', gap: '4px' }}>
-                            {[
-                              { id: 'original',  label: lang === 'sk' ? 'PLY' : 'Original' },
-                              { id: 'elevation', label: lang === 'sk' ? 'Výška' : 'Elevation' },
-                              { id: 'natural',   label: lang === 'sk' ? 'Vlastná' : 'Custom' },
-                            ].map(mode => (
-                              <button key={mode.id} onClick={() => setOpts(p => ({ ...p, pointCloudColorMode: mode.id as any }))}
-                                style={{ flex: 1, fontSize: '9px', padding: '4px 2px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                                  background: opts.pointCloudColorMode === mode.id ? '#6366f1' : 'rgba(30,41,59,0.5)', color: 'white' }}>
-                                {mode.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {opts.pointCloudColorMode === 'natural' && (
-                          <div style={{ marginBottom: 12 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <div className="dot" style={{ background: opts.pointCloudCustomColor, width: '12px', height: '12px' }} />
-                              <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>{lang === 'sk' ? 'FARBA JASKYNE' : 'CAVE COLOR'}</label>
-                              <div style={{ marginLeft: 'auto' }}>
-                                <ColorPicker t={t} value={opts.pointCloudCustomColor} onChange={(c) => setOpts(p => ({ ...p, pointCloudCustomColor: c }))} />
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Selektívne zobrazenie LiDAR Point Cloudu */}
-                        <div style={{ marginBottom: 12 }}>
-                          <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                            {lang === 'sk' ? 'SELEKTÍVNE ZOBRAZENIE' : 'SELECTIVE VIEW'}
-                          </label>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                            {[
-                              { id: 'all',     label: lang === 'sk' ? 'Všetko' : 'All' },
-                              { id: 'floor',   label: lang === 'sk' ? 'Podlaha' : 'Floor' },
-                              { id: 'ceiling', label: lang === 'sk' ? 'Strop' : 'Ceiling' },
-                              { id: 'contour', label: lang === 'sk' ? 'Vrstevnice' : 'Contours' },
-                              { id: 'heatmap', label: lang === 'sk' ? 'Heatmapa' : 'Heatmap' },
-                            ].map(mode => (
-                              <button key={mode.id} onClick={() => setOpts(p => ({ ...p, pointCloudViewMode: mode.id as any }))}
-                                style={{ flex: '1 1 30%', fontSize: '9px', padding: '5px 2px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                                  background: opts.pointCloudViewMode === mode.id ? '#6366f1' : 'rgba(30,41,59,0.5)', color: 'white' }}>
-                                {mode.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Interaktívne posuvníky prahových hodnôt segmentácie */}
-                        {opts.pointCloudViewMode !== 'all' && (
-                          <>
-                            <div style={{ marginBottom: 12 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>
-                                  {lang === 'sk' ? 'HRANIČNÁ VÝŠKA REZU' : 'HEIGHT THRESHOLD'}
-                                </label>
-                                <span style={{ fontSize: 10, color: '#6366f1', marginLeft: 'auto', fontWeight: 700 }}>
-                                  {(opts.pointCloudHeightThreshold ?? 0.1).toFixed(2)}
-                                </span>
-                              </div>
-                              <input type="range" min="-0.8" max="0.8" step="0.05"
-                                value={opts.pointCloudHeightThreshold ?? 0.1}
-                                onChange={e => setOpts(p => ({ ...p, pointCloudHeightThreshold: Number(e.target.value) }))}
-                                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
-                            </div>
-
-                            <div style={{ marginBottom: 12 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700 }}>
-                                  {lang === 'sk' ? 'UHOL SKLONU PLOCHY' : 'ANGLE THRESHOLD'}
-                                </label>
-                                <span style={{ fontSize: 10, color: '#6366f1', marginLeft: 'auto', fontWeight: 700 }}>
-                                  {(opts.pointCloudAngleThreshold ?? 0.3).toFixed(2)}
-                                </span>
-                              </div>
-                              <input type="range" min="0.0" max="0.9" step="0.05"
-                                value={opts.pointCloudAngleThreshold ?? 0.3}
-                                onChange={e => setOpts(p => ({ ...p, pointCloudAngleThreshold: Number(e.target.value) }))}
-                                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      /* CASE B: NEXTGEN IS OFF (Standard Mesh - v1) */
-                      <>
-                        <div className="toggle-row">
-                          <label className="toggle-label">{t('cave.show')}</label>
-                          <div className={`switch${opts.showScraps ? ' on' : ''}`}
-                            onClick={() => toggleOpt('showScraps')} role="switch"
-                            aria-checked={opts.showScraps} tabIndex={0} />
-                        </div>
-
-                        {opts.showScraps && (
-                          <>
-                            <div className="toggle-row">
-                              <label className="toggle-label">{t('cave.organic')}</label>
-                              <div className={`switch${opts.smoothScraps ? ' on' : ''}`}
-                                onClick={() => {
-                                  const newVal = !opts.smoothScraps;
-                                  setOpts(p => ({ ...p, smoothScraps: newVal, accurateScraps: newVal ? false : p.accurateScraps }));
-                                }} role="switch"
-                                aria-checked={opts.smoothScraps} tabIndex={0} />
-                            </div>
-
-                            <div className="toggle-row">
-                              <label className="toggle-label">{t('cave.accurateMesh')}</label>
-                              <div className={`switch${opts.accurateScraps ? ' on' : ''}`}
-                                onClick={() => {
-                                  const newVal = !opts.accurateScraps;
-                                  setOpts(p => ({ ...p, accurateScraps: newVal, smoothScraps: newVal ? false : p.smoothScraps }));
-                                }} role="switch"
-                                aria-checked={opts.accurateScraps} tabIndex={0} />
-                            </div>
-
-                            <div className="toggle-row">
-                              <label className="toggle-label">{t('cave.render3d')}</label>
-                              <div className={`switch${opts.showRenderCave ? ' on' : ''}`}
-                                onClick={() => toggleOpt('showRenderCave')} role="switch"
-                                aria-checked={opts.showRenderCave} tabIndex={0} />
-                            </div>
-
-                            <div style={{ marginTop: 8, padding: '0 4px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#64748b', marginBottom: '6px' }}>
-                                <span>{lang === 'sk' ? 'Materiál stien' : 'Wall material'}</span>
-                                <span style={{ color: '#4fc3f7' }}>{opts.showRenderCave ? (lang === 'sk' ? '3D aktívny' : '3D active') : (lang === 'sk' ? 'zapne 3D' : 'enables 3D')}</span>
-                              </div>
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '4px' }}>
-                                {[
-                                  { id: 'limestone', label: lang === 'sk' ? 'Vápenec' : 'Limestone', swatch: '#d8d2bf' },
-                                  { id: 'dolomite', label: 'Dolomit', swatch: '#e8dccb' },
-                                  { id: 'grey_limestone', label: lang === 'sk' ? 'Sivý' : 'Grey', swatch: '#dbeafe' },
-                                  { id: 'technical', label: lang === 'sk' ? 'Tech' : 'Tech', swatch: '#7dd3fc' },
-                                ].map(preset => (
-                                  <button
-                                    key={preset.id}
-                                    onClick={() => setOpts(p => ({ ...p, caveTexture: preset.id as any, showRenderCave: true }))}
-                                    style={{
-                                      minHeight: '34px',
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      gap: '3px',
-                                      fontSize: '8px',
-                                      lineHeight: 1.05,
-                                      padding: '5px 2px',
-                                      borderRadius: '5px',
-                                      border: opts.caveTexture === preset.id ? '1px solid rgba(125,211,252,0.8)' : '1px solid rgba(148,163,184,0.16)',
-                                      background: opts.caveTexture === preset.id ? 'rgba(14,165,233,0.18)' : 'rgba(30,41,59,0.5)',
-                                      color: opts.caveTexture === preset.id ? '#e0f2fe' : '#cbd5e1',
-                                      cursor: 'pointer',
-                                      boxShadow: opts.caveTexture === preset.id ? '0 0 0 1px rgba(14,165,233,0.18) inset' : 'none',
-                                      transitionProperty: 'background, border-color, color, transform',
-                                      transitionDuration: '120ms',
-                                    }}
-                                  >
-                                    <span style={{ width: 13, height: 13, borderRadius: '50%', background: preset.swatch, boxShadow: '0 0 0 1px rgba(255,255,255,0.18) inset' }} />
-                                    <span>{preset.label}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="toggle-row">
-                              <label className="toggle-label">{t('cave.wire') || 'Drôtený model'}</label>
-                              <div className={`switch${opts.scrapsWireframe ? ' on' : ''}`}
-                                onClick={() => toggleOpt('scrapsWireframe')} role="switch"
-                                aria-checked={opts.scrapsWireframe} tabIndex={0} />
-                            </div>
-
-                            <div className="toggle-row">
-                              <label className="toggle-label">{t('cave.altitude')}</label>
-                              <div className={`switch${opts.scrapsAltitude ? ' on' : ''}`}
-                                onClick={() => toggleOpt('scrapsAltitude')} role="switch"
-                                aria-checked={opts.scrapsAltitude} tabIndex={0} />
-                            </div>
-
-                            {loadedFile?.ext === '.stl' && (
-                              <div style={{ marginTop: 12, padding: '0 4px' }}>
-                                <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                                  {lang === 'sk' ? 'SELEKTÍVNE ZOBRAZENIE STL' : 'STL SELECTIVE VIEW'}
-                                </label>
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '4px' }}>
-                                  {[
-                                    { id: 'all', label: lang === 'sk' ? 'Všetko' : 'All' },
-                                    { id: 'floor', label: lang === 'sk' ? 'Podlaha' : 'Floor' },
-                                    { id: 'ceiling', label: lang === 'sk' ? 'Strop' : 'Ceiling' },
-                                    { id: 'section', label: lang === 'sk' ? 'Rez' : 'Cut' },
-                                  ].map(mode => (
-                                    <button key={mode.id} onClick={() => setOpts(p => ({ ...p, scrapsViewMode: mode.id as any }))}
-                                      style={{ fontSize: '9px', padding: '5px 2px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                                        background: opts.scrapsViewMode === mode.id ? '#0ea5e9' : 'rgba(30,41,59,0.5)', color: 'white' }}>
-                                      {mode.label}
-                                    </button>
-                                  ))}
-                                </div>
-
-                                {opts.scrapsViewMode !== 'all' && (
-                                  <>
-                                    <div style={{ marginTop: 10 }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#64748b', marginBottom: '4px' }}>
-                                        <span>{lang === 'sk' ? 'Hranica rezu' : 'Cut threshold'}</span>
-                                        <span style={{ color: '#4fc3f7' }}>{opts.scrapsHeightThreshold.toFixed(2)}</span>
-                                      </div>
-                                      <input type="range" min={-0.8} max={0.8} step={0.05}
-                                        value={opts.scrapsHeightThreshold}
-                                        onChange={e => setOpts(p => ({ ...p, scrapsHeightThreshold: Number(e.target.value) }))}
-                                        className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500" />
-                                    </div>
-
-                                    {opts.scrapsViewMode !== 'section' && (
-                                      <div style={{ marginTop: 10 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#64748b', marginBottom: '4px' }}>
-                                          <span>{lang === 'sk' ? 'Rovinnosť plochy' : 'Surface flatness'}</span>
-                                          <span style={{ color: '#4fc3f7' }}>{opts.scrapsAngleThreshold.toFixed(2)}</span>
-                                        </div>
-                                        <input type="range" min={0} max={0.9} step={0.05}
-                                          value={opts.scrapsAngleThreshold}
-                                          onChange={e => setOpts(p => ({ ...p, scrapsAngleThreshold: Number(e.target.value) }))}
-                                          className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500" />
-                                      </div>
-                                    )}
-
-                                    {opts.scrapsViewMode === 'section' && (
-                                      <div style={{ marginTop: 10 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#64748b', marginBottom: '4px' }}>
-                                          <span>{lang === 'sk' ? 'Hrúbka rezu' : 'Cut thickness'}</span>
-                                          <span style={{ color: '#4fc3f7' }}>{opts.scrapsSectionWidth.toFixed(2)}</span>
-                                        </div>
-                                        <input type="range" min={0.02} max={0.3} step={0.01}
-                                          value={opts.scrapsSectionWidth}
-                                          onChange={e => setOpts(p => ({ ...p, scrapsSectionWidth: Number(e.target.value) }))}
-                                          className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500" />
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            )}
-
-                            <div style={{ marginTop: '8px', padding: '0 4px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#64748b', marginBottom: '4px' }}>
-                                <span>{lang === 'sk' ? 'Plasticita stien' : 'Wall relief'}</span>
-                                <span style={{ color: '#4fc3f7' }}>{opts.scrapsRelief.toFixed(2)}</span>
-                              </div>
-                              <input type="range" min={0} max={1} step={0.05}
-                                value={opts.scrapsRelief}
-                                onChange={e => setOpts(p => ({ ...p, scrapsRelief: Number(e.target.value) }))}
-                                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500" />
-                            </div>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* ── TERÉN (surface) ── */}
-                </div>}{/* end cave tab */}
-
-                {/* ═══════════════════════════════════════════════════════════════════════════ */}
-                {/* TAB 2: TERÉN & MAPY (GIS)                                                 */}
-                {/* ═══════════════════════════════════════════════════════════════════════════ */}
-                {sidebarTab === 'terrain' && <div>
-
-                {cave && (
-                  <div>
-                    <div className="s-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      {t('terrain.title')}
-                      {!cave.hasSurface && <span style={{ fontSize: '8px', color: '#64748b', fontWeight: 'normal' }}>({lang === 'sk' ? 'žiadny' : 'none'})</span>}
-                    </div>
-                    
-                    {cave.hasSurface ? (
-                      <>
-                    <div className="toggle-row">
-                      <label className="toggle-label">
-                        <div className="dot" style={{ background: opts.surfaceColor }} />
-                        {t('terrain.shaded')}
-                        <ColorPicker t={t} value={opts.surfaceColor} onChange={(c) => setOpts(p => ({ ...p, surfaceColor: c }))} />
-                      </label>
-                      <div className={`switch${opts.showSurfaceMesh ? ' on' : ''}`}
-                        onClick={() => setOpts(p => ({ 
-                          ...p, 
-                          showSurfaceMesh: !p.showSurfaceMesh, 
-                          showSurfaceNetwork: false, 
-                          showSurfaceTexture: false 
-                        }))} role="switch"
-                        aria-checked={opts.showSurfaceMesh} tabIndex={0} />
-                    </div>
-                    <div className="toggle-row">
-                      <label className="toggle-label">
-                        <div className="dot" style={{ background: opts.colorTerrainWire, border: '1px solid #4a7c3f' }} />
-                        {t('terrain.wire')}
-                        <ColorPicker t={t} value={opts.colorTerrainWire} onChange={(c) => setOpts(p => ({ ...p, colorTerrainWire: c }))} />
-                      </label>
-                      <div className={`switch${opts.showSurfaceMeshWire ? ' on' : ''}`}
-                        onClick={() => toggleOpt('showSurfaceMeshWire')} role="switch"
-                        aria-checked={opts.showSurfaceMeshWire} tabIndex={0} />
-                    </div>
-                    <div className="toggle-row">
-                      <label className="toggle-label">
-                        <div className="dot" style={{ background: 'linear-gradient(180deg,#e53935 0%,#f9a825 33%,#43a047 66%,#1565c0 100%)', border: 'none' }} />
-                        {t('terrain.network')}
-                      </label>
-                      <div className={`switch${opts.showSurfaceNetwork ? ' on' : ''}`}
-                        onClick={() => setOpts(p => ({ 
-                          ...p, 
-                          showSurfaceMesh: false, 
-                          showSurfaceNetwork: !p.showSurfaceNetwork, 
-                          showSurfaceTexture: false 
-                        }))} role="switch"
-                        aria-checked={opts.showSurfaceNetwork} tabIndex={0} />
-                    </div>
-                    <div className="toggle-row">
-                      <label className="toggle-label">
-                        <div className="dot" style={{ background: opts.contourColor, border: '1px solid #4a7c3f' }} />
-                        {t('terrain.contours')} ({contourLevels.major}m)
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          <ColorPicker t={t} label={t('terrain.contourBase')} value={opts.contourColor} onChange={(c) => setOpts(p => ({ ...p, contourColor: c }))} />
-                          <ColorPicker t={t} label={t('terrain.contourMajor')} value={opts.contourColor10} onChange={(c) => setOpts(p => ({ ...p, contourColor10: c }))} />
-                        </div>
-                      </label>
-                      <div className={`switch${opts.showContours ? ' on' : ''}`}
-                        onClick={() => toggleOpt('showContours')} role="switch"
-                        aria-checked={opts.showContours} tabIndex={0} />
-                    </div>
-                    {opts.showContours && (
-                      <div className="toggle-row" style={{ paddingLeft: '20px', borderTop: 'none', marginTop: '-8px', opacity: 0.8 }}>
-                        <label className="toggle-label" style={{ fontSize: '10px', color: '#94a3b8' }}>
-                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>label</span>
-                          {lang === 'sk' ? 'Zobraziť výšky' : 'Show altitudes'}
-                        </label>
-                        <div className={`switch${opts.showContourLabels ? ' on' : ''}`}
-                          onClick={() => toggleOpt('showContourLabels')} role="switch"
-                          aria-checked={opts.showContourLabels} tabIndex={0} />
-                      </div>
-                    )}
-                    <div className="toggle-row">
-                      <label className="toggle-label">
-                        <div className="dot" style={{ background: '#8fbc8f', border: '1px solid #4a7c3f' }} />
-                        {t('terrain.texture')}
-                      </label>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <button 
-                          onClick={() => {
-                            const inp = document.createElement('input');
-                            inp.type = 'file';
-                            inp.accept = 'image/jpeg,image/png';
-                            inp.onchange = (e: any) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                const url = trackObjectUrl(URL.createObjectURL(file));
-                                setOpts(p => {
-                                  clearSurfaceTextureUrl(p.surfaceTextureUrl)
-                                  return { 
-                                    ...p, 
-                                    surfaceTextureUrl: url, 
-                                    showSurfaceTexture: true,
-                                    showSurfaceMesh: false,
-                                    showSurfaceNetwork: false
-                                  }
-                                });
-                              }
-                            };
-                            inp.click();
-                          }}
-                          style={{
-                            background: 'rgba(79,195,247,0.15)',
-                            border: '1px solid rgba(79,195,247,0.3)',
-                            borderRadius: '4px',
-                            color: '#4fc3f7',
-                            fontSize: '9px',
-                            padding: '2px 6px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          {lang === 'sk' ? 'Nahrať' : 'Upload'}
-                        </button>
-                        {opts.surfaceTextureUrl && (
-                          <button 
-                            onClick={() => setOpts(p => {
-                              clearSurfaceTextureUrl(p.surfaceTextureUrl)
-                              return { ...p, surfaceTextureUrl: null }
-                            })}
-                            style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '10px', padding: '0 4px' }}
-                          >✕</button>
-                        )}
-                        <div className={`switch${opts.showSurfaceTexture ? ' on' : ''}`}
-                          onClick={() => setOpts(p => ({ 
-                            ...p, 
-                            showSurfaceMesh: false, 
-                            showSurfaceNetwork: false, 
-                            showSurfaceTexture: !p.showSurfaceTexture 
-                          }))} role="switch"
-                          aria-checked={opts.showSurfaceTexture} tabIndex={0} />
-                      </div>
-                    </div>
-
-                    {opts.showSurfaceTexture && (
-                      <div style={{ marginTop: '10px', padding: '10px', background: 'rgba(15,23,42,0.5)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>map</span>
-                              {lang === 'sk' ? 'ZDROJ TEXTÚRY' : 'TEXTURE SOURCE'}
-                            </div>
-                            <select 
-                              value={opts.surfaceTextureSource} 
-                              onChange={(e) => setOpts(p => ({ ...p, surfaceTextureSource: e.target.value as any }))}
-                              style={{ background: '#1e293b', color: 'white', border: '1px solid #334155', borderRadius: '4px', fontSize: '10px', padding: '2px 4px', outline: 'none', maxWidth: '200px' }}
-                            >
-                              <option value="custom">{lang === 'sk' ? 'Súbor (JPG/PNG/Lox)' : 'Custom File (JPG/PNG/Lox)'}</option>
-                              <option value="wms-orto">WMS: Ortofotomapa (ZBGIS GKÚ)</option>
-                              <option value="wms-orto-freemap">XYZ: Ortofotomapa (Freemap)</option>
-                              <option value="wms-shadow">WMS: DMR5 Tieňovaný reliéf (ZBGIS GKÚ)</option>
-                              <option value="wms-geology">WMS: Geologická mapa (ŠGÚDŠ)</option>
-                              <option value="none">{lang === 'sk' ? 'Vypnutá' : 'None'}</option>
-                            </select>
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>{lang === 'sk' ? 'Priehľadnosť' : 'Opacity'}</span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, marginLeft: '12px' }}>
-                              <input 
-                                type="range" min="0" max="1" step="0.05"
-                                value={opts.surfaceTextureOpacity}
-                                onChange={(e) => setOpts(p => ({ ...p, surfaceTextureOpacity: parseFloat(e.target.value) }))}
-                                style={{ flex: 1, height: '4px' }}
-                              />
-                              <span style={{ fontSize: '10px', color: '#e2e8f0', minWidth: '25px', textAlign: 'right' }}>{Math.round(opts.surfaceTextureOpacity * 100)}%</span>
-                            </div>
-                          </div>
-
-                          {isRemoteTextureSource(opts.surfaceTextureSource) && (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                              <span style={{ fontSize: '10px', color: '#94a3b8' }}>{lang === 'sk' ? 'Rozlíšenie / zoom' : 'Resolution / zoom'}</span>
-                              <select 
-                                value={opts.surfaceWmsResolution} 
-                                onChange={(e) => setOpts(p => ({ ...p, surfaceWmsResolution: parseInt(e.target.value) }))}
-                                style={{ background: '#1e293b', color: 'white', border: '1px solid #334155', borderRadius: '4px', fontSize: '10px', padding: '1px 4px', outline: 'none' }}
-                              >
-                                <option value="512">{lang === 'sk' ? 'Auto nízka' : 'Auto low'}</option>
-                                <option value="1024">{lang === 'sk' ? 'Auto stredná' : 'Auto medium'}</option>
-                                <option value="2048">{lang === 'sk' ? 'Auto vysoká' : 'Auto high'}</option>
-                                <option value="4096">{lang === 'sk' ? 'Auto maximum' : 'Auto maximum'}</option>
-                              </select>
-                            </div>
-                          )}
-
-                          {isRemoteTextureSource(opts.surfaceTextureSource) && (
-                            <TextureDownloadInspectorPanel
-                              info={textureDownloadInfo}
-                              lang={lang}
-                              onClearCache={handleClearTileCache}
-                            />
-                          )}
-
-                          {opts.surfaceTextureSource === 'custom' && (
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              <button 
-                                onClick={() => textureFileInputRef.current?.click()}
-                                style={{ flex: 1, padding: '4px', fontSize: '10px', background: 'rgba(59,130,246,0.2)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '4px', color: '#93c5fd', cursor: 'pointer' }}
-                              >
-                                <span className="material-symbols-outlined" style={{ fontSize: '12px', verticalAlign: 'middle', marginRight: '4px' }}>upload</span>
-                                {lang === 'sk' ? 'Nahrať JPG/PNG' : 'Upload JPG/PNG'}
-                              </button>
-                              {opts.surfaceTextureUrl && (
-                                <button 
-                                  onClick={() => setOpts(p => {
-                                    clearSurfaceTextureUrl(p.surfaceTextureUrl)
-                                    return { ...p, surfaceTextureUrl: null }
-                                  })}
-                                  className="btn-mini" style={{ color: '#f87171' }}
-                                >✕</button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>tune</span>
-                          {lang === 'sk' ? 'KALIBRÁCIA TEXTÚRY' : 'TEXTURE CALIBRATION'}
-                        </div>
-                        
-                        <div style={{ display: 'flex', gap: '4px', marginBottom: '10px', alignItems: 'center' }}>
-                          <button onClick={() => shiftTexture(-0.5, 0)} className="btn-mini" title="Vľavo">←</button>
-                          <div style={{ flex: 1, textAlign: 'center', fontSize: '10px', color: '#e2e8f0', fontFamily: 'monospace' }}>
-                            {opts.surfaceTextureOffset.x > 0 ? '+' : ''}{opts.surfaceTextureOffset.x.toFixed(1)} / {opts.surfaceTextureOffset.y > 0 ? '+' : ''}{opts.surfaceTextureOffset.y.toFixed(1)}m
-                          </div>
-                          <button onClick={() => shiftTexture(0.5, 0)} className="btn-mini" title="Vpravo">→</button>
-                          <button onClick={() => shiftTexture(0, 0.5)} className="btn-mini" title="Hore">↑</button>
-                          <button onClick={() => shiftTexture(0, -0.5)} className="btn-mini" title="Dole">↓</button>
-                        </div>
-
-                        <button 
-                          onClick={() => setOpts(p => ({ ...p, surfaceTextureOffset: { x: 0, y: 0 } }))}
-                          style={{ width: '100%', marginBottom: '10px', background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#94a3b8', fontSize: '9px', padding: '2px 0', cursor: 'pointer' }}
-                        >
-                          {lang === 'sk' ? 'Reset posunu textúry' : 'Reset texture offset'}
-                        </button>
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '10px', color: '#94a3b8' }}>{lang === 'sk' ? 'Súbor .txt (Therion/S-JTSK)' : 'Therion/S-JTSK .txt calib'}</span>
-                          <button onClick={() => calibFileInputRef.current?.click()} className="btn-mini" style={{ color: '#fbbf24', borderColor: 'rgba(251,191,36,0.3)', padding: '2px 8px' }}>
-                            {lang === 'sk' ? 'Nahrať' : 'Load'}
-                          </button>
-                        </div>
-                        {opts.surfaceTextureCalibration && (
-                          <div style={{ fontSize: '9px', color: '#10b981', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>check_circle</span>
-                            {lang === 'sk' ? 'Kalibrácia aktívna' : 'Calibration active'}
-                            <button onClick={() => setOpts(p => ({ ...p, surfaceTextureCalibration: null }))} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#f87171', padding: 0 }}>✕</button>
-                          </div>
-                        )}
-                        <input type="file" ref={calibFileInputRef} onChange={handleCalibFile} accept=".txt" style={{ display: 'none' }} />
-                        <input type="file" ref={textureFileInputRef} onChange={handleTextureFile} accept="image/*" style={{ display: 'none' }} />
-                      </div>
-                    )}
-                    
-                    {/* Kalibrácia modelu voči povrchu */}
-                    <div style={{ marginTop: '16px', padding: '10px', background: 'rgba(30,41,59,0.3)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>location_on</span>
-                        {lang === 'sk' ? 'KALIBRÁCIA MODELU (X, Y, Z)' : 'CAVE CALIBRATION (X, Y, Z)'}
-                      </div>
-                      
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <div style={{ fontSize: '9px', color: '#64748b', textAlign: 'center' }}>X</div>
-                          <div style={{ display: 'flex', gap: '2px' }}>
-                            <button onClick={() => shiftCave(-0.5, 0, 0)} className="btn-mini" title="-0.5m">-</button>
-                            <button onClick={() => shiftCave(0.5, 0, 0)} className="btn-mini" title="+0.5m">+</button>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <div style={{ fontSize: '9px', color: '#64748b', textAlign: 'center' }}>Y</div>
-                          <div style={{ display: 'flex', gap: '2px' }}>
-                            <button onClick={() => shiftCave(0, -0.5, 0)} className="btn-mini" title="-0.5m">-</button>
-                            <button onClick={() => shiftCave(0, 0.5, 0)} className="btn-mini" title="+0.5m">+</button>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <div style={{ fontSize: '9px', color: '#64748b', textAlign: 'center' }}>Z (alt)</div>
-                          <div style={{ display: 'flex', gap: '2px' }}>
-                            <button onClick={() => shiftCave(0, 0, -0.5)} className="btn-mini" title="-0.5m">-</button>
-                            <button onClick={() => shiftCave(0, 0, 0.5)} className="btn-mini" title="+0.5m">+</button>
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ marginTop: '6px', textAlign: 'center', fontSize: '10px', color: '#e2e8f0', fontFamily: 'monospace' }}>
-                         [{opts.caveCalibrationOffset.x > 0 ? '+' : ''}{opts.caveCalibrationOffset.x.toFixed(1)}, 
-                          {opts.caveCalibrationOffset.y > 0 ? '+' : ''}{opts.caveCalibrationOffset.y.toFixed(1)}, 
-                          {opts.caveCalibrationOffset.z > 0 ? '+' : ''}{opts.caveCalibrationOffset.z.toFixed(1)}] m
-                      </div>
-                      <button 
-                        onClick={() => setOpts(p => ({ ...p, caveCalibrationOffset: { x: 0, y: 0, z: 0 } }))}
-                        style={{ width: '100%', marginTop: '6px', background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#94a3b8', fontSize: '9px', padding: '2px 0', cursor: 'pointer' }}
-                      >
-                        {lang === 'sk' ? 'Resetovať polohu' : 'Reset position'}
-                      </button>
-                    </div>
-
-                    {/* Kalibrácia Povrchu (DMR) voči svetu/modelu */}
-                    <div style={{ marginTop: '10px', padding: '10px', background: 'rgba(30,41,59,0.3)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>terrain</span>
-                        {lang === 'sk' ? 'KALIBRÁCIA POVRCHU (X, Y, Z)' : 'SURFACE CALIBRATION (X, Y, Z)'}
-                      </div>
-                      
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '4px' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <div style={{ fontSize: '9px', color: '#64748b', textAlign: 'center' }}>X</div>
-                          <div style={{ display: 'flex', gap: '2px' }}>
-                            <button onClick={() => setOpts(p => ({ ...p, surfaceOffset: { ...p.surfaceOffset, x: p.surfaceOffset.x - 0.5 } }))} className="btn-mini">-</button>
-                            <button onClick={() => setOpts(p => ({ ...p, surfaceOffset: { ...p.surfaceOffset, x: p.surfaceOffset.x + 0.5 } }))} className="btn-mini">+</button>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <div style={{ fontSize: '9px', color: '#64748b', textAlign: 'center' }}>Y</div>
-                          <div style={{ display: 'flex', gap: '2px' }}>
-                            <button onClick={() => setOpts(p => ({ ...p, surfaceOffset: { ...p.surfaceOffset, y: p.surfaceOffset.y - 0.5 } }))} className="btn-mini">-</button>
-                            <button onClick={() => setOpts(p => ({ ...p, surfaceOffset: { ...p.surfaceOffset, y: p.surfaceOffset.y + 0.5 } }))} className="btn-mini">+</button>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <div style={{ fontSize: '9px', color: '#64748b', textAlign: 'center' }}>Z (alt)</div>
-                          <div style={{ display: 'flex', gap: '2px' }}>
-                            <button onClick={() => setOpts(p => ({ ...p, surfaceOffset: { ...p.surfaceOffset, z: p.surfaceOffset.z - 0.5 } }))} className="btn-mini">-</button>
-                            <button onClick={() => setOpts(p => ({ ...p, surfaceOffset: { ...p.surfaceOffset, z: p.surfaceOffset.z + 0.5 } }))} className="btn-mini">+</button>
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ fontSize: '9px', color: '#64748b', marginTop: '6px', textAlign: 'center', fontFamily: 'monospace' }}>
-                        {opts.surfaceOffset.x.toFixed(1)}, {opts.surfaceOffset.y.toFixed(1)}, {opts.surfaceOffset.z.toFixed(1)}m
-                      </div>
-                      <button 
-                        onClick={() => setOpts(p => ({ ...p, surfaceOffset: { x: 0, y: 0, z: 0 } }))}
-                        style={{ width: '100%', marginTop: '6px', background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px', color: '#94a3b8', fontSize: '9px', padding: '2px 0', cursor: 'pointer' }}
-                      >
-                        {lang === 'sk' ? 'Reset kalibrácie povrchu' : 'Reset surface calibration'}
-                      </button>
-                    </div>
-
-                      </>
-                    ) : (
-                      <div style={{ padding: '12px', background: 'rgba(30,41,59,0.2)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)', textAlign: 'center', marginBottom: '12px' }}>
-                        <div style={{ fontSize: '10px', color: '#64748b', marginBottom: '8px' }}>
-                          {lang === 'sk' ? 'Model nemá povrch.' : 'No surface for this model.'}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Vždy zobrazená možnosť pridania TIFF povrchu */}
-                    <div style={{ padding: '10px', background: 'rgba(99,102,241,0.05)', borderRadius: '8px', border: '1px solid rgba(99,102,241,0.15)' }}>
-                      <div className="toggle-row" style={{ border: 'none', padding: 0 }}>
-                        <label className="toggle-label">
-                          <span className="material-symbols-outlined" style={{ fontSize: '18px', verticalAlign: 'middle', marginRight: '6px' }}>upload_file</span>
-                          {lang === 'sk' ? 'Pridať TIFF povrch' : 'Add TIFF surface'}
-                        </label>
-                        <button 
-                          onClick={() => tiffFileInputRef.current?.click()}
-                          style={{ padding: '4px 8px', fontSize: '10px', background: '#1e293b', border: '1px solid #334155', borderRadius: '4px', color: '#94a3b8', cursor: 'pointer' }}
-                        >
-                          {lang === 'sk' ? 'Vybrať .tif' : 'Select .tif'}
-                        </button>
-                        <input 
-                          type="file" ref={tiffFileInputRef} accept=".tif,.tiff" style={{ display: 'none' }}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handleTiffFile(file);
-                          }}
-                        />
-                      </div>
-                      
-                      <div style={{ padding: '8px', background: 'rgba(30,41,59,0.3)', borderRadius: '6px', marginTop: '8px', fontSize: '9px', color: '#64748b' }}>
-                        {lang === 'sk' 
-                          ? 'Tip: Ak máš aj .tfw (World file), načítaj ho pre presné umiestnenie.'
-                          : 'Tip: If you have a .tfw file, load it for precise positioning.'}
-                        <button 
-                          onClick={() => tfwFileInputRef.current?.click()}
-                          style={{ display: 'block', marginTop: '4px', background: 'none', border: 'none', color: '#818cf8', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-                        >
-                          {lang === 'sk' ? 'Načítať .tfw' : 'Load .tfw'}
-                        </button>
-                        <input 
-                          type="file" ref={tfwFileInputRef} accept=".tfw" style={{ display: 'none' }}
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file && cave) {
-                              alert(lang === 'sk' ? 'Najlepšie je pretiahnuť oba súbory (tif+tfw) naraz do okna.' : 'Best results: drag and drop both tif and tfw together.');
-                            }
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                </div>}{/* end terrain tab */}
-
-                {/* Stations, Colors & Cinematic — cave tab (bottom) */}
-                {sidebarTab === 'cave' && <div>
-
-                <div>
-                  <div className="s-label">{t('stations.title')}</div>
-                  <div className="toggle-row">
-                    <label className="toggle-label">
-                      <div className="dot" style={{ background: opts.colorStations, border: '1px solid rgba(255,255,255,.2)' }} />
-                      {t('stations.show')}
-                      <ColorPicker t={t} value={opts.colorStations} onChange={(c) => setOpts(p => ({ ...p, colorStations: c }))} />
-                    </label>
-                    <div className={`switch${opts.showStations ? ' on' : ''}`}
-                      onClick={() => toggleOpt('showStations')} role="switch"
-                      aria-checked={opts.showStations} tabIndex={0} />
-                  </div>
-                  <div className="toggle-row">
-                    <label className="toggle-label">
-                      <div className="dot" style={{ background: opts.colorStationNames }} />
-                      {t('stations.names')}
-                      <ColorPicker t={t} value={opts.colorStationNames} onChange={(c) => setOpts(p => ({ ...p, colorStationNames: c }))} />
-                    </label>
-                    <div className={`switch${opts.showStationNames ? ' on' : ''}`}
-                      onClick={() => toggleOpt('showStationNames')} role="switch"
-                      aria-checked={opts.showStationNames} tabIndex={0} />
-                  </div>
-                  <div className="toggle-row">
-                    <label className="toggle-label">
-                      <div className="dot" style={{ background: opts.colorStationAlt }} />
-                      {t('stations.altitude')}
-                      <ColorPicker t={t} value={opts.colorStationAlt} onChange={(c) => setOpts(p => ({ ...p, colorStationAlt: c }))} />
-                    </label>
-                    <div className={`switch${opts.showStationAlt ? ' on' : ''}`}
-                      onClick={() => toggleOpt('showStationAlt')} role="switch"
-                      aria-checked={opts.showStationAlt} tabIndex={0} />
-                  </div>
-                  <div className="toggle-row">
-                    <label className="toggle-label">
-                      <div className="dot" style={{ background: '#fb8c00', border: '1px solid white' }} />
-                      {t('stations.entrances')}
-                    </label>
-                    <div className={`switch${opts.showEntrances ? ' on' : ''}`}
-                      onClick={() => toggleOpt('showEntrances')} role="switch"
-                      aria-checked={opts.showEntrances} tabIndex={0} />
-                  </div>
-                  <div className="toggle-row">
-                    <label className="toggle-label">{t('stations.entranceLabels')}</label>
-                    <div className={`switch${opts.showEntranceLabels ? ' on' : ''}`}
-                      onClick={() => toggleOpt('showEntranceLabels')} role="switch"
-                      aria-checked={opts.showEntranceLabels} tabIndex={0} />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="s-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>accessibility_new</span>
-                    {lang === 'sk' ? 'Mierka (Jaskyniar)' : 'Scale (Caver)'}
-                  </div>
-                  {opts.placedCaver ? (
-                    <div style={{ padding: '8px', background: 'rgba(30,41,59,0.3)', borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '10px', color: '#94a3b8' }}>
-                          {opts.placedCaver.pose === 'standing' ? (lang === 'sk' ? 'Stojaci' : 'Standing') : (lang === 'sk' ? 'Ležiaci' : 'Crawling')}
-                        </span>
-                        <button 
-                          onClick={() => setOpts(p => ({ ...p, placedCaver: null }))}
-                          style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
-                        >
-                          {lang === 'sk' ? 'ODSTRÁNIŤ' : 'REMOVE'}
-                        </button>
-                      </div>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                         <button onClick={() => setOpts(p => ({ ...p, placedCaver: { ...p.placedCaver!, pose: 'standing' } }))} className={`btn-mini ${opts.placedCaver.pose === 'standing' ? 'active' : ''}`} style={{ flex: 1 }}>{lang === 'sk' ? 'Stojaci' : 'Stand'}</button>
-                         <button onClick={() => setOpts(p => ({ ...p, placedCaver: { ...p.placedCaver!, pose: 'crawling' } }))} className={`btn-mini ${opts.placedCaver.pose === 'crawling' ? 'active' : ''}`} style={{ flex: 1 }}>{lang === 'sk' ? 'Ležiaci' : 'Crawl'}</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="help-text" style={{ fontSize: '9px', opacity: 0.7, padding: '4px 0' }}>
-                      {lang === 'sk' ? 'Klikni na ľubovoľný bod jaskyne pre pridanie postavy.' : 'Click on any cave point to add a caver.'}
-                    </div>
-                  )}
-                </div>
-
-                {/* ─── SPELEO & GEOLÓGIA ────────────────────────────────────────────────── */}
-                </div>}{/* end cave tab (stations+colors) */}
-
-                {/* ═══════════════════════════════════════════════════════════════════════════ */}
-                {/* TAB 3: ANALÝZA & MERANIE                                                   */}
-                {/* ═══════════════════════════════════════════════════════════════════════════ */}
-                {sidebarTab === 'analysis' && <div>
-
-                <div style={{ marginTop: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
-                  <div className="s-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(147, 51, 234, 0.1)', borderLeft: '4px solid #a855f7' }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#c084fc' }}>insights</span>
-                    {lang === 'sk' ? 'SPELEO & GEOLÓGIA' : 'SPELEO & GEOLOGY'}
-                  </div>
-
-                  {/* 0. Projekcia a Uhly pohľadu */}
-                  <div style={{ background: 'rgba(30,41,59,0.3)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '10px', color: '#e2e8f0', marginBottom: '6px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#38bdf8' }}>videocam</span>
-                      {t('projection.title')}
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
-                      <button
-                        onClick={() => setOpts(p => ({ ...p, cameraProjection: 'perspective' }))}
-                        className={`btn-mini ${opts.cameraProjection === 'perspective' ? 'active' : ''}`}
-                        style={{
-                          background: opts.cameraProjection === 'perspective' ? '#0284c7' : 'rgba(30,41,59,0.6)',
-                          color: opts.cameraProjection === 'perspective' ? '#fff' : '#94a3b8',
-                          padding: '6px 4px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)'
-                        }}
-                      >
-                        {t('projection.perspective')}
-                      </button>
-                      <button
-                        onClick={() => setOpts(p => ({ ...p, cameraProjection: 'orthographic' }))}
-                        className={`btn-mini ${opts.cameraProjection === 'orthographic' ? 'active' : ''}`}
-                        style={{
-                          background: opts.cameraProjection === 'orthographic' ? '#0284c7' : 'rgba(30,41,59,0.6)',
-                          color: opts.cameraProjection === 'orthographic' ? '#fff' : '#94a3b8',
-                          padding: '6px 4px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)'
-                        }}
-                      >
-                        {t('projection.orthographic')}
-                      </button>
-                    </div>
-
-                    <p style={{ fontSize: '8px', color: '#64748b', margin: '0 0 8px 0', lineHeight: '1.3' }}>
-                      {opts.cameraProjection === 'orthographic' ? t('projection.orthographicDesc') : t('projection.perspectiveDesc')}
-                    </p>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
-                      <button
-                        onClick={() => {
-                          setOpts(p => ({ ...p, cameraProjection: 'orthographic' }))
-                          setActiveViewPreset('top')
-                          window.dispatchEvent(new CustomEvent('cave-set-view', { detail: { view: 'top' } }))
-                        }}
-                        style={{
-                          background: opts.cameraProjection === 'orthographic' && activeViewPreset === 'top' ? '#0369a1' : 'rgba(15,23,42,0.8)',
-                          border: '1px solid rgba(56,189,248,0.3)', color: '#bae6fd',
-                          padding: '5px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
-                          boxShadow: opts.cameraProjection === 'orthographic' && activeViewPreset === 'top' ? '0 0 6px rgba(3,105,161,0.5)' : 'none'
-                        }}
-                      >
-                        <span>📐</span> {t('projection.planView')} <span style={{ fontSize: '7.5px', opacity: 0.7, background: 'rgba(255,255,255,0.15)', padding: '1px 3px', borderRadius: '3px' }}>1</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setOpts(p => ({ ...p, cameraProjection: 'orthographic' }))
-                          setActiveViewPreset('front')
-                          window.dispatchEvent(new CustomEvent('cave-set-view', { detail: { view: 'front' } }))
-                        }}
-                        style={{
-                          background: opts.cameraProjection === 'orthographic' && activeViewPreset === 'front' ? '#0369a1' : 'rgba(15,23,42,0.8)',
-                          border: '1px solid rgba(56,189,248,0.3)', color: '#bae6fd',
-                          padding: '5px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
-                          boxShadow: opts.cameraProjection === 'orthographic' && activeViewPreset === 'front' ? '0 0 6px rgba(3,105,161,0.5)' : 'none'
-                        }}
-                      >
-                        <span>↔️</span> {t('projection.profileView')} <span style={{ fontSize: '7.5px', opacity: 0.7, background: 'rgba(255,255,255,0.15)', padding: '1px 3px', borderRadius: '3px' }}>2</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setOpts(p => ({ ...p, cameraProjection: 'orthographic' }))
-                          setActiveViewPreset('side')
-                          window.dispatchEvent(new CustomEvent('cave-set-view', { detail: { view: 'side' } }))
-                        }}
-                        style={{
-                          background: opts.cameraProjection === 'orthographic' && activeViewPreset === 'side' ? '#0369a1' : 'rgba(15,23,42,0.8)',
-                          border: '1px solid rgba(56,189,248,0.3)', color: '#bae6fd',
-                          padding: '5px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
-                          boxShadow: opts.cameraProjection === 'orthographic' && activeViewPreset === 'side' ? '0 0 6px rgba(3,105,161,0.5)' : 'none'
-                        }}
-                      >
-                        <span>↕️</span> {t('projection.sectionView')} <span style={{ fontSize: '7.5px', opacity: 0.7, background: 'rgba(255,255,255,0.15)', padding: '1px 3px', borderRadius: '3px' }}>3</span>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setActiveViewPreset('iso')
-                          window.dispatchEvent(new CustomEvent('cave-set-view', { detail: { view: 'iso' } }))
-                        }}
-                        style={{
-                          background: activeViewPreset === 'iso' ? '#0369a1' : 'rgba(15,23,42,0.8)',
-                          border: '1px solid rgba(56,189,248,0.3)', color: '#bae6fd',
-                          padding: '5px', fontSize: '9px', fontWeight: 'bold', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px',
-                          boxShadow: activeViewPreset === 'iso' ? '0 0 6px rgba(3,105,161,0.5)' : 'none'
-                        }}
-                      >
-                        <span>🧊</span> {t('projection.isoView')} <span style={{ fontSize: '7.5px', opacity: 0.7, background: 'rgba(255,255,255,0.15)', padding: '1px 3px', borderRadius: '3px' }}>4</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 1. Tektonika & Geológia (3-bodový sklonomer a spádnica) */}
-                  <div style={{ background: 'rgba(30,41,59,0.3)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '10px', color: '#e2e8f0', marginBottom: '6px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#c084fc' }}>architecture</span>
-                      {lang === 'sk' ? 'Tektonické meranie (3 body: Sklon & Spádnica)' : 'Tectonic Plane (Dip & Dip Direction)'}
-                    </div>
-
-                    <p style={{ fontSize: '9px', color: '#94a3b8', margin: '0 0 8px 0', lineHeight: '1.35' }}>
-                      {lang === 'sk' 
-                        ? 'Vyberte 3 body na stene jaskyne, vrstve alebo v teréne. Systém automaticky vypočíta normálu, sklon po spádnici a azimut.' 
-                        : 'Pick 3 points on cave wall, bedding plane or terrain to calculate dip, dip direction and strike.'}
-                    </p>
-
-                    <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
-                      <button
-                        onClick={() => setIsMeasuringMode(!isMeasuringMode)}
-                        className={`btn-back${isMeasuringMode ? ' active' : ''}`}
-                        style={{
-                          flex: 1,
-                          background: isMeasuringMode ? '#6366f1' : 'rgba(99,102,241,0.12)',
-                          color: isMeasuringMode ? '#ffffff' : '#a5b4fc',
-                          borderColor: isMeasuringMode ? '#818cf8' : 'rgba(99,102,241,0.3)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          padding: '6px 8px',
-                          fontSize: '10px',
-                          fontWeight: 'bold'
-                        }}
-                      >
-                        <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>{isMeasuringMode ? 'check_circle' : 'touch_app'}</span>
-                        <span>{isMeasuringMode ? (lang === 'sk' ? 'Meranie aktívne' : 'Measuring active') : (lang === 'sk' ? 'Aktivovať výber 3 bodov' : 'Enable 3-Point Picker')}</span>
-                      </button>
-
-                      {selectedStations.length > 0 && (
-                        <button
-                          onClick={() => setSelectedStations([])}
-                          className="btn-back"
-                          style={{
-                            background: 'rgba(239,68,68,0.1)',
-                            color: '#f87171',
-                            borderColor: 'rgba(239,68,68,0.25)',
-                            padding: '6px 8px',
-                            fontSize: '10px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                          title={lang === 'sk' ? 'Resetovať vybrané body' : 'Reset points'}
-                        >
-                          <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>restart_alt</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Stav výberu bodov */}
-                    <div style={{ 
-                      fontSize: '9px', 
-                      padding: '5px 8px', 
-                      borderRadius: '4px', 
-                      background: selectedStations.length === 3 ? 'rgba(16,185,129,0.12)' : selectedStations.length > 0 ? 'rgba(245,158,11,0.12)' : 'rgba(15,23,42,0.6)',
-                      border: `1px solid ${selectedStations.length === 3 ? 'rgba(16,185,129,0.3)' : selectedStations.length > 0 ? 'rgba(245,158,11,0.3)' : 'rgba(255,255,255,0.05)'}`,
-                      color: selectedStations.length === 3 ? '#6ee7b7' : selectedStations.length > 0 ? '#fcd34d' : '#94a3b8',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginBottom: selectedStations.length === 3 ? '8px' : '0'
-                    }}>
-                      <span>
-                        {selectedStations.length === 0 && (lang === 'sk' ? 'Kliknite na 1. bod v 3D scéne' : 'Click 1st point in 3D scene')}
-                        {selectedStations.length === 1 && (lang === 'sk' ? 'Vybraný 1. bod. Kliknite na 2. bod' : 'Point 1 selected. Click 2nd point')}
-                        {selectedStations.length === 2 && (lang === 'sk' ? 'Vybrané 2 body. Kliknite na 3. bod' : 'Points 1 & 2 selected. Click 3rd point')}
-                        {selectedStations.length === 3 && (lang === 'sk' ? 'Rovina kompletne zameraná' : 'Plane fully measured')}
-                      </span>
-                      <span style={{ fontWeight: 'bold', fontFamily: 'monospace' }}>
-                        {selectedStations.length}/3
-                      </span>
-                    </div>
-
-                    {/* Ak sú vybrané 3 body, zobrazíme živé výsledky priamo v bočnom paneli */}
-                    {selectedStations.length === 3 && (() => {
-                      const tect = calculateTectonics(selectedStations[0].pos, selectedStations[1].pos, selectedStations[2].pos, lang);
-                      if (!tect) return null;
-                      return (
-                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                            <div style={{ background: '#0f172a', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                              <div style={{ color: '#64748b', fontSize: '8px' }}>{t('tectonics.dip')}</div>
-                              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#60a5fa', fontFamily: 'monospace' }}>
-                                {tect.dipAngle.toFixed(1)}°
-                              </div>
-                            </div>
-                            <div style={{ background: '#0f172a', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                              <div style={{ color: '#64748b', fontSize: '8px' }}>{t('tectonics.dipDirection')}</div>
-                              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#4ade80', fontFamily: 'monospace' }}>
-                                {tect.dipDirection.toFixed(1)}° <span style={{ fontSize: '10px', color: '#86efac' }}>({tect.cardinalDirection})</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div style={{ background: '#0f172a', padding: '6px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.05)', fontSize: '9px', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <span>{t('tectonics.strike')}:</span>
-                              <strong style={{ color: '#fde047', fontFamily: 'monospace' }}>{`${tect.strike[0].toFixed(0)}° - ${tect.strike[1].toFixed(0)}°`}</strong>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <span>{t('tectonics.triangleArea')}:</span>
-                              <strong style={{ color: '#e2e8f0', fontFamily: 'monospace' }}>{tect.area.toFixed(2)} m²</strong>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                              <span>Geol. zápis:</span>
-                              <strong style={{ color: '#c084fc', fontFamily: 'monospace' }}>{tect.notation}</strong>
-                            </div>
-                          </div>
-
-                          <button
-                            onClick={() => {
-                              const strikeStr = `${tect.strike[0].toFixed(0)}° - ${tect.strike[1].toFixed(0)}°`;
-                              const text = `Tektonika / Geológia:\nSklon po spádnici: ${tect.dipAngle.toFixed(1)}°\nAzimut spádnice: ${tect.dipDirection.toFixed(1)}° (${tect.cardinalDirection})\nSmer vrstvy (Strike): ${strikeStr}\nPlocha: ${tect.area.toFixed(2)} m²\nGeol. zápis: ${tect.notation}`;
-                              navigator.clipboard.writeText(text);
-                            }}
-                            className="btn-back"
-                            style={{
-                              width: '100%',
-                              background: 'rgba(192,132,252,0.12)',
-                              color: '#c084fc',
-                              borderColor: 'rgba(192,132,252,0.25)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '6px',
-                              padding: '5px',
-                              fontSize: '9px'
-                            }}
-                          >
-                            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>content_copy</span>
-                            <span>{t('tectonics.copyData')}</span>
-                          </button>
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  {/* 2. 3D Kalibrácia Terénu (Gizmo) */}
-                  <div style={{ background: 'rgba(30,41,59,0.3)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '12px' }}>
-                    <div className="toggle-row" style={{ border: 'none', padding: 0, marginBottom: '6px' }}>
-                      <label className="toggle-label" style={{ fontSize: '10px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#38bdf8' }}>open_with</span>
-                        {lang === 'sk' ? '3D kalibračné gizmo terénu' : '3D Terrain Gizmo'}
-                      </label>
-                      <div className={`switch${opts.terrainCalibrationMode ? ' on' : ''}`}
-                        onClick={() => setOpts(p => ({ ...p, terrainCalibrationMode: !p.terrainCalibrationMode }))}
-                        role="switch"
-                        aria-checked={opts.terrainCalibrationMode}
-                        tabIndex={0}
-                      />
-                    </div>
-                    <p style={{ fontSize: '9px', color: '#64748b', margin: '0 0 8px 0', lineHeight: '1.3' }}>
-                      {lang === 'sk' ? 'Aktivuje 3D manipulačné šípky priamo nad terénom v scéne pre real-time doladenie pozície.' : 'Activates 3D transformation arrows directly above the terrain in the scene for real-time alignment.'}
-                    </p>
-                    {opts.surfaceOffset && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px', color: '#94a3b8', background: '#0f172a', padding: '4px 8px', borderRadius: '4px', fontFamily: 'monospace' }}>
-                        <span>Offset:</span>
-                        <span>X: {opts.surfaceOffset.x} | Y: {opts.surfaceOffset.y} | Z: {opts.surfaceOffset.z}m</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 2. LiDAR & Splay Analyzátor Anomálií */}
-                  <div style={{ background: 'rgba(30,41,59,0.3)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '10px', color: '#e2e8f0', marginBottom: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#a855f7' }}>analytics</span>
-                      {lang === 'sk' ? 'LiDAR & Splay detektor komínov' : 'LiDAR Anomaly Detector'}
-                    </div>
-                    
-                    <button 
-                      onClick={isLiDARAnalyzing ? cancelLiDARAnalysis : runLiDARAnalysis}
-                      className="btn-back"
-                      style={{ width: '100%', marginBottom: '8px', background: 'rgba(147, 51, 234, 0.1)', color: '#c084fc', borderColor: 'rgba(147, 51, 234, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '6px', fontSize: '10px' }}
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>youtube_searched_for</span>
-                      <span>{isLiDARAnalyzing ? (lang === 'sk' ? 'Zrušiť LiDAR analýzu' : 'Cancel LiDAR analysis') : (lang === 'sk' ? 'Detegovať komíny, okná a pukliny' : 'Detect Chimneys & Windows')}</span>
-                    </button>
-
-                    <button
-                      onClick={isLidarMapGenerating ? cancelLidarPlanMap : generateLidarPlanMap}
-                      className="btn-back"
-                      disabled={!cave.points || cave.pointCount === 0}
-                      style={{
-                        width: '100%',
-                        marginBottom: '8px',
-                        background: 'rgba(15,118,110,0.12)',
-                        color: '#5eead4',
-                        borderColor: 'rgba(20,184,166,0.25)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        padding: '6px',
-                        fontSize: '10px',
-                        opacity: (!cave.points || cave.pointCount === 0) ? 0.45 : 1
-                      }}
-                    >
-                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>map</span>
-                      <span>{isLidarMapGenerating ? (lang === 'sk' ? 'Zrušiť kreslenie mapy' : 'Cancel map drawing') : (lang === 'sk' ? 'Nakresliť 2D mapu z LiDARu' : 'Draw 2D LiDAR map')}</span>
-                    </button>
-
-                    {anomalies.length > 0 ? (
-                      <div style={{ maxHeight: '150px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '2px' }}>
-                        {anomalies.map((a) => (
-                          <div 
-                            key={a.id} 
-                            onClick={() => setActiveAnomalyId(activeAnomalyId === a.id ? null : a.id)}
-                            style={{ 
-                              padding: '6px', 
-                              borderRadius: '4px', 
-                              background: activeAnomalyId === a.id ? 'rgba(147,51,234,0.2)' : 'rgba(15,23,42,0.6)', 
-                              border: `1px solid ${activeAnomalyId === a.id ? '#c084fc' : 'rgba(255,255,255,0.05)'}`,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '2px',
-                              transition: 'all 0.2s'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '9px' }}>
-                              <span style={{ 
-                                fontWeight: 'bold', 
-                                color: a.type === 'chimney' ? '#f97316' : a.type === 'window' ? '#06b6d4' : '#c084fc',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}>
-                                <span className="material-symbols-outlined" style={{ fontSize: '12px' }}>
-                                  {a.type === 'chimney' ? 'vertical_align_top' : a.type === 'window' ? 'open_in_new' : 'splitscreen'}
-                                </span>
-                                {a.type === 'chimney' ? (lang === 'sk' ? 'Komín / Dóm' : 'Chimney') : a.type === 'window' ? (lang === 'sk' ? 'Okno / Puklina' : 'Window') : (lang === 'sk' ? 'Geologická anomália' : 'Anomaly')}
-                              </span>
-                              <span style={{ color: '#10b981', fontWeight: 'bold' }}>{a.confidence.toFixed(0)}% spoľ.</span>
-                            </div>
-                            <div style={{ fontSize: '8px', color: '#94a3b8', lineHeight: '1.2' }}>
-                              {a.description} (Veľkosť: {a.size.toFixed(1)}m)
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: '9px', color: '#64748b', textAlign: 'center', padding: '6px 0' }}>
-                        {lang === 'sk' ? 'Žiadne zistené anomálie. Spusťte analýzu.' : 'No anomalies detected yet. Click scan.'}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 3. Objemový Profiler a 2D rezy */}
-                  <div style={{ background: 'rgba(30,41,59,0.3)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '10px', color: '#e2e8f0', marginBottom: '8px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: '16px', color: '#06b6d4' }}>layers</span>
-                      {lang === 'sk' ? '2D rez chodbou a objem' : '2D Cross-section & Volume'}
-                    </div>
-
-                    {selectedSegmentProfile ? (
-                      <div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px', fontSize: '9px', color: '#94a3b8' }}>
-                          <div style={{ background: '#0f172a', padding: '4px 6px', borderRadius: '4px' }}>
-                            <div style={{ color: '#64748b', fontSize: '8px' }}>{lang === 'sk' ? 'Prierezová plocha' : 'Cross-section area'}</div>
-                            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#06b6d4', fontFamily: 'monospace' }}>{(selectedSegmentProfile.area ?? 0).toFixed(1)} m²</div>
-                          </div>
-                          <div style={{ background: '#0f172a', padding: '4px 6px', borderRadius: '4px' }}>
-                            <div style={{ color: '#64748b', fontSize: '8px' }}>{lang === 'sk' ? 'Odhadovaný objem' : 'Cave segment volume'}</div>
-                            <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#10b981', fontFamily: 'monospace' }}>{(selectedSegmentProfile.volume ?? 0).toFixed(1)} m³</div>
-                          </div>
-                        </div>
-
-                        <div style={{ background: '#0f172a', padding: '4px 6px', borderRadius: '4px', marginBottom: '8px', fontSize: '9px', color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Dĺžka úseku: <strong style={{ color: '#e2e8f0' }}>{(selectedSegmentProfile.length ?? 0).toFixed(1)} m</strong></span>
-                          <span>LRUD: <strong style={{ color: '#e2e8f0' }}>{(selectedSegmentProfile.lrud?.l ?? 0).toFixed(1)}/{(selectedSegmentProfile.lrud?.r ?? 0).toFixed(1)}/{(selectedSegmentProfile.lrud?.u ?? 0).toFixed(1)}/{(selectedSegmentProfile.lrud?.d ?? 0).toFixed(1)}</strong></span>
-                        </div>
-
-                        {/* Textový výpis profilu chodby (bez SVG grafiky) */}
-                        <div style={{ background: '#090d16', borderRadius: '6px', padding: '8px', border: '1px solid rgba(6,182,212,0.15)', display: 'flex', flexDirection: 'column' }}>
-                          <div style={{ fontSize: '8px', color: '#06b6d4', fontWeight: 'bold', marginBottom: '4px' }}>
-                            {lang === 'sk' ? 'Tvar profilu chodby' : 'Passage shape'}
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '9px', color: '#94a3b8' }}>
-                            <div>Strop: <strong style={{ color: '#e2e8f0' }}>{(selectedSegmentProfile.lrud?.u ?? 0).toFixed(1)}m</strong></div>
-                            <div>Dno: <strong style={{ color: '#e2e8f0' }}>{(selectedSegmentProfile.lrud?.d ?? 0).toFixed(1)}m</strong></div>
-                            <div>Ľavá: <strong style={{ color: '#e2e8f0' }}>{(selectedSegmentProfile.lrud?.l ?? 0).toFixed(1)}m</strong></div>
-                            <div>Pravá: <strong style={{ color: '#e2e8f0' }}>{(selectedSegmentProfile.lrud?.r ?? 0).toFixed(1)}m</strong></div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: '9px', color: '#64748b', textAlign: 'center', padding: '10px 0', lineHeight: '1.4' }}>
-                        <span className="material-symbols-outlined" style={{ fontSize: '18px', display: 'block', marginBottom: '4px', color: '#64748b' }}>query_stats</span>
-                        {lang === 'sk' ? 'Pre výpočet objemu a 2D prierezu chodby zapnite režim merania a kliknite na 2 po sebe nasledujúce stanice.' : 'To compute volume & 2D cross-section, turn on measurement tool and select two connected stations.'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                </div>}{/* end analysis tab */}
-
-                {/* Help, Presentation, Legend — cave tab (bottom) */}
-                {sidebarTab === 'cave' && <div>
-
-                <div>
-                  <div className="s-label">{t('ui.help')}</div>
-                  <div className="help-text" style={{ fontSize: '10px', color: '#94a3b8', lineHeight: '1.6', background: 'rgba(30,41,59,0.3)', padding: '8px', borderRadius: '6px' }}>
-                    {t('ui.helpRotate')}<br />
-                    {t('ui.helpPan')}<br />
-                    {t('ui.helpZoom')}<br />
-                    {t('ui.helpTouch')}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="s-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
-                    {lang === 'sk' ? 'Prezentácia' : 'Presentation'}
-                  </div>
-                  <div className="toggle-row">
-                    <label className="toggle-label">{lang === 'sk' ? 'Auto-rotácia' : 'Auto-rotate'}</label>
-                    <div className={`switch${opts.autoRotate ? ' on' : ''}`}
-                      onClick={() => toggleOpt('autoRotate')} role="switch"
-                      aria-checked={opts.autoRotate} tabIndex={0} />
-                  </div>
-                  {opts.autoRotate && (
-                    <div style={{ marginTop: '8px', padding: '0 4px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#64748b', marginBottom: '4px' }}>
-                        <span>{lang === 'sk' ? 'Rýchlosť' : 'Speed'}</span>
-                        <span style={{ color: '#4fc3f7' }}>{opts.autoRotateSpeed.toFixed(1)}x</span>
-                      </div>
-                      <input type="range" min={0.1} max={10} step={0.1}
-                        value={opts.autoRotateSpeed}
-                        onChange={e => setOpts(p => ({ ...p, autoRotateSpeed: Number(e.target.value) }))}
-                        className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500" />
-                    </div>
-                  )}
-                  <div className="toggle-row" style={{ borderBottom: 'none' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#64748b', marginBottom: '4px' }}>
-                        <span>{lang === 'sk' ? 'Dĺžka (sekundy)' : 'Duration (sec)'}</span>
-                        <span style={{ color: '#818cf8' }}>{opts.recordingDuration === 0 ? (lang === 'sk' ? 'Manuálne' : 'Manual') : `${opts.recordingDuration}s`}</span>
-                      </div>
-                      <input type="range" min={0} max={60} step={5}
-                        value={opts.recordingDuration}
-                        onChange={e => setOpts(p => ({ ...p, recordingDuration: Number(e.target.value) }))}
-                        className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
-                    </div>
-                  </div>
-                  <button 
-                    className={`btn-record ${isRecording ? 'recording' : ''}`}
-                    disabled={isRecording}
-                    onClick={() => {
-                      const container = document.getElementById('main-cave-canvas')
-                      const canvas = container?.querySelector('canvas') as HTMLCanvasElement
-                      if (!canvas) {
-                        alert('Canvas not found!')
-                        return
-                      }
-                      
-                      try {
-                        const captureStream = (canvas as any).captureStream || (canvas as any).webkitCaptureStream
-                        if (!captureStream) throw new Error('CaptureStream not supported')
-                        
-                        const stream = captureStream.call(canvas, 60)
-                        const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
-                        const mimeType = mimeTypes.find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm'
-                        
-                        const recorder = new MediaRecorder(stream, { mimeType })
-                        const chunks: Blob[] = []
-                        
-                        recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
-                        recorder.onstop = () => {
-                          const blob = new Blob(chunks, { type: mimeType.split(';')[0] })
-                          const url = URL.createObjectURL(blob)
-                          const a = document.createElement('a')
-                          a.href = url; a.download = `cave_presentation_${new Date().getTime()}.webm`
-                          a.click()
-                          setTimeout(() => URL.revokeObjectURL(url), 0)
-                          setIsRecording(false)
-                          delete (window as any)._activeRecorder
-                        }
-                        
-                        (window as any)._activeRecorder = recorder
-                        setIsRecording(true)
-                        recorder.start()
-                        
-                        if (opts.recordingDuration > 0) {
-                          setTimeout(() => {
-                            if (recorder.state === 'recording') recorder.stop()
-                          }, opts.recordingDuration * 1000)
-                        }
-                      } catch (err) {
-                        console.error('Recording error:', err)
-                        alert('Error starting recording')
-                        setIsRecording(false)
-                      }
-                    }}
-                  >
-                    <div className="record-dot" />
-                    {isRecording 
-                      ? (lang === 'sk' ? 'Nahráva sa...' : 'Recording...') 
-                      : (lang === 'sk' ? 'Nahrať prezentáciu' : 'Record Presentation')}
-                  </button>
-                </div>
-
-                <div>
-                  <div className="s-label">{t('legend.title')}</div>
-                  {[
-                    { color: '#4fc3f7', label: t('legend.cave') },
-                    { color: '#78909c', label: t('legend.splay') },
-                    { color: '#81c784', label: t('legend.surface') },
-                  ].map(({ color, label }) => (
-                    <div className="toggle-row" key={label} style={{ marginBottom: '4px' }}>
-                      <div className="toggle-label">
-                        <div className="dot" style={{ background: color }} />
-                        <span style={{ fontSize: '11px' }}>{label}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                </div>}{/* end cave tab (help+legend) */}
-              </aside>
-              {isMobileMenuOpen && (
-                <button
-                  type="button"
-                  className="mobile-sidebar-close"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  aria-label={lang === 'sk' ? 'Zavrieť nastavenia' : 'Close settings'}
-                >
-                  <XIcon className="mobile-sidebar-close-icon" aria-hidden="true" />
-                  <span>{lang === 'sk' ? 'Zavrieť nastavenia' : 'Close settings'}</span>
-                </button>
-              )}
-              </div>}
+              {/* Floating reopen button on right edge when sidebar is closed */}
+              {(!isEmbedMode || embedAllowSidebar) && navigationBindings && (
+    <NavigationSidebar lang={lang} sections={{
+      project: <ProjectSection bindings={navigationBindings} />,
+      view: <ViewSection bindings={navigationBindings} />,
+      cave: <LayersSection bindings={navigationBindings} />,
+      surface: <SurfaceSection bindings={navigationBindings} />,
+      analysis: <AnalysisSection bindings={navigationBindings} />,
+      system: <SystemSection bindings={navigationBindings} />,
+    }} />
+  )}
             <ScaleBar cameraData={cameraData} />
-            <ColorScaleLegend caveLegend={legendCave} surfLegend={legendSurf} lang={lang} />
+            <ColorScaleLegend 
+              caveLegend={legendCave} 
+              surfLegend={legendSurf} 
+              lang={lang} 
+              baseAltitude={baseAltitude}
+              altitudeMode={opts.altitudeMode}
+            />
             <ProcessingOverlay info={processingInfo} lang={lang} />
           </div>
         </div>
@@ -5843,9 +4400,9 @@ export default function App() {
                 {lang === 'sk' ? 'Zobraziť sidebar návštevníkom' : 'Show sidebar to visitors'}
                 <small>{lang === 'sk' ? 'Návštevník bude môcť meniť nastavenia modelu' : 'Visitor can change model settings'}</small>
               </div>
-              <div className={`switch${allowSidebarInEmbed ? ' on' : ''}`}
+              <button type="button" className={`switch${allowSidebarInEmbed ? ' on' : ''}`}
                 onClick={() => setAllowSidebarInEmbed(p => !p)} role="switch"
-                aria-checked={allowSidebarInEmbed} tabIndex={0} />
+                aria-checked={allowSidebarInEmbed} aria-label={lang === 'sk' ? 'Zobraziť sidebar návštevníkom' : 'Show sidebar to visitors'} />
             </div>
 
             <div className="share-preview-label">📋 iframe kód (s aktuálnymi nastaveniami)</div>
@@ -5876,6 +4433,17 @@ export default function App() {
         </div>
       )}
 
+      {/* ── HELP / USER GUIDE MODAL ── */}
+      {helpDialogOpen && (
+        <Suspense fallback={null}>
+          <HelpModal
+            isOpen={helpDialogOpen}
+            onClose={() => setHelpDialogOpen(false)}
+            initialLang={lang}
+          />
+        </Suspense>
+      )}
+
       {/* ── EMBED MODE TOP BAR (minimal branding) ── */}
       {isEmbedMode && appState === 'viewer' && (() => {
         const fullUrl = `${window.location.origin}${window.location.pathname}?model=${encodeURIComponent(new URLSearchParams(window.location.search).get('model') ?? '')}`
@@ -5898,8 +4466,8 @@ export default function App() {
         )
       })()}
       {!isEmbedMode && (
-        <div style={{ position: 'fixed', bottom: '10px', right: '12px', fontSize: '10px', opacity: 0.4, zIndex: 1000, pointerEvents: 'auto' }}>
-          <a href={`${import.meta.env.BASE_URL}privacy.html`} style={{ color: 'white', textDecoration: 'none' }}>Privacy Policy</a>
+        <div style={{ position: 'fixed', bottom: '10px', right: '12px', fontSize: '10px', opacity: 0.75, zIndex: 1000, pointerEvents: 'auto' }}>
+          <a href={`${import.meta.env.BASE_URL}privacy.html`} style={{ color: '#e2e8f0', textDecoration: 'none' }}>Privacy Policy</a>
         </div>
       )}
     </>

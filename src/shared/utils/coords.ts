@@ -79,3 +79,49 @@ export function tryJtskToWgs84(x: number, y: number): { lat: number; lon: number
   }
   return null
 }
+
+/**
+ * Konvertuje ľubovoľný bod (worldX, worldY) na WGS84 GPS.
+ * Najprv skúsi priamy prevod UTM alebo S-JTSK.
+ * Ak zlyhá, a je zadaná referenčná stanica s GPS a lokálnymi súradnicami,
+ * prepočíta odklon (dx, dy) pomocou WGS84 tangenciálnej aproximácie.
+ */
+export function worldToWgs84(
+  worldX: number,
+  worldY: number,
+  ref?: { x: number; y: number; gps?: { lat: number; lon: number } | null } | null
+): { lat: number; lon: number } | null {
+  const direct = tryUtmToWgs84(worldX, worldY) || tryJtskToWgs84(worldX, worldY)
+  if (direct) {
+    return { lat: direct.lat, lon: direct.lon }
+  }
+
+  if (ref && ref.gps && Number.isFinite(ref.gps.lat) && Number.isFinite(ref.gps.lon)) {
+    const { lat: refLat, lon: refLon } = ref.gps
+    const dx = worldX - ref.x
+    const dy = worldY - ref.y
+
+    const latRad = (refLat * Math.PI) / 180
+    const mPerDegLat = 111132.92 - 559.82 * Math.cos(2 * latRad) + 1.175 * Math.cos(4 * latRad)
+    const mPerDegLon = 111412.84 * Math.cos(latRad) - 93.5 * Math.cos(3 * latRad)
+
+    if (Math.abs(mPerDegLat) > 1e-6 && Math.abs(mPerDegLon) > 1e-6) {
+      const lat = refLat + dy / mPerDegLat
+      const lon = refLon + dx / mPerDegLon
+      return { lat, lon }
+    }
+  }
+
+  return null
+}
+
+/**
+ * Vytvorí URL pre ZBGIS terénny portál so zobrazením presného identifikačného bodu a centrovaním mapy.
+ * Formát: https://zbgis.skgeodesy.sk/mapka/sk/teren/identification/point/{lat},{lon}?pos={lat},{lon},{zoom}
+ */
+export function getZbgisPointUrl(lat: number, lon: number, zoom = 18): string {
+  const latStr = lat.toFixed(6)
+  const lonStr = lon.toFixed(6)
+  return `https://zbgis.skgeodesy.sk/mapka/sk/teren/identification/point/${latStr},${lonStr}?pos=${latStr},${lonStr},${zoom}`
+}
+

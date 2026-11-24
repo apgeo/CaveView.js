@@ -30,12 +30,18 @@ self.onmessage = async (e: MessageEvent) => {
 
     // Vrátime výsledok hlavnému vláknu
     // Ak je to veľký point cloud, môžeme preniesť typed arrays (transferables) pre výkon
-    const transferables = [];
-    if (cave.points) transferables.push(cave.points.buffer);
-    if (cave.pointColors) transferables.push(cave.pointColors.buffer);
-    if (cave.pointNormals) transferables.push(cave.pointNormals.buffer);
-    if (cave.pointIntensity) transferables.push(cave.pointIntensity.buffer);
-    if (cave.pointClassification) transferables.push(cave.pointClassification.buffer);
+    const transferables: Transferable[] = [];
+    if (cave.points?.buffer) transferables.push(cave.points.buffer);
+    if (cave.pointColors?.buffer) transferables.push(cave.pointColors.buffer);
+    if (cave.pointNormals?.buffer) transferables.push(cave.pointNormals.buffer);
+    if (cave.pointIntensity?.buffer) transferables.push(cave.pointIntensity.buffer);
+    if (cave.pointClassification?.buffer) transferables.push(cave.pointClassification.buffer);
+    if (cave.surfaces && Array.isArray(cave.surfaces)) {
+      for (const surf of cave.surfaces) {
+        if (surf.dtm?.data?.buffer) transferables.push(surf.dtm.data.buffer);
+        if (surf.bitmapData?.buffer) transferables.push(surf.bitmapData.buffer);
+      }
+    }
 
     self.postMessage({ type: 'done', cave }, transferables as any);
   } catch (err: any) {

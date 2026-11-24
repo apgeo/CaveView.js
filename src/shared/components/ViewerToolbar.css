@@ -1,0 +1,20 @@
+.viewer-quick-tools { display:flex; align-items:center; gap:6px; min-width:0; overflow-x:auto; scrollbar-width:thin; }
+.viewer-tool-group { display:flex; gap:2px; padding-right:6px; border-right:1px solid var(--cv-border); flex-shrink:0; }
+.viewer-tool-group:last-of-type { border:0; padding-right:0; }
+.viewer-tool { position:relative; display:grid; place-items:center; width:32px; height:34px; flex-shrink:0; border:1px solid transparent; border-radius:6px; color:var(--cv-text-muted); background:transparent; cursor:pointer; }
+.viewer-tool:hover { color:var(--cv-text); background:var(--cv-surface-low); border-color:var(--cv-border); }
+.viewer-tool[aria-pressed="true"] { color:var(--cv-primary); background:color-mix(in srgb,var(--cv-primary) 14%,transparent); border-color:color-mix(in srgb,var(--cv-primary) 35%,transparent); }
+.viewer-tool:focus-visible, .viewer-surface-menu button:focus-visible { outline:2px solid var(--cv-primary); outline-offset:2px; }
+.viewer-tool:disabled { opacity:.3; cursor:not-allowed; }
+.viewer-tool-badge { position:absolute; bottom:0; right:1px; font:700 9px monospace; background:var(--cv-surface-low); padding:0 2px; border-radius:2px; }
+.viewer-surface-menu { position:fixed; inset:56px 18px auto auto; width:min(280px,calc(100vw - 32px)); margin:0; padding:14px; border:1px solid var(--cv-border); border-radius:10px; color:var(--cv-text); background:var(--cv-surface-low,#172033); box-shadow:0 12px 40px #0008; }
+.viewer-surface-menu::backdrop { background:#0003; }
+.viewer-surface-menu h3 { font-size:13px; margin:0 0 12px; }
+.viewer-surface-menu button { display:block; width:100%; text-align:left; padding:10px; border:0; border-radius:5px; background:transparent; color:inherit; cursor:pointer; }
+.viewer-surface-menu button:hover { background:#38bdf822; }
+@media(max-width:1100px) { .topbar .hide-mobile-flex { display:none!important; } }
+@media(max-width:768px) {
+  .topbar { gap:8px!important; padding:0 8px!important; }
+  .topbar .tb-logo { display:none; }
+  .station-detail-card { left:12px!important; top:auto!important; bottom:14px; min-width:0!important; max-width:calc(100vw - 24px)!important; max-height:46dvh!important; }
+}

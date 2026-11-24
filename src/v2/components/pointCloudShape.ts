@@ -11,6 +11,7 @@ export const POINT_CLOUD_SHAPE_OPTIONS: readonly PointCloudShapeOption[] = [
   { id: 'sphere' },
   { id: 'diamond' },
   { id: 'hex' },
+  { id: 'surfel' },
 ] as const;
 
 export function getPointCloudShapeUniform(shape?: PointCloudShape): number {
@@ -23,6 +24,8 @@ export function getPointCloudShapeUniform(shape?: PointCloudShape): number {
       return 2;
     case 'hex':
       return 3;
+    case 'surfel':
+      return 4;
     default:
       return 2;
   }

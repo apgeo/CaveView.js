@@ -29,6 +29,7 @@ describe('XyzTileDownloader', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -113,6 +114,35 @@ describe('XyzTileDownloader', () => {
 
     expect(result.successfulTiles).toBe(result.totalTiles);
     expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/bad/'))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/ok/'))).toBe(true);
+  });
+
+  it('aborts a timed-out tile candidate and continues to its fallback', async () => {
+    const abortedSignals: AbortSignal[] = [];
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.startsWith('/slow/')) {
+        const signal = init?.signal as AbortSignal;
+        abortedSignals.push(signal);
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+        });
+      }
+      return Promise.resolve(imageResponse());
+    });
+
+    const download = downloadTiledXyz(
+      ['/slow/{z}/{x}/{y}.jpg', '/ok/{z}/{x}/{y}.jpg'],
+      '-500100,-1200100,-500000,-1200000',
+      'image/jpeg',
+      undefined,
+      15,
+      { cache: null, requestTimeoutMs: 10 }
+    );
+    const result = await download;
+
+    expect(result.successfulTiles).toBe(result.totalTiles);
+    expect(abortedSignals.length).toBeGreaterThan(0);
+    expect(abortedSignals.every(signal => signal.aborted)).toBe(true);
     expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/ok/'))).toBe(true);
   });
 
@@ -239,5 +269,31 @@ describe('XyzTileDownloader', () => {
   it('prefers WebP canvas output for JPEG map textures when supported', () => {
     expect(getPreferredTextureFormat('image/jpeg')).toBe('image/webp');
     expect(getPreferredTextureFormat('image/png')).toBe('image/png');
+  });
+
+  it('rejects 1843-byte placeholder tiles and tries fallback candidate', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.startsWith('/legacy/')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          blob: async () => new Blob([new Uint8Array(1843)], { type: 'image/png' }),
+        });
+      }
+      return Promise.resolve(imageResponse());
+    });
+
+    const result = await downloadTiledXyz(
+      ['/legacy/{z}/{x}/{y}.jpg', '/valid/{z}/{x}/{y}.jpg'],
+      '-500100,-1200100,-500000,-1200000',
+      'image/jpeg',
+      undefined,
+      15
+    );
+
+    expect(result.successfulTiles).toBe(result.totalTiles);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/legacy/'))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/valid/'))).toBe(true);
   });
 });

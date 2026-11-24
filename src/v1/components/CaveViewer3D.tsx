@@ -17,11 +17,16 @@ import {
   Character3D, 
   ManualConnection 
 } from '@shared/components/CaveSharedElements'
+import { SurfaceDepthVisual } from '@shared/components/SurfaceDepthVisual'
 import { TectonicPlaneVisual } from '@shared/components/TectonicPlaneVisual'
+import { SurveyPointPicker } from '@shared/components/SurveyPointPicker'
+import { MeasurementOverlay } from '@shared/components/MeasurementOverlay'
 import { Scraps, ClippingEdges } from '@shared/components/Scraps'
-import { ProjectionController } from '@shared/components/ProjectionController'
+import { SplayCaveWalls } from './SplayCaveWalls'
+import { EDLPass } from '../../v2/components/EDLPass'
+import { ProjectionController, calculateFitParams } from '@shared/components/ProjectionController'
 import { elevColor, normZ } from '@shared/utils/colorUtils'
-import type { ParsedCave, StationLabel, CaveSurface, Segment, ViewerCameraSnapshot } from '@shared/types'
+import type { ParsedCave, StationLabel, CaveSurface, Segment, ViewerCameraSnapshot, Vec3 } from '@shared/types'
 import type { SelStation } from '../../App'
 import type { ViewerOptions } from '@shared/types'
 
@@ -122,6 +127,16 @@ const PointCloud = React.memo(({ cave, options, clippingPlanes, onSurfaceClick, 
     };
   }, [cave.points, cave.pointCount, cave.pointColors, cave.pointClassification, cave.bounds, options.scrapsAltitude, options.showVegetation, options.showGround, options.showCaveLiDAR]);
 
+  useEffect(() => {
+    return () => {
+      if (geo) {
+        // @ts-ignore
+        if (geo.boundsTree) geo.disposeBoundsTree();
+        geo.dispose();
+      }
+    };
+  }, [geo]);
+
   // ── Progresívne zjemňovanie (Refinement) v useFrame ───────────────────────
   const lodState = useRef({ index: 0, lastUpdate: 0 });
 
@@ -157,12 +172,14 @@ const PointCloud = React.memo(({ cave, options, clippingPlanes, onSurfaceClick, 
       ref={pointsRef}
       geometry={geo}
       renderOrder={15}
-      onPointerDown={(e) => {
-        if (!onSurfaceClick) return;
+      onClick={onSurfaceClick ? (e) => {
+        if (e.delta > 5) return
         e.stopPropagation();
-        const p = e.point;
+        const p = e.index !== undefined
+          ? new THREE.Vector3().fromBufferAttribute(geo.getAttribute('position'), e.index).applyMatrix4(e.object.matrixWorld)
+          : e.point;
         onSurfaceClick(p.x + cave.centerOffset.x, -p.z + cave.centerOffset.y, p.y + cave.centerOffset.z, e.clientX, e.clientY);
-      }}
+      } : undefined}
     >
       <pointsMaterial
         vertexColors
@@ -190,13 +207,6 @@ const OrganicShell = React.memo(({ cave, options, clippingPlanes, onSurfaceClick
     const dilation = 0.2; 
 
     // ── Filtrovanie bodov pre rekonštrukciu ──
-    // PROBLÉM PRED OPRAVOU: classifyLiDAR() klasifikovala horné steny jaskyne
-    //   ako Vegetation(4), čo spôsobilo orezanie stropu pri rekonštrukcii.
-    //
-    // PRAVIDLO: Filtrujeme LEN ak PLY súbor obsahuje NATÍVNU klasifikáciu
-    //   (z externého softvéru ako CloudCompare/Leica/FARO).
-    //   Natívna = aspoň jeden bod má triedu > 1.
-    //   Ak nie je natívna, použijeme VŠETKY body (strop aj steny).
     let reconstructionPoints = cave.points;
     const hasNativeClasses = cave.pointClassification && 
       Array.from(cave.pointClassification).some((c: number) => c > 1);
@@ -206,14 +216,12 @@ const OrganicShell = React.memo(({ cave, options, clippingPlanes, onSurfaceClick
       const filtered: number[] = [];
       for (let i = 0; i < cave.pointCount; i++) {
         const cls = cave.pointClassification[i];
-        // Zachovaj všetko OKREM Ground(2) a Outdoor Vegetation(4)
         if (cls !== 2 && cls !== 4) { 
           filtered.push(cave.points![i*3], cave.points![i*3+1], cave.points![i*3+2]);
         }
       }
       reconstructionPoints = new Float32Array(filtered);
     }
-    // Ak hasNativeClasses=false → reconstructionPoints = cave.points (VŠETKY body) ✓
 
     if (reconstructionPoints.length === 0) return null;
 
@@ -258,6 +266,16 @@ const OrganicShell = React.memo(({ cave, options, clippingPlanes, onSurfaceClick
     return g;
   }, [cave.points, cave.pointClassification, cave.pointCount, cave.bounds, options.scrapsAltitude, options.smoothScraps, options.accurateScraps, options.organicLevel, options.colorScraps]);
 
+  useEffect(() => {
+    return () => {
+      if (geo) {
+        // @ts-ignore
+        if (geo.boundsTree) geo.disposeBoundsTree();
+        geo.dispose();
+      }
+    };
+  }, [geo]);
+
   if (!geo) return null;
   const showSolid = options.smoothScraps || options.accurateScraps;
 
@@ -267,12 +285,12 @@ const OrganicShell = React.memo(({ cave, options, clippingPlanes, onSurfaceClick
         <mesh 
           geometry={geo} 
           renderOrder={10}
-          onPointerDown={(e) => {
-            if (!onSurfaceClick) return;
+          onClick={onSurfaceClick ? (e) => {
+            if (e.delta > 5) return
             e.stopPropagation();
             const p = e.point;
             onSurfaceClick(p.x + cave.centerOffset.x, -p.z + cave.centerOffset.y, p.y + cave.centerOffset.z, e.clientX, e.clientY);
-          }}
+          } : undefined}
         >
           <meshStandardMaterial 
             vertexColors={true}
@@ -287,7 +305,7 @@ const OrganicShell = React.memo(({ cave, options, clippingPlanes, onSurfaceClick
         </mesh>
       )}
       
-      {options.scrapsWireframe && (
+      {(options.scrapsWireframe || options.accurateScraps) && (
         <mesh geometry={geo} renderOrder={11}>
           <meshBasicMaterial 
             vertexColors={true}
@@ -356,86 +374,7 @@ const ModernGizmo = ({ visible, modelScale }: { visible: boolean, modelScale: nu
   );
 };
 
-// ─── Clickable stations (neviditelné gule, raycasting) & Hover Highlight ───
-function ClickableStations({ cave, onStationClick, isMeasuringMode }: {
-  cave: ParsedCave
-  onStationClick: (idx: number, screenX: number, screenY: number, ctrlKey: boolean) => void
-  isMeasuringMode: boolean
-}) {
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
-
-  const sphereGeo = useMemo(() => new THREE.SphereGeometry(1.2, 8, 6), [])
-  const mat       = useMemo(() => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }), [])
-
-  const mesh = useMemo(() => {
-    const im = new THREE.InstancedMesh(sphereGeo, mat, cave.stations.length)
-    const dummy = new THREE.Object3D()
-    cave.stations.forEach((s: any, i: number) => {
-      dummy.position.set(s.x, s.z, -s.y)
-      
-      const lbl = cave.stationLabels?.[i]
-      const isPolygon = lbl && lbl.name !== ''
-      const radiusScale = isPolygon ? 1.0 : 0.2
-      dummy.scale.set(radiusScale, radiusScale, radiusScale)
-
-      dummy.updateMatrix()
-      im.setMatrixAt(i, dummy.matrix)
-    })
-    im.instanceMatrix.needsUpdate = true
-    return im
-  }, [cave, sphereGeo, mat])
-
-  useEffect(() => {
-    document.body.style.cursor = hoveredIdx !== null ? 'crosshair' : 'auto'
-    return () => { document.body.style.cursor = 'auto' }
-  }, [hoveredIdx])
-
-  const hoveredObj = useMemo(() => {
-    if (hoveredIdx === null) return null
-    const s = cave.stations[hoveredIdx]
-    return s ? [s.x, s.z, -s.y] as [number, number, number] : null
-  }, [hoveredIdx, cave])
-
-  return (
-    <group>
-      <primitive
-        object={mesh}
-        onPointerOver={(e: any) => {
-          if (e.instanceId !== undefined) {
-            const lbl = cave.stationLabels?.[e.instanceId]
-            const isPolygon = lbl && lbl.name !== ''
-            // Ak nie sme v móde merania, ignorujeme všetko okrem polygonových bodov
-            if (!isMeasuringMode && !isPolygon) return
-            
-            e.stopPropagation()
-            setHoveredIdx(e.instanceId)
-          }
-        }}
-        onPointerOut={() => setHoveredIdx(null)}
-        onClick={(e: any) => {
-          if (e.instanceId !== undefined) {
-            const lbl = cave.stationLabels?.[e.instanceId]
-            const isPolygon = lbl && lbl.name !== ''
-            const ctrl = e.nativeEvent.ctrlKey || e.nativeEvent.metaKey
-            
-            // Ak nie sme v móde merania a nie je CTRL, ignorujeme všetko okrem polygonových bodov
-            if (!isMeasuringMode && !ctrl && !isPolygon) return
-
-            e.stopPropagation()
-            onStationClick(e.instanceId, e.nativeEvent.clientX, e.nativeEvent.clientY, ctrl)
-          }
-        }}
-      />
-      {/* ── Highlight Sphere ── */}
-      {hoveredObj && (
-        <mesh position={hoveredObj} renderOrder={110}>
-          <sphereGeometry args={[0.08, 12, 12]} />
-          <meshBasicMaterial color="#ef4444" depthTest={false} transparent opacity={0.8} />
-        </mesh>
-      )}
-    </group>
-  )
-}
+// Survey selection uses a fixed screen-space tolerance in both engines.
 
 // ─── Elevation colormap ───────────────────────────────────────────────────────
 // Hladký prechod: tmavá modrá → azúrová → zelená → žltá → oranžová → červená
@@ -667,22 +606,10 @@ const CaveTraverse = React.memo(({ cave, radius, showAltitude, isMoving, ...prop
 // ─── StationLabels moved to shared ───
 
 // ─── Contour Label Item (with dynamic scaling) ──────────────────────────────
-const ContourLabelItem = ({ pos, val, color, opacity }: any) => {
-  const ref = useRef<HTMLDivElement>(null)
-  const vec = useMemo(() => new THREE.Vector3(pos[0], pos[1], pos[2]), [pos])
-
-  useFrame(({ camera }) => {
-    if (ref.current) {
-      const dist = camera.position.distanceTo(vec)
-      // Slightly larger when far away (min 0.7x), base distance 90m
-      const scale = Math.max(0.7, Math.min(1.8, 90 / dist))
-      ref.current.style.transform = `scale(${scale})`
-    }
-  })
-
+const ContourLabelItem = React.memo(({ pos, val, color, opacity }: any) => {
   return (
-    <Html position={pos} center occlude={false} style={{ pointerEvents: 'none' }}>
-      <div ref={ref} style={{
+    <Html position={pos} center distanceFactor={85} occlude={false} style={{ pointerEvents: 'none', willChange: 'transform' }}>
+      <div style={{
         fontSize: '10px',
         fontFamily: 'Inter, monospace',
         color: color || '#ffffff',
@@ -691,21 +618,23 @@ const ContourLabelItem = ({ pos, val, color, opacity }: any) => {
         opacity: opacity || 0.9,
         whiteSpace: 'nowrap',
         userSelect: 'none',
-        padding: '1px 3px',
+        padding: '1px 4px',
         borderRadius: '4px',
-        background: 'rgba(0,0,0,0.2)',
-        backdropFilter: 'blur(2px)',
-        transformOrigin: 'center center',
-        transition: 'transform 0.1s ease-out'
+        background: 'rgba(15, 23, 42, 0.75)',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        lineHeight: 1.1
       }}>
-        {val}
+        {val} m
       </div>
     </Html>
-  )
-}
+  );
+});
 
 // ─── Contour Labels (Altitude markers for major contours) ────────────────────
-const ContourLabels = React.memo(({ surface, majorInterval, color, opacity }: any) => {
+const ContourLabels = React.memo(({ surface, majorInterval, color, opacity, isMoving }: any) => {
+  // Počas pohybu kamery skryjeme HTML overlay, aby sme garantovali okamžitú odozvu a 60 FPS
+  if (isMoving) return null;
+
   const { dtm, centerOffset } = surface;
   const { data, samples, lines, calib } = dtm;
 
@@ -713,39 +642,69 @@ const ContourLabels = React.memo(({ surface, majorInterval, color, opacity }: an
     const pts: { x: number; y: number; z: number; val: number }[] = [];
     if (!majorInterval || majorInterval <= 0) return pts;
 
-    // Grid-based crossing edge detection for precision
-    const stepR = Math.max(4, Math.floor(lines / 16));
-    const stepC = Math.max(4, Math.floor(samples / 16));
+    // Jemnejší raster a obojsmerná detekcia pretnutia (horizontálna aj vertikálna)
+    const stepR = Math.max(2, Math.floor(lines / 36));
+    const stepC = Math.max(2, Math.floor(samples / 36));
+
+    const maxDim = Math.max((samples - 1) * Math.abs(calib.xx || 1), (lines - 1) * Math.abs(calib.yy || 1));
+    const minDist = Math.max(30, maxDim / 14);
 
     for (let r = 0; r < lines - stepR; r += stepR) {
       for (let c = 0; c < samples - stepC; c += stepC) {
         const idx = r * samples + c;
         const z = data[idx];
-        const targetAlt = Math.round(z / majorInterval) * majorInterval;
-        
-        // Check horizontal edge crossing
+
+        // 1. Horizontálne hrany
         const idxRight = r * samples + (c + stepC);
         const zRight = data[idxRight];
-        
-        if ((z <= targetAlt && zRight >= targetAlt) || (z >= targetAlt && zRight <= targetAlt)) {
-          if (Math.abs(zRight - z) > 0.001) {
+        const minZh = Math.min(z, zRight);
+        const maxZh = Math.max(z, zRight);
+
+        if (maxZh - minZh > 0.001) {
+          const startAlt = Math.ceil(minZh / majorInterval) * majorInterval;
+          for (let targetAlt = startAlt; targetAlt <= maxZh; targetAlt += majorInterval) {
             const t = (targetAlt - z) / (zRight - z);
-            const col = c + t * stepC;
-            const wx = calib.xOrigin + col * calib.xx + r * calib.xy;
-            const wy = calib.yOrigin + col * calib.yx + r * calib.yy;
-            
-            pts.push({ 
-              x: wx - centerOffset.x, 
-              y: targetAlt - centerOffset.z, 
-              z: -(wy - centerOffset.y), 
-              val: targetAlt 
-            });
+            if (t >= 0 && t <= 1) {
+              const col = c + t * stepC;
+              const wx = calib.xOrigin + col * calib.xx + r * calib.xy;
+              const wy = calib.yOrigin + col * calib.yx + r * calib.yy;
+              pts.push({
+                x: wx - centerOffset.x,
+                y: targetAlt - centerOffset.z,
+                z: -(wy - centerOffset.y),
+                val: targetAlt
+              });
+            }
+          }
+        }
+
+        // 2. Vertikálne hrany
+        const idxDown = (r + stepR) * samples + c;
+        const zDown = data[idxDown];
+        const minZv = Math.min(z, zDown);
+        const maxZv = Math.max(z, zDown);
+
+        if (maxZv - minZv > 0.001) {
+          const startAlt = Math.ceil(minZv / majorInterval) * majorInterval;
+          for (let targetAlt = startAlt; targetAlt <= maxZv; targetAlt += majorInterval) {
+            const t = (targetAlt - z) / (zDown - z);
+            if (t >= 0 && t <= 1) {
+              const row = r + t * stepR;
+              const wx = calib.xOrigin + c * calib.xx + row * calib.xy;
+              const wy = calib.yOrigin + c * calib.yx + row * calib.yy;
+              pts.push({
+                x: wx - centerOffset.x,
+                y: targetAlt - centerOffset.z,
+                z: -(wy - centerOffset.y),
+                val: targetAlt
+              });
+            }
           }
         }
       }
     }
 
-    // Group by altitude and ensure at least 3 labels per level for visibility
+    // Zoskupiť body podľa vrstevnice a rovnomerne ich rozmiestniť v zornom poli
     const grouped = new Map<number, typeof pts>();
     pts.forEach(p => {
       if (!grouped.has(p.val)) grouped.set(p.val, []);
@@ -754,13 +713,20 @@ const ContourLabels = React.memo(({ surface, majorInterval, color, opacity }: an
 
     const finalPts: typeof pts = [];
     grouped.forEach((levelPts) => {
-      const count = Math.min(levelPts.length, 3);
-      // Pick points spread out by X coordinate
-      const sorted = levelPts.sort((a, b) => a.x - b.x);
-      for (let i = 0; i < count; i++) {
-        const idx = Math.floor(i * sorted.length / count);
-        if (sorted[idx]) finalPts.push(sorted[idx]);
+      if (finalPts.length >= 36) return;
+      levelPts.sort((a, b) => a.x - b.x || a.z - b.z);
+      const chosen: typeof pts = [];
+      for (const p of levelPts) {
+        const tooClose = chosen.some(c => Math.hypot(c.x - p.x, c.z - p.z) < minDist);
+        if (!tooClose) {
+          chosen.push(p);
+          if (chosen.length >= 3) break; // Dostatočný počet štítkov na vrstevnicu
+        }
       }
+      if (chosen.length === 1 && levelPts.length > 2) {
+        chosen.push(levelPts[levelPts.length - 1]);
+      }
+      finalPts.push(...chosen);
     });
 
     return finalPts;
@@ -1018,7 +984,7 @@ const REMOTE_TEXTURE_SOURCES: Record<string, RemoteTextureSource> = {
       '{z}/{x}/{y}.jpg',
       {},
       '/xyz-proxy/freemap-orto/{z}/{x}/{y}.jpg',
-      'https://tiles.freemap.sk/o/{z}/{x}/{y}.jpg'
+      'https://ortofoto.tiles.freemap.sk/{z}/{x}/{y}.jpg'
     ),
   },
   'wms-geology': {
@@ -1071,9 +1037,9 @@ function getWmsImageSize(sjtskBbox: string, requestedSize: number): { width: num
   return { width: Math.max(256, Math.min(4096, Math.round(base * widthMeters / heightMeters))), height: base };
 }
 
-const TerrainTile = React.memo(({ surface, colStart, rowStart, colCount, rowCount, imgSize, imgSizeUniformRef, xyzCalib, heightRange, ...props }: any) => {
+const TerrainTile = React.memo(({ surface, colStart, rowStart, colCount, rowCount, imgSize, imgSizeUniformRef, xyzCalib, heightRange, contourMat, ...props }: any) => {
   const [geo, setGeo] = useState<THREE.BufferGeometry | null>(null);
-  const terrainSubsample = props.isMoving || !props.terrainReadyForFullDetail
+  const terrainSubsample = !props.terrainReadyForFullDetail
     ? getMovingTerrainSubsample(surface.dtm.samples, surface.dtm.lines)
     : 1;
   const buildPreciseBvh = terrainSubsample === 1 && props.terrainReadyForFullDetail;
@@ -1088,98 +1054,6 @@ const TerrainTile = React.memo(({ surface, colStart, rowStart, colCount, rowCoun
       g.dispose();
     };
   }, [surface, colStart, rowStart, colCount, rowCount, imgSize, terrainSubsample, heightRange, buildPreciseBvh]);
-
-  const contourUniforms = useMemo(() => ({
-    uMajorInterval: { value: props.contourInterval || 10.0 },
-    uMinorInterval: { value: props.minorInterval || 2.5 },
-    uContourColor: { value: new THREE.Color(props.contourColor) },
-    uContourColorMajor: { value: new THREE.Color(props.contourColor10 || props.contourColor) },
-    uOpacity: { value: props.opacity || 0.8 },
-    uCenterZ: { value: surface.centerOffset.z }
-  }), [surface.centerOffset.z, props.contourInterval, props.minorInterval, props.contourColor, props.contourColor10, props.opacity]);
-
-  useEffect(() => {
-    contourUniforms.uMajorInterval.value = props.contourInterval || 10.0;
-    contourUniforms.uMinorInterval.value = props.minorInterval || 2.5;
-    contourUniforms.uContourColor.value.set(props.contourColor);
-    contourUniforms.uContourColorMajor.value.set(props.contourColor10 || props.contourColor);
-    contourUniforms.uOpacity.value = props.opacity;
-  }, [contourUniforms, props.contourInterval, props.minorInterval, props.contourColor, props.contourColor10, props.opacity]);
-
-  const contourMat = useMemo(() => {
-    return new THREE.MeshStandardMaterial({
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: props.opacity,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -10,
-      polygonOffsetUnits: -10,
-      clippingPlanes: props.clippingPlanes,
-      onBeforeCompile: (shader: any) => {
-        shader.uniforms.uMajorInterval = contourUniforms.uMajorInterval;
-        shader.uniforms.uMinorInterval = contourUniforms.uMinorInterval;
-        shader.uniforms.uContourColor = contourUniforms.uContourColor;
-        shader.uniforms.uContourColorMajor = contourUniforms.uContourColorMajor;
-        shader.uniforms.uOpacity = contourUniforms.uOpacity;
-        shader.uniforms.uCenterZ = contourUniforms.uCenterZ;
-
-        shader.vertexShader = `
-          varying float vWorldZ;
-          uniform float uCenterZ;
-          ${shader.vertexShader}
-        `.replace(
-          '#include <worldpos_vertex>',
-          `#include <worldpos_vertex>
-           vWorldZ = (modelMatrix * vec4(transformed, 1.0)).y + uCenterZ;
-          `
-        );
-
-        shader.fragmentShader = `
-          varying float vWorldZ;
-          uniform float uMajorInterval;
-          uniform float uMinorInterval;
-          uniform vec3 uContourColor;
-          uniform vec3 uContourColorMajor;
-          uniform float uOpacity;
-          ${shader.fragmentShader}
-        `.replace(
-          '#include <dithering_fragment>',
-          `#include <dithering_fragment>
-          
-          float zMaj = vWorldZ / uMajorInterval;
-          float zMin = vWorldZ / uMinorInterval;
-          
-          float fMaj = fract(zMaj + 0.5) - 0.5;
-          float fMin = fract(zMin + 0.5) - 0.5;
-          
-          float dfMaj = fwidth(zMaj);
-          float dfMin = fwidth(zMin);
-
-          // Výrazne hrubšie čiary pre lepšiu viditeľnosť
-          // Major ~ 2.2 (celková šírka cca 4.5px), Minor ~ 1.0 (celková šírka cca 2px)
-          float wMaj = 2.2 * dfMaj; 
-          float wMin = 1.0 * dfMin;
-
-          // smoothstep s rozsahom df pre maximálnu ostrosť bez aliasingu
-          float lineMaj = smoothstep(wMaj, wMaj - dfMaj, abs(fMaj));
-          float lineMin = smoothstep(wMin, wMin - dfMin, abs(fMin));
-
-          float finalLine = max(lineMaj, lineMin);
-          if (finalLine < 0.1) discard;
-
-          vec3 finalColor = mix(uContourColor, uContourColorMajor, lineMaj);
-          gl_FragColor = vec4(finalColor, finalLine * uOpacity);
-          `
-        );
-      }
-    } as any);
-  }, [surface.centerOffset.z, contourUniforms, props.opacity, props.clippingPlanes]);
-
-  useEffect(() => {
-    contourMat.opacity = props.opacity;
-    contourMat.clippingPlanes = props.clippingPlanes;
-  }, [contourMat, props.opacity, props.clippingPlanes]);
 
   const textureUniforms = useMemo(() => ({
     uIsLoxBitmap: { value: 0.0 },
@@ -1261,7 +1135,7 @@ const TerrainTile = React.memo(({ surface, colStart, rowStart, colCount, rowCoun
             transparent={props.opacity < 1}
             opacity={props.opacity}
             roughness={0.85}
-            depthWrite={true}
+            depthWrite={props.opacity === 1}
             polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1}
             clippingPlanes={props.clippingPlanes}
             onBeforeCompile={(shader) => {
@@ -1351,7 +1225,7 @@ const TerrainTile = React.memo(({ surface, colStart, rowStart, colCount, rowCoun
           />
         </mesh>
       )}
-      {props.showContours && (
+      {props.showContours && contourMat && (
         <mesh geometry={geo} material={contourMat} renderOrder={2} />
       )}
       {props.showMeshWire && (
@@ -1619,6 +1493,12 @@ const TerrainMesh = React.memo(({ surface, isMeasuringMode, onStatusChange, onTe
     }
   }, [surface.bitmapUrl, props.surfaceTextureUrl, props.options.surfaceTextureSource, props.options.surfaceWmsResolution, surface.sjtskBbox, reportTextureInspector])
 
+  useEffect(() => {
+    return () => {
+      texture?.dispose();
+    };
+  }, [texture]);
+
   const hoverGeo = useMemo(() => new THREE.SphereGeometry(0.25, 8, 8), [])
   const hoverMat = useMemo(() => new THREE.MeshBasicMaterial({ color: "#ef4444", depthTest: false }), [])
 
@@ -1630,13 +1510,111 @@ const TerrainMesh = React.memo(({ surface, isMeasuringMode, onStatusChange, onTe
   }, [hoverGeo, hoverMat])
   const [hoveredSurf, setHoveredSurf] = useState<[number, number, number] | null>(null)
 
+  const contourUniforms = useMemo(() => ({
+    uMajorInterval: { value: props.contourInterval || 10.0 },
+    uMinorInterval: { value: props.minorInterval || 2.5 },
+    uContourColor: { value: new THREE.Color(props.contourColor) },
+    uContourColorMajor: { value: new THREE.Color(props.contourColor10 || props.contourColor) },
+    uOpacity: { value: props.opacity ?? 0.8 },
+    uCenterZ: { value: surface.centerOffset.z }
+  }), [surface.centerOffset.z, props.contourInterval, props.minorInterval, props.contourColor, props.contourColor10, props.opacity]);
+
+  useEffect(() => {
+    contourUniforms.uMajorInterval.value = props.contourInterval || 10.0;
+    contourUniforms.uMinorInterval.value = props.minorInterval || 2.5;
+    contourUniforms.uContourColor.value.set(props.contourColor);
+    contourUniforms.uContourColorMajor.value.set(props.contourColor10 || props.contourColor);
+    contourUniforms.uOpacity.value = props.opacity ?? 0.8;
+  }, [contourUniforms, props.contourInterval, props.minorInterval, props.contourColor, props.contourColor10, props.opacity]);
+
+  const contourMat = useMemo(() => {
+    return new THREE.MeshBasicMaterial({
+      side: THREE.FrontSide,
+      transparent: true,
+      opacity: props.opacity ?? 0.8,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+      clippingPlanes: props.clippingPlanes,
+      onBeforeCompile: (shader: any) => {
+        shader.uniforms.uMajorInterval = contourUniforms.uMajorInterval;
+        shader.uniforms.uMinorInterval = contourUniforms.uMinorInterval;
+        shader.uniforms.uContourColor = contourUniforms.uContourColor;
+        shader.uniforms.uContourColorMajor = contourUniforms.uContourColorMajor;
+        shader.uniforms.uOpacity = contourUniforms.uOpacity;
+        shader.uniforms.uCenterZ = contourUniforms.uCenterZ;
+
+        shader.vertexShader = `
+          varying float vWorldZ;
+          uniform float uCenterZ;
+          ${shader.vertexShader}
+        `.replace(
+          '#include <worldpos_vertex>',
+          `#include <worldpos_vertex>
+           vWorldZ = (modelMatrix * vec4(transformed, 1.0)).y + uCenterZ;
+          `
+        );
+
+        shader.fragmentShader = `
+          varying float vWorldZ;
+          uniform float uMajorInterval;
+          uniform float uMinorInterval;
+          uniform vec3 uContourColor;
+          uniform vec3 uContourColorMajor;
+          uniform float uOpacity;
+          ${shader.fragmentShader}
+        `.replace(
+          '#include <dithering_fragment>',
+          `#include <dithering_fragment>
+          
+          float zMaj = vWorldZ / uMajorInterval;
+          float zMin = vWorldZ / uMinorInterval;
+          
+          float fMaj = fract(zMaj + 0.5) - 0.5;
+          float fMin = fract(zMin + 0.5) - 0.5;
+          
+          float dfMaj = fwidth(zMaj);
+          float dfMin = fwidth(zMin);
+
+          // Major ~ 2.2 (celková šírka cca 4.5px), Minor ~ 1.0 (celková šírka cca 2px)
+          float wMaj = 2.2 * dfMaj; 
+          float wMin = 1.0 * dfMin;
+
+          // smoothstep s rozsahom df pre maximálnu ostrosť bez aliasingu
+          float lineMaj = smoothstep(wMaj, wMaj - dfMaj, abs(fMaj));
+          float lineMin = smoothstep(wMin, wMin - dfMin, abs(fMin));
+
+          float finalLine = max(lineMaj, lineMin);
+          if (finalLine < 0.1) discard;
+
+          vec3 finalColor = mix(uContourColor, uContourColorMajor, lineMaj);
+          gl_FragColor = vec4(finalColor, finalLine * uOpacity);
+          `
+        );
+      }
+    } as any);
+  }, [surface.centerOffset.z, contourUniforms, props.clippingPlanes]);
+
+  useEffect(() => {
+    contourMat.opacity = props.opacity ?? 0.8;
+    contourMat.clippingPlanes = props.clippingPlanes;
+  }, [contourMat, props.opacity, props.clippingPlanes]);
+
+  useEffect(() => {
+    return () => {
+      contourMat.dispose();
+    };
+  }, [contourMat]);
+
   if (!props.showMesh && !props.showMeshWire && !props.showTexture && !props.showNetwork && !props.showContours) return null
 
   return (
     <group 
       position={[props.options.surfaceOffset?.x || 0, props.options.surfaceOffset?.z || 0, -(props.options.surfaceOffset?.y || 0)]}
-      onClick={(e: any) => {
-        if (props.onSurfaceClick && e.point) {
+      onClick={props.onSurfaceClick ? (e: any) => {
+        if (e.delta > 5) return
+        if (e.point) {
           e.stopPropagation()
           const { x, y, z } = e.point
           const origX = x + surface.centerOffset.x
@@ -1645,14 +1623,7 @@ const TerrainMesh = React.memo(({ surface, isMeasuringMode, onStatusChange, onTe
           const ctrl = e.nativeEvent.ctrlKey || e.nativeEvent.metaKey
           props.onSurfaceClick(origX, origY, altitude, e.nativeEvent.clientX, e.nativeEvent.clientY, ctrl)
         }
-      }}
-      onPointerMove={(e: any) => {
-        if (props.onSurfaceClick && e.point) {
-          e.stopPropagation()
-          setHoveredSurf([e.point.x, e.point.y, e.point.z])
-        }
-      }}
-      onPointerOut={() => setHoveredSurf(null)}
+      } : undefined}
     >
       {tiles.map((tile, i) => (
         <TerrainTile 
@@ -1663,6 +1634,7 @@ const TerrainMesh = React.memo(({ surface, isMeasuringMode, onStatusChange, onTe
           heightRange={heightRange}
           terrainReadyForFullDetail={terrainReadyForFullDetail}
           imgSizeUniformRef={imgSizeUniformRef}
+          contourMat={contourMat}
         />
       ))}
       
@@ -1670,12 +1642,13 @@ const TerrainMesh = React.memo(({ surface, isMeasuringMode, onStatusChange, onTe
         <mesh position={hoveredSurf} renderOrder={100} geometry={hoverGeo} material={hoverMat} />
       )}
 
-      {props.showContours && props.options.showContourLabels && terrainReadyForFullDetail && (
+      {props.showContours && props.options.showContourLabels && !props.isMoving && terrainReadyForFullDetail && (
         <ContourLabels 
           surface={surface} 
           majorInterval={props.contourInterval || 10.0} 
           color={props.contourColor10 || props.contourColor}
           opacity={props.opacity}
+          isMoving={props.isMoving}
         />
       )}
     </group>
@@ -1710,19 +1683,50 @@ function RaycasterManager() {
   return null
 }
 
-function CameraMonitor({ onUpdate }: { onUpdate: (data: ViewerCameraSnapshot) => void }) {
+function CameraMonitor({ onUpdate }: { onUpdate: (data: any) => void }) {
   const { camera, size } = useThree()
-  
+  const lastPos = useRef(new THREE.Vector3())
+  const lastQuat = useRef(new THREE.Quaternion())
+  const lastTime = useRef(0)
+  const lastHeading = useRef(-999)
+  const lastDistBucket = useRef(-1)
+
   useEffect(() => {
-    const update = () => {
+    if (!onUpdate) return
+    const checkUpdate = () => {
+      const now = performance.now()
+      if (now - lastTime.current < 60) return
+
+      const posChanged = camera.position.distanceToSquared(lastPos.current) > 0.0001
+      const quatChanged = camera.quaternion.angleTo(lastQuat.current) > 0.001
+      if (!posChanged && !quatChanged) return
+
       // @ts-ignore
       const ctrl = camera.controls || (window as any)._orbitControls || (camera as any).controls
       const target = ctrl?.target || new THREE.Vector3(0, 0, 0)
       const dist = camera.position.distanceTo(target)
-      // @ts-ignore
-      const fov = camera.fov || 55
+
+      const dx = target.x - camera.position.x
+      const dz = target.z - camera.position.z
+      const heading = Math.round((Math.atan2(dx, -dz) * (180 / Math.PI) + 360) % 360)
+      const distBucket = dist < 25 ? 0 : dist < 60 ? 1 : dist < 120 ? 2 : dist < 300 ? 3 : dist < 600 ? 4 : dist < 1200 ? 5 : dist < 3000 ? 6 : 7
+
+      const headingChanged = Math.abs(heading - lastHeading.current) >= 1
+      const bucketChanged = distBucket !== lastDistBucket.current
+      const largePosChange = camera.position.distanceToSquared(lastPos.current) > 0.25
+
+      if (!headingChanged && !bucketChanged && !largePosChange && now - lastTime.current < 150) {
+        return
+      }
+
+      lastTime.current = now
+      lastPos.current.copy(camera.position)
+      lastQuat.current.copy(camera.quaternion)
+      lastHeading.current = heading
+      lastDistBucket.current = distBucket
+
+      const fov = (camera as THREE.PerspectiveCamera).fov || 55
       const perspective = camera as THREE.PerspectiveCamera
-      camera.updateMatrixWorld(true)
       onUpdate({
         dist,
         fov,
@@ -1736,33 +1740,45 @@ function CameraMonitor({ onUpdate }: { onUpdate: (data: ViewerCameraSnapshot) =>
         target: target.toArray() as [number, number, number],
       })
     }
-    const timer = setInterval(update, 200)
-    update()
+
+    const timer = setInterval(checkUpdate, 100)
+    checkUpdate()
     return () => clearInterval(timer)
   }, [camera, size, onUpdate])
   
   return null
 }
+
 function AutoFit({ cave, trigger }: { cave: ParsedCave, trigger?: number }) {
-  const { camera, controls } = useThree() as any
+  const { camera, controls, size, invalidate } = useThree() as any
   useEffect(() => {
-    const b    = cave.bounds
-    const diag = Math.sqrt(b.size.x ** 2 + b.size.y ** 2 + b.size.z ** 2)
-    const dist = Math.max(diag * 2.0, 50)
-    
-    // Target the actual center of the model (in Three.js space: x=x, y=z, z=-y)
-    const targetX = b.center.x;
-    const targetY = b.center.z;
-    const targetZ = -b.center.y;
-    
-    camera.position.set(targetX + dist, targetY + dist * 0.8, targetZ + dist)
-    camera.near = 0.1; camera.far = Math.max(diag * 25, 5000)
-    camera.updateProjectionMatrix()
+    const b = cave.bounds
+    const targetX = b.center.x
+    const targetY = b.center.z
+    const targetZ = -b.center.y
+    const { fitDist, frustumHalf, aspect } = calculateFitParams(b, size, camera.fov || 55, 'iso')
+
+    if (camera instanceof THREE.OrthographicCamera) {
+      camera.left = -frustumHalf * aspect
+      camera.right = frustumHalf * aspect
+      camera.top = frustumHalf
+      camera.bottom = -frustumHalf
+      camera.zoom = 1
+      camera.position.set(targetX + fitDist * 0.707, targetY + fitDist * 0.577, targetZ + fitDist * 0.707)
+      camera.updateProjectionMatrix()
+    } else {
+      camera.position.set(targetX + fitDist * 0.707, targetY + fitDist * 0.577, targetZ + fitDist * 0.707)
+      camera.near = Math.max(0.1, fitDist * 0.001)
+      camera.far = Math.max(fitDist * 25, 10000)
+      camera.updateProjectionMatrix()
+    }
+
     if (controls && controls.target) {
       controls.target.set(targetX, targetY, targetZ)
       controls.update()
     }
-  }, [cave, trigger, camera, controls])
+    invalidate()
+  }, [cave, trigger, camera, controls, size, invalidate])
   return null
 }
 
@@ -1770,7 +1786,7 @@ function AutoFit({ cave, trigger }: { cave: ParsedCave, trigger?: number }) {
 interface Props {
   cave: ParsedCave
   options: ViewerOptions
-  onStationClick: (idx: number, screenX: number, screenY: number, ctrlKey: boolean) => void
+  onStationClick: (idx: number, screenX: number, screenY: number, ctrlKey: boolean, point?: Vec3) => void
   onSurfaceClick?: (origX: number, origY: number, altitude: number, screenX: number, screenY: number) => void
   onBackgroundClick?: () => void
   onMoveStateChange?: (moving: boolean) => void
@@ -1788,6 +1804,7 @@ interface Props {
   selectedStations?: SelStation[]
   activeProfilePoints?: SelStation[] | null
   isMeasuringMode: boolean
+  lang?: string
 }
 
 
@@ -1796,49 +1813,60 @@ interface Props {
 const CaveViewer3D = ({ 
   cave, options: o, onStationClick, onSurfaceClick, onBackgroundClick, onMoveStateChange, onCameraUpdate, 
   onProcessingStart, onProcessingEnd, onStatusChange, onTextureReady, onTextureDownloadInfo, manualConnection, placedCaver, fitTrigger, selectedStations, activeProfilePoints,
-  contourInterval, minorInterval, isMeasuringMode
+  contourInterval, minorInterval, isMeasuringMode, lang = 'sk'
 }: Props) => {
   const [isMoving, setIsMoving] = useState(false)
+  const [isFullyIdle, setIsFullyIdle] = useState(true)
+  const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [camData, setCamData] = useState<{ dist: number, fov: number, height: number } | null>(null)
-  const movingTimeout = useRef<any>(null)
-  const startStopTimeout = useCallback(() => {
-    if (movingTimeout.current) clearTimeout(movingTimeout.current)
-    movingTimeout.current = setTimeout(() => {
-      setIsMoving(false)
-      movingTimeout.current = null
-    }, 800) // Návrat do stable po 0.8s od uvoľnenia
+  const handleModelClick = useCallback((x: number, y: number, z: number, screenX: number, screenY: number, ctrl = false) => {
+    onStationClick(-1, screenX, screenY, ctrl, {
+      x: x - cave.centerOffset.x - o.caveCalibrationOffset.x,
+      y: y - cave.centerOffset.y - o.caveCalibrationOffset.y,
+      z: z - cave.centerOffset.z - o.caveCalibrationOffset.z,
+    })
+  }, [cave.centerOffset, o.caveCalibrationOffset, onStationClick])
+
+  const handleCameraMoveStart = () => {
+    setIsMoving(true)
+    setIsFullyIdle(false)
+    if (idleTimeoutRef.current) {
+      clearTimeout(idleTimeoutRef.current)
+      idleTimeoutRef.current = null
+    }
+  }
+
+  const handleCameraMoveEnd = () => {
+    setIsMoving(false)
+    if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current)
+    idleTimeoutRef.current = setTimeout(() => {
+      setIsFullyIdle(true)
+    }, 180)
+  }
+
+  const handleCameraChange = () => {
+    if (isFullyIdle) {
+      setIsFullyIdle(false)
+    }
+    if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current)
+    idleTimeoutRef.current = setTimeout(() => {
+      setIsFullyIdle(true)
+    }, 180)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current)
+    }
   }, [])
 
-  const handleCameraChange = useCallback(() => {
-    if (!isMoving) setIsMoving(true)
-    // Ak sa hýbe kamerou, predlžujeme draft stav
-    startStopTimeout()
-  }, [isMoving, startStopTimeout])
-
-  useEffect(() => {
-    onMoveStateChange?.(isMoving)
-  }, [isMoving, onMoveStateChange])
-
-  useEffect(() => {
-    // Globálna a agresívna detekcia
-    const onStart = () => { if (!isMoving) setIsMoving(true) }
-    const onEnd = () => { startStopTimeout() }
-    
-    window.addEventListener('mousedown', onStart, { capture: true })
-    window.addEventListener('mouseup', onEnd, { capture: true })
-    window.addEventListener('wheel', handleCameraChange, { capture: true, passive: true })
-    window.addEventListener('touchstart', onStart, { capture: true })
-    window.addEventListener('touchend', onEnd, { capture: true })
-
-    return () => {
-      if (movingTimeout.current) clearTimeout(movingTimeout.current)
-      window.removeEventListener('mousedown', onStart, { capture: true })
-      window.removeEventListener('mouseup', onEnd, { capture: true })
-      window.removeEventListener('wheel', handleCameraChange, { capture: true })
-      window.removeEventListener('touchstart', onStart, { capture: true })
-      window.removeEventListener('touchend', onEnd, { capture: true })
-    }
-  }, [isMoving, handleCameraChange, startStopTimeout])
+  const isLargeModel = useMemo(() => {
+    const legCount = cave.segments?.length || 0
+    const stationCount = cave.stations?.length || 0
+    const pointCount = cave.pointCount || 0
+    const scrapCount = cave.scraps?.length || 0
+    return legCount > 800 || stationCount > 800 || pointCount > 100000 || scrapCount > 80
+  }, [cave])
 
   const diag     = Math.sqrt(cave.bounds.size.x ** 2 + cave.bounds.size.y ** 2 + cave.bounds.size.z ** 2)
   const gridSize = Math.max(diag * 1.5, 200)
@@ -1856,6 +1884,7 @@ const CaveViewer3D = ({
     ctx.fillStyle = grad
     ctx.fillRect(0, 0, 2, 512)
     const tex = new THREE.CanvasTexture(canvas)
+    tex.colorSpace = THREE.SRGBColorSpace
     return tex
   }, [o.colorBackground, o.colorBackground2])
 
@@ -1895,8 +1924,11 @@ const CaveViewer3D = ({
   return (
     <Canvas
       id="main-cave-canvas"
+      style={{ isolation: 'isolate' }}
+      frameloop={o.autoRotate || isMoving || !isFullyIdle ? 'always' : 'demand'}
+      dpr={isLargeModel ? 1.0 : (typeof window !== 'undefined' && window.devicePixelRatio > 1.5 ? 1.5 : 1)}
       gl={{ 
-        antialias: true, 
+        antialias: !isLargeModel, 
         alpha: false, 
         preserveDrawingBuffer: true, 
         powerPreference: 'high-performance',
@@ -1909,19 +1941,16 @@ const CaveViewer3D = ({
         gl.debug.checkShaderErrors = false 
       }}
       onPointerMissed={() => onBackgroundClick?.()}
-      onPointerDown={() => setIsMoving(true)}
-      onPointerMove={(e) => { if (e.buttons > 0) handleCameraChange() }}
-      onWheel={() => handleCameraChange()}
     >
       <SceneBackground texture={bgTexture} color={o.colorBackground} />
       <RaycasterManager />
       <ProjectionController projection={o.cameraProjection ?? 'perspective'} cave={cave} />
-      <ambientLight intensity={0.16} />
-      <hemisphereLight color="#dbeafe" groundColor="#1e293b" intensity={0.34} />
-      <directionalLight position={[4, 6, 3]} intensity={0.92} color="#ffffff" />
-      <directionalLight position={[-5, 2, -4]} intensity={0.26} color="#bfdbfe" />
-      <directionalLight position={[-4, 5, 6]} intensity={0.48} color="#7dd3fc" />
-      <directionalLight position={[0, -3, 2]} intensity={0.09} color="#fef3c7" />
+      <ambientLight intensity={0.32} />
+      <hemisphereLight color="#ffffff" groundColor="#334155" intensity={0.42} />
+      <directionalLight position={[4, 6, 3]} intensity={1.15} color="#ffffff" castShadow={false} />
+      <directionalLight position={[-5, 2, -4]} intensity={0.40} color="#e2e8f0" />
+      <directionalLight position={[-4, 5, 6]} intensity={0.60} color="#bae6fd" />
+      <directionalLight position={[0, -3, 2]} intensity={0.18} color="#fef3c7" />
  
       {/* ── Terrain (Fixed in world space) ── */}
       {(o.showSurfaceMesh || o.showSurfaceMeshWire || o.showSurfaceTexture || o.showSurfaceNetwork || o.showContours) && cave.surfaces?.map((surf: CaveSurface, i: number) => (
@@ -1944,7 +1973,7 @@ const CaveViewer3D = ({
           onStatusChange={onStatusChange}
           onTextureReady={onTextureReady}
           onTextureDownloadInfo={onTextureDownloadInfo}
-          isMoving={isMoving}
+          isMoving={!isFullyIdle}
           options={o}
           clippingPlanes={compositeClippingPlanes}
         />
@@ -1958,7 +1987,9 @@ const CaveViewer3D = ({
         -(o.caveCalibrationOffset?.y || 0)
       ]}>
         {/* ── Entrances ── */}
-        <EntranceMarkers cave={cave} options={o} />
+        <group visible={isFullyIdle || !isLargeModel}>
+          <EntranceMarkers cave={cave} options={o} />
+        </group>
         
         {/* ── Jaskyniar (Mierka) ── */}
         {o.placedCaver && (
@@ -1970,53 +2001,68 @@ const CaveViewer3D = ({
         )}
 
         {/* ── Cave scraps ── */}
-        {o.showScraps && cave.scraps?.length > 0 && (
+        {(o.showScraps || o.accurateScraps || o.scrapsWireframe) && cave.scraps?.length > 0 && (
           <Scraps
             cave={cave} opacity={o.scrapsOpacity}
             // Ak beží Surface Nets, vypneme "Solid" v tomto komponente, aby sa neprekrývali
-            showSolid={o.scrapsSolid && !o.useSurfaceNet}
+            showSolid={o.showScraps && o.scrapsSolid && !o.useSurfaceNet}
             showWire={o.scrapsWireframe}
             showAltitude={o.scrapsAltitude}
-            smooth={o.smoothScraps}
+            smooth={o.smoothScraps && !o.accurateScraps}
             showRender={o.showRenderCave}
             caveTexture={o.caveTexture}
             renderOpacity={o.renderOpacity}
             isMoving={isMoving}
+            isFullyIdle={isFullyIdle}
             options={o}
             clippingPlanes={caveClippingPlanes}
-            onSurfaceClick={onSurfaceClick}
+            onSurfaceClick={handleModelClick}
           />
         )}
         
+        {/* ── Splay SDF Cave Walls (2D) ── */}
+        {o.enableSplayWalls && (
+          <SplayCaveWalls 
+            cave={cave} 
+            options={o} 
+            showAltitude={o.splayAltitude ?? true}
+            clippingPlanes={caveClippingPlanes}
+            isMoving={!isFullyIdle}
+            onStatusChange={onStatusChange}
+          />
+        )}
+
         {/* ── LiDAR Point Cloud ── */}
-        {o.showScraps && cave.pointCount > 0 && (
-          <>
-            <PointCloud 
-              key={`pointcloud-${o.scrapsAltitude}-${o.showCaveLiDAR}`}
-              cave={cave} 
-              options={o} 
-              clippingPlanes={caveClippingPlanes} 
-              onSurfaceClick={onSurfaceClick} 
-              isMoving={isMoving} 
-            />
-            <OrganicShell 
-              key={`organic-${o.organicLevel}-${o.organicVoxelSize}-${o.organicDilation}-${o.smoothScraps}-${o.accurateScraps}`}
-              cave={cave} 
-              options={o} 
-              clippingPlanes={caveClippingPlanes} 
-              onSurfaceClick={onSurfaceClick} 
-              isMoving={isMoving} 
-            />
-          </>
+        {o.showScraps && cave.pointCount > 0 && cave.isLiDAR && (
+          <PointCloud 
+            key={`pointcloud-${o.scrapsAltitude}-${o.showCaveLiDAR}`}
+            cave={cave} 
+            options={o} 
+            clippingPlanes={caveClippingPlanes} 
+            onSurfaceClick={handleModelClick}
+            isMoving={!isFullyIdle} 
+          />
+        )}
+
+        {/* ── Organický vyhladený model (nezávislý od "Zobraziť steny", rovnaké správanie ako Splay SDF steny) ── */}
+        {cave.pointCount > 0 && cave.isLiDAR && (
+          <OrganicShell 
+            key={`organic-${o.organicLevel}-${o.organicVoxelSize}-${o.organicDilation}-${o.smoothScraps}-${o.accurateScraps}`}
+            cave={cave} 
+            options={o} 
+            clippingPlanes={caveClippingPlanes} 
+            onSurfaceClick={handleModelClick}
+            isMoving={!isFullyIdle} 
+          />
         )}
 
         {/* ── Cave traverse (3D rúrky) ── */}
-        {o.showTraverse && cave.segments?.length > 0 && (
+        {o.showCenterline !== false && o.showTraverse && cave.segments?.length > 0 && (
           <CaveTraverse 
             cave={cave} 
             radius={o.traverseRadius} 
             showAltitude={o.traverseAltitude} 
-            isMoving={isMoving} 
+            isMoving={!isFullyIdle} 
             clippingPlanes={caveClippingPlanes}
           />
         )}
@@ -2028,24 +2074,31 @@ const CaveViewer3D = ({
           showAltitude={o.traverseAltitude} 
           options={o} 
           clippingPlanes={compositeClippingPlanes}
+          isMoving={!isFullyIdle}
+          isLargeModel={isLargeModel}
         />
 
         {/* ── Station dots & labels & clickable targets ── */}
-        {o.showStations && <Stations cave={cave} options={o} />}
-        <ClickableStations cave={cave} onStationClick={onStationClick} isMeasuringMode={isMeasuringMode} />
-        <group visible={!isMoving}>
+        <Stations cave={cave} options={o} />
+        <SurveyPointPicker cave={cave} options={o} onStationClick={onStationClick} />
+        <group visible={isFullyIdle}>
           {(o.showStationNames || o.showStationAlt) && (
             <StationLabels cave={cave} showNames={o.showStationNames} showAltitudes={o.showStationAlt} options={o} />
           )}
         </group>
 
-        {manualConnection && <ManualConnection p1={manualConnection.p1} p2={manualConnection.p2} />}
+        {isMeasuringMode
+          ? <MeasurementOverlay stations={selectedStations ?? []} />
+          : manualConnection && <ManualConnection p1={manualConnection.p1} p2={manualConnection.p2} />}
         {selectedStations && selectedStations.length === 3 && (
           <TectonicPlaneVisual
             p1={selectedStations[0].pos}
             p2={selectedStations[1].pos}
             p3={selectedStations[2].pos}
           />
+        )}
+        {selectedStations && selectedStations.length === 1 && selectedStations[0].distToSurf !== null && selectedStations[0].surfaceZ !== null && (
+          <SurfaceDepthVisual station={selectedStations[0]} lang={lang} />
         )}
       </group>
  
@@ -2062,15 +2115,21 @@ const CaveViewer3D = ({
 
       <OrbitControls
         makeDefault
-        enableDamping={true}
-        dampingFactor={0.05}
-        onStart={() => setIsMoving(true)}
+        enableDamping={!isLargeModel}
+        dampingFactor={isLargeModel ? 0.2 : 0.05}
+        onStart={handleCameraMoveStart}
+        onEnd={handleCameraMoveEnd}
         onChange={handleCameraChange}
-        rotateSpeed={0.6} zoomSpeed={0.8} panSpeed={0.8}
-        minDistance={1} maxDistance={Math.max(diag * 25, 10000)}
+        rotateSpeed={isLargeModel ? 0.9 : 0.6}
+        zoomSpeed={isLargeModel ? 1.0 : 0.8}
+        panSpeed={isLargeModel ? 1.0 : 0.8}
+        minDistance={1}
+        maxDistance={Math.max(diag * 25, 10000)}
         autoRotate={o.autoRotate}
         autoRotateSpeed={o.autoRotateSpeed}
       />
+
+      {o.enableEDL && <EDLPass strength={o.edlStrength || 1.0} radius={o.edlRadius || 1.0} />}
 
       <CameraMonitor onUpdate={(data) => {
         setCamData(data)

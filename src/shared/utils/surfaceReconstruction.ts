@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { ParsedCave } from '@shared/types';
 
 // --- PÔVODNÉ VYHLADZOVACIE FUNKCIE (Taubin & Weighted Normals) ---
 
@@ -536,4 +537,102 @@ export function reconstructSurfaceNet(
   // @ts-ignore
   geo.computeBoundsTree();
   return geo;
+}
+
+/**
+ * Generates continuous organic cave wall geometry from splay measurements.
+ * - Excludes traverse legs (A->B) from wall triangulation to prevent internal artificial walls.
+ * - Applies bisector normal plane splitting between adjacent stations to avoid overlapping cone artifacts.
+ */
+export function buildSplayWallGeometry(
+  cave: ParsedCave,
+  opts: { withColors?: boolean; organicLevel?: number } = {}
+): THREE.BufferGeometry | null {
+  if (!cave.segments || cave.segments.length === 0) return null;
+
+  const surfaceStations = new Set<string>();
+  const caveStations = new Set<string>();
+
+  cave.segments.forEach((s: any) => {
+    if (!s.from || !s.to) return;
+    const k1 = `${s.from.x.toFixed(2)},${s.from.y.toFixed(2)},${s.from.z.toFixed(2)}`;
+    const k2 = `${s.to.x.toFixed(2)},${s.to.y.toFixed(2)},${s.to.z.toFixed(2)}`;
+    if (s.type === 'cave') {
+      caveStations.add(k1);
+      caveStations.add(k2);
+    } else if (s.type === 'surface') {
+      surfaceStations.add(k1);
+      surfaceStations.add(k2);
+    }
+  });
+
+  const splays = cave.segments.filter((s: any) => {
+    if (s.type !== 'splay' || !s.from || !s.to) return false;
+    const kFrom = `${s.from.x.toFixed(2)},${s.from.y.toFixed(2)},${s.from.z.toFixed(2)}`;
+    if (surfaceStations.has(kFrom) && !caveStations.has(kFrom)) return false;
+    return true;
+  });
+  if (splays.length === 0) return null;
+
+  // Build station adjacency map for traverse legs
+  const traverseAdjacency = new Map<string, { x: number; y: number; z: number }[]>();
+  cave.segments.forEach((s: any) => {
+    if (s.type === 'cave' && s.from && s.to) {
+      const k1 = `${s.from.x.toFixed(2)},${s.from.y.toFixed(2)},${s.from.z.toFixed(2)}`;
+      const k2 = `${s.to.x.toFixed(2)},${s.to.y.toFixed(2)},${s.to.z.toFixed(2)}`;
+      if (!traverseAdjacency.has(k1)) traverseAdjacency.set(k1, []);
+      if (!traverseAdjacency.has(k2)) traverseAdjacency.set(k2, []);
+      traverseAdjacency.get(k1)!.push(s.to);
+      traverseAdjacency.get(k2)!.push(s.from);
+    }
+  });
+
+  const wallPoints: { x: number; y: number; z: number }[] = [];
+
+  for (const sp of splays) {
+    const from = sp.from;
+    const to = sp.to;
+
+    // In Three.js space, coordinate mapping is (x, z, -y)
+    let p = { x: to.x, y: to.z, z: -to.y };
+    let a = { x: from.x, y: from.z, z: -from.y };
+
+    const fromKey = `${from.x.toFixed(2)},${from.y.toFixed(2)},${from.z.toFixed(2)}`;
+    const neighbors = traverseAdjacency.get(fromKey);
+
+    let remappedToNeighbor = false;
+    if (neighbors && neighbors.length > 0) {
+      for (const n of neighbors) {
+        const b = { x: n.x, y: n.z, z: -n.y };
+        const abX = b.x - a.x, abY = b.y - a.y, abZ = b.z - a.z;
+        const abLen = Math.hypot(abX, abY, abZ);
+        if (abLen < 1e-4) continue;
+
+        const uX = abX / abLen, uY = abY / abLen, uZ = abZ / abLen;
+        const midX = 0.5 * (a.x + b.x), midY = 0.5 * (a.y + b.y), midZ = 0.5 * (a.z + b.z);
+
+        // Bisector plane check: dot product with traverse direction
+        const dot = (p.x - midX) * uX + (p.y - midY) * uY + (p.z - midZ) * uZ;
+        if (dot > 0) {
+          // Point lies on the neighbor's side of the bisector plane
+          remappedToNeighbor = true;
+          break;
+        }
+      }
+    }
+
+    wallPoints.push(p);
+  }
+
+  // Include reference stations as control points (without connecting traverse walls)
+  if (cave.stations) {
+    for (const st of cave.stations) {
+      wallPoints.push({ x: st.x, y: st.z, z: -st.y });
+    }
+  }
+
+  if (wallPoints.length < 4) return null;
+
+  const organicLevel = opts.organicLevel ?? 6;
+  return reconstructSurface(wallPoints, 0.4, false, organicLevel, false);
 }

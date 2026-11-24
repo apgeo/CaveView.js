@@ -7,6 +7,7 @@ proj4.defs('EPSG:4326', '+proj=longlat +datum=WGS84 +no_defs');
 proj4.defs('EPSG:3857', '+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs');
 
 const TILE_SIZE = 256;
+const TILE_REQUEST_TIMEOUT_MS = 15_000;
 
 export interface Progress {
     current: number;
@@ -62,6 +63,7 @@ export interface XyzDownloadOptions {
     sourceKey?: string;
     provider?: string;
     onInspectorUpdate?: (info: TextureDownloadInspector) => void;
+    requestTimeoutMs?: number;
 }
 
 export interface XyzTilePlan {
@@ -361,6 +363,10 @@ export async function downloadTiledXyz(
     options: XyzDownloadOptions = {}
 ): Promise<DownloadResult> {
     const urlPatterns = toUrlPatterns(urlPattern);
+    const requestTimeoutMs = options.requestTimeoutMs ?? TILE_REQUEST_TIMEOUT_MS;
+    if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0) {
+        throw new RangeError('Tile request timeout must be a positive finite number');
+    }
     const cache = options.cache === null ? null : (options.cache || browserTileCache);
     const useCache = !!cache && cache.isAvailable();
     const sourceKey = options.cacheKeyPrefix || options.sourceKey || `url-${hashString(urlPatterns[0] || 'unknown')}`;
@@ -498,7 +504,7 @@ export async function downloadTiledXyz(
         if (useCache && cache) {
             try {
                 const cachedBlob = await cache.get(cacheKey);
-                if (cachedBlob) {
+                if (cachedBlob && cachedBlob.size !== 1843) {
                     const img = await createImageBitmap(cachedBlob);
                     const dx = (tx - xMin) * TILE_SIZE;
                     const dy = (ty - yMin) * TILE_SIZE;
@@ -518,12 +524,17 @@ export async function downloadTiledXyz(
         }
 
         for (const [index, url] of urls.entries()) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
             try {
                 inspector.candidateRequests++;
                 if (index > 0) inspector.fallbackRequests++;
-                const resp = await fetch(url);
+                const resp = await fetch(url, { signal: controller.signal });
                 if (!resp.ok) throw new Error(`Tile fetch failed: ${resp.status} ${resp.statusText}${mapProxyFailureHint(url)}`);
                 const blob = await resp.blob();
+                if (blob.size === 1843) {
+                    throw new Error('Tile is an empty placeholder image ("no map data")');
+                }
                 const img = await createImageBitmap(blob);
                 
                 const dx = (tx - xMin) * TILE_SIZE;
@@ -543,6 +554,8 @@ export async function downloadTiledXyz(
                 const error = e instanceof Error ? e.message : String(e);
                 candidateFailures.push({ url, error });
                 console.warn(`Failed to fetch tile candidate ${zoom}/${tx}/${ty}`, { url, error });
+            } finally {
+                clearTimeout(timeoutId);
             }
         }
 

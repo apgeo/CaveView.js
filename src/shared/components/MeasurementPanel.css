@@ -1,0 +1,7 @@
+.measurement-actions { display:flex; gap:6px; flex-wrap:wrap; }
+.measurement-actions button { flex:1; padding:7px 8px; border:1px solid #334155; border-radius:6px; background:#1e293b; color:#cbd5e1; font:inherit; cursor:pointer; }
+.measurement-actions button[aria-pressed="true"] { border-color:#38bdf8; color:#7dd3fc; background:#0c4a6e; }
+.measurement-panel button:focus-visible { outline:2px solid #38bdf8; outline-offset:2px; }
+.measurement-actions button:disabled { opacity:.35; cursor:not-allowed; }
+.measurement-hint { font-size:11px; line-height:1.5; color:#94a3b8; margin:0; }
+@media(max-width:768px) { .measurement-panel { top:auto!important; bottom:14px; right:12px!important; max-height:46dvh!important; } }

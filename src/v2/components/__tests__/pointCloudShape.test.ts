@@ -12,12 +12,14 @@ describe('point cloud shape options', () => {
       'sphere',
       'diamond',
       'hex',
+      'surfel',
     ]);
 
     expect(getPointCloudShapeUniform('square')).toBe(0);
     expect(getPointCloudShapeUniform('sphere')).toBe(1);
     expect(getPointCloudShapeUniform('diamond')).toBe(2);
     expect(getPointCloudShapeUniform('hex')).toBe(3);
+    expect(getPointCloudShapeUniform('surfel')).toBe(4);
   });
 
   it('keeps the current rounded diamond experiment as the default shape', () => {
