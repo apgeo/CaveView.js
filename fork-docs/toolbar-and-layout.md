@@ -58,8 +58,26 @@ new CV2.CaveViewer( 'model', { fullscreenElement: 'article-with-model' } );
 
 The element put into fullscreen defaults to the container; a host with controls of its own around
 the viewer names an element enclosing both. Where the browser refuses fullscreen — in a frame that
-is not allowed it — the element is given the `toggle-fullscreen` class for a stylesheet to enlarge,
-and the button undoes it again.
+is not allowed it, or a phone's browser that gives fullscreen to videos alone — the element covers
+the window by its `toggle-fullscreen` class instead, and the button undoes it again.
+
+The viewer's stylesheet fixes an element with that class to the whole window at every width, with
+every declaration `!important`, so a host's own sizing of the container does not hold it back. It
+is stacked at `z-index: var(--cv-fullscreen-z-index, 2147483000)`: set the custom property on the
+element to keep something of the page above the viewer.
+
+A fixed element is held by some of its ancestors, whatever its own style says: an ancestor with a
+`transform` (an article left with an identity transform by an entrance animation is the common
+case), a `filter`, a `perspective`, a `contain`, a `will-change` of those becomes the box it is
+placed in, and an ancestor that starts a stacking context of its own keeps it under whatever the
+page stacks above that ancestor, a fixed header among them. While the class alone is covering the
+window, an element with such an ancestor is therefore moved to the end of the document's body, a
+placeholder comment keeping its place, and put back where it was when it stops covering, when the
+browser's own fullscreen takes over, or when the viewer is disposed. The element is the same
+element throughout — its listeners, its observers and the model are kept — but for that time it is
+not a descendant of its usual ancestors. A host that styles it through them, or finds it through
+its parent, should keep such styles off its ancestors instead (no transform left over from an
+animation, say): an element with no holding ancestor is never moved.
 
 ## Reduced motion
 

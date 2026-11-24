@@ -849,6 +849,102 @@ class CaveViewer extends EventDispatcher {
 
 		let fullscreenRequest = REQUEST_NONE;
 
+		// Covering the window by the class alone takes a stylesheet rule that fixes the element
+		// to the window, and that is not enough where an ancestor of the element holds it: a
+		// transform, a filter, a perspective, a containment or a will-change makes the ancestor
+		// the box a fixed element is placed in, and an ancestor that starts a stacking context
+		// of its own keeps the element under whatever of the page is stacked above it - a
+		// theme's fixed header over an article with an entrance animation is the common case.
+		// No rule set on the element can get out of either, so for as long as the class alone
+		// is covering the window an element with such an ancestor is moved to the end of the
+		// document's body, a placeholder keeping its place, and put back when it stops. An
+		// element with no such ancestor is left where it is, keeping what the host's
+		// stylesheet gives it through its ancestors.
+
+		let displaced = null;
+
+		function holdsFixedDescendants ( element ) {
+
+			const style = getComputedStyle( element );
+
+			return (
+				style.transform !== 'none' ||
+				style.perspective !== 'none' ||
+				style.filter !== 'none' ||
+				( style.backdropFilter ?? 'none' ) !== 'none' ||
+				/paint|layout|strict|content/.test( style.contain ?? '' ) ||
+				/transform|perspective|filter/.test( style.willChange ?? '' ) ||
+				( style.containerType ?? 'normal' ) !== 'normal' ||
+				( style.position !== 'static' && style.zIndex !== 'auto' ) ||
+				Number( style.opacity ) < 1 ||
+				style.isolation === 'isolate' ||
+				( style.mixBlendMode ?? 'normal' ) !== 'normal'
+			);
+
+		}
+
+		function coverWindow () {
+
+			if ( displaced !== null || ! fullscreenElement.isConnected ) return;
+
+			const body = document.body;
+
+			let held = false;
+
+			for ( let ancestor = fullscreenElement.parentElement; ancestor !== null && ancestor !== body && ancestor !== document.documentElement; ancestor = ancestor.parentElement ) {
+
+				if ( holdsFixedDescendants( ancestor ) ) {
+
+					held = true;
+					break;
+
+				}
+
+			}
+
+			if ( ! held || body === null ) return;
+
+			const placeholder = document.createComment( ' the place of a CaveView element covering the window ' );
+			const focused = fullscreenElement.contains( document.activeElement ) ? document.activeElement : null;
+
+			fullscreenElement.parentNode.insertBefore( placeholder, fullscreenElement );
+			body.appendChild( fullscreenElement );
+
+			displaced = placeholder;
+
+			// an element taken out of the document loses the focus: the control the reader
+			// pressed keeps it
+
+			if ( focused !== null && document.activeElement !== focused ) focused.focus( { preventScroll: true } );
+
+		}
+
+		function uncoverWindow () {
+
+			if ( displaced === null ) return;
+
+			const placeholder = displaced;
+			const focused = fullscreenElement.contains( document.activeElement ) ? document.activeElement : null;
+
+			displaced = null;
+
+			// the host may have taken the place away meanwhile, with what held it: the
+			// element then leaves the document, as it would have with its place
+
+			if ( placeholder.parentNode !== null ) {
+
+				placeholder.parentNode.replaceChild( fullscreenElement, placeholder );
+
+			} else {
+
+				fullscreenElement.remove();
+
+			}
+
+			if ( focused !== null && focused.isConnected && document.activeElement !== focused ) focused.focus( { preventScroll: true } );
+
+		}
+
 		function reportFullscreen () {
 
 			onResize();
@@ -907,6 +1003,7 @@ class CaveViewer extends EventDispatcher {
 			// the class stays, and is now known to be all there will be: the size and the
 			// state are reported as a change of fullscreen would have reported them
 
+			coverWindow();
 			reportFullscreen();
 
 		}
@@ -972,6 +1069,7 @@ class CaveViewer extends EventDispatcher {
 			} else {
 
 				fullscreenElement.classList.remove( 'toggle-fullscreen' );
+				uncoverWindow();
 
 			}
 
@@ -1008,7 +1106,7 @@ class CaveViewer extends EventDispatcher {
 
 				}
 
-				if ( document.fullscreenElement === null ) {
+				if ( document.fullscreenElement === null && typeof fullscreenElement.requestFullscreen === 'function' ) {
 
 					// a browser that refuses says so by rejecting, where it answers at all
 
@@ -1021,9 +1119,18 @@ class CaveViewer extends EventDispatcher {
 
 					}
 
-				} else if ( document.webkitFullscreenElement === null) {
+				} else if ( document.webkitFullscreenElement === null && typeof fullscreenElement.webkitRequestFullscreen === 'function' ) {
 
 					fullscreenElement.webkitRequestFullscreen();
+
+				} else {
+
+					// a browser with nothing to ask - a phone's that gives fullscreen to a
+					// video alone - leaves the class as all there is from the start, and
+					// no answer will come to report it
+
+					coverWindow();
+					reportFullscreen();
 
 				}
 
@@ -1041,6 +1148,7 @@ class CaveViewer extends EventDispatcher {
 
 					if ( fullscreenRequest === REQUEST_ASKED ) fullscreenRequest = REQUEST_TAKEN_BACK;
 
+					uncoverWindow();
 					reportFullscreen();
 					return;
 
@@ -3368,6 +3476,11 @@ class CaveViewer extends EventDispatcher {
 				fullscreenByClassOnly = false;
 
 			}
+
+			// an element moved out of a holding ancestor goes back to its place, whatever
+			// display it was moved for
+
+			uncoverWindow();
 
 			if ( fullscreenRequest === REQUEST_NONE ) {
 

@@ -326,22 +326,26 @@ div.cv-frame::-webkit-scrollbar-button:end {
 	border-radius: 2px;
 }
 
-@media (min-width: 768px) {
-
-	/* default to normal size */
-	body div.toggle-fullscreen {
-		position: fixed !important;
-		top: 0px;
-		bottom: 0px;
-		left: 0px;
-		right: 0px;
-		height: auto !important;
-		width: auto !important;
-		margin: 0 !important;
-		padding: 0 !important;
-		z-index: 999;
-	}
-
+/*
+ * the element displayed fullscreen covers the window by its class, at every width: where the
+ * browser refuses fullscreen this is all there is. Every declaration wins over a host's own
+ * sizing of the element, and the stacking order is the host's to change through the custom
+ * property, to put something of its own above the viewer or the viewer above a page's
+ * highest header.
+ */
+body div.toggle-fullscreen {
+	position: fixed !important;
+	top: 0px !important;
+	bottom: 0px !important;
+	left: 0px !important;
+	right: 0px !important;
+	height: auto !important;
+	width: auto !important;
+	max-width: none !important;
+	max-height: none !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	z-index: var(--cv-fullscreen-z-index, 2147483000) !important;
 }
 
 @media (max-width: 767px) {
