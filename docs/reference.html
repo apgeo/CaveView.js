@@ -872,7 +872,10 @@ How big each control is depends on what is pointing at it - see the custom prope
 same toolbar is offered a bigger target on a device driven with a finger, and a bar of targets that
 size is given the whole width of the container to wrap in rather than being left a block of rows in the
 middle of it.</p>
-<p>Each button is labelled with the name of the property it drives, and displays the state of that
+<p>Each control is titled, for a tooltip and for a screen reader, from the toolbar section of the
+interface's catalogue, keyed by the name it was asked for with; a catalogue without that entry leaves it
+titled with the name of the property it drives. The titles are written again when the catalogue of the
+interface's language arrives, which may be after the toolbar was built. Each button displays the state of that
 property as the viewer reports it changing, whether the change was made by the toolbar, by the side
 panel or by the application. Buttons that need a model are disabled until one is loaded, and a button
 for something the loaded model does not hold - the scraps of a model surveyed without them - is disabled

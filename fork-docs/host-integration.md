@@ -23,7 +23,7 @@ A lookup that throws or answers `null` leaves the survey unplaced, which is the 
 carries a complete Romanian catalogue. Pass the language of the application around the viewer rather
 than leaving it to the browser's, or the two can disagree on one screen; the catalogue is shared by
 every viewer of a page, so give every viewer the same one. Labels built before the catalogue arrives
-are written again when it does.
+are written again when it does, the toolbar's titles among them.
 
 ## Disposing of a viewer
 

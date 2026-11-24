@@ -18,7 +18,11 @@ bar.dispose();
 The available buttons are `stations`, `stationLabels`, `stationComments`, `splays`, `walls`,
 `scraps`, `entrances`, `boundingBox`, `viewNorth`, `viewEast`, `viewSouth`, `viewWest`, `viewPlan`,
 `cameraOrthographic`, `cameraPerspective`, `shadingMode` (a chooser), `autoRotate` and `fullscreen`.
-Each reflects the viewer's state, whoever changed it. Its look is CSS custom properties
+Each reflects the viewer's state, whoever changed it, and is titled — for the tooltip and for a
+screen reader — from the `toolbar` section of the interface's catalogue (the button's name is the
+key); a catalogue without the entry leaves the property's name as the title. A bar built before the
+catalogue of the reader's language arrives is titled again when it does, so a host need not wait for
+the catalogue before building it. Its look is CSS custom properties
 (`--cv-toolbar-button-size`, `--cv-toolbar-background`, `--cv-toolbar-active-background` …).
 
 On a narrow viewer the bar would cover too much of the model: `strip: <element or id>` lays it out

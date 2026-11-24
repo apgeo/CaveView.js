@@ -298,5 +298,25 @@
 		"depth_from_surface": "adâncime față de suprafață",
 		"adjusted_depth": "adâncime ajustată",
 		"distance": "distanță"
+	},
+	"toolbar": {
+		"stations": "Stații",
+		"stationLabels": "Etichete stații",
+		"stationComments": "Comentarii stații",
+		"splays": "Radieri",
+		"walls": "Pereți (LRUD)",
+		"scraps": "Schițe",
+		"entrances": "Etichete intrări",
+		"boundingBox": "Casetă de încadrare",
+		"viewNorth": "Profil N",
+		"viewEast": "Profil E",
+		"viewSouth": "Profil S",
+		"viewWest": "Profil W",
+		"viewPlan": "Plan",
+		"cameraOrthographic": "Cameră ortografică",
+		"cameraPerspective": "Cameră în perspectivă",
+		"shadingMode": "Umbrire",
+		"autoRotate": "Rotire continuă",
+		"fullscreen": "Ecran complet"
 	}
 }
