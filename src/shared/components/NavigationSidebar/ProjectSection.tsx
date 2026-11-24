@@ -51,9 +51,9 @@ export function ProjectSection({ bindings }: { bindings: Pick<NavigationBindings
       <label className="btn-back">{t('navigation.openFile')}<input type="file" aria-label={t('navigation.openFile')} accept=".lox,.3d,.plt,.ply,.stl" onChange={e => { const file = e.target.files?.[0]; if (file) void handleFile(file); e.target.value = '' }} /></label>
       <button type="button" className="btn-back" onClick={handleReset}>{t('navigation.closeModel')}</button>
       <SidebarAccordion heading={<h3>{t('welcome.demoTitle')}</h3>} detailsLabel={t('navigation.details')}>
-        <button type="button" className="btn-back" onClick={() => loadFromUrl('/test_simple.lox', 'model-simple.lox')}>LOX · Simple</button>
-        <button type="button" className="btn-back" onClick={() => loadFromUrl('/test_model2.lox', 'model2.lox')}>LOX · Model 2</button>
-        <button type="button" className="btn-back" onClick={() => loadFromUrl('/vetrna_dira.ply', 'Vetrna_dira_merge.ply')}>PLY · Vetrná diera</button>
+        <button type="button" className="btn-back" onClick={() => loadFromUrl(`${import.meta.env.BASE_URL}test_simple.lox`, 'model-simple.lox')}>LOX · Simple</button>
+        <button type="button" className="btn-back" onClick={() => loadFromUrl(`${import.meta.env.BASE_URL}test_model2.lox`, 'model2.lox')}>LOX · Model 2</button>
+        <button type="button" className="btn-back" onClick={() => loadFromUrl(`${import.meta.env.BASE_URL}vetrna_dira.ply`, 'Vetrna_dira_merge.ply')}>PLY · Vetrná diera</button>
       </SidebarAccordion>
       <SidebarAccordion heading={<h3>{t('navigation.exports')}</h3>} detailsLabel={t('navigation.details')}>
         {!isEmbedMode && (
