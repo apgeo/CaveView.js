@@ -14,6 +14,7 @@ import proj4 from 'proj4'
 
 import packageJson from '../package.json'
 import { SJTSK_DEF, fetchAltitudeFromZbgis, wgs84ToJtsk } from '@shared/utils/geoUtils';
+import { useEmbedHost, postToHost } from '@shared/embed/embedMessages';
 import { tryUtmToWgs84, tryJtskToWgs84, worldToWgs84, getZbgisPointUrl } from "@shared/utils/coords";
 import type { ParsedCave, ViewerOptions, CaveSurface, StationLabel, Vec3, ViewerCameraSnapshot, ViewPreset } from '@shared/types';
 import type { TextureDownloadInspector } from '@shared/utils/XyzTileDownloader';
@@ -2039,6 +2040,8 @@ export default function App() {
       worldToWgs84(depthInfo.closestSurfWorld.x, depthInfo.closestSurfWorld.y, { x: ox, y: oy, gps: gps || undefined })
     ) : null
 
+    if (resolved.station && sl?.name) postToHost({ type: 'lochviewer:station', name: sl.name, x: ox, y: oy, z: alt })
+
     const newSt: SelStation = { 
       idx, name, origX: ox, origY: oy, altitude: alt, gps,
       distToSurf: depthInfo.distToSurf,
@@ -2552,6 +2555,17 @@ export default function App() {
       setAppState('error')
     }
   }, [])
+
+  // A page embedding the viewer may hand it a file's bytes rather than an address
+  // (see shared/embed/embedMessages.ts), and is told how the model it sent fared.
+  useEmbedHost(handleFile)
+  useEffect(() => {
+    if (appState === 'viewer' && cave && loadedFile) {
+      postToHost({ type: 'lochviewer:loaded', name: loadedFile.name, stations: cave.stationCount, segments: cave.segmentCount })
+    } else if (appState === 'error') {
+      postToHost({ type: 'lochviewer:error', message: errorMsg ?? '' })
+    }
+  }, [appState]) // once per outcome, not again for every later change to the model
 
 
   // Load from URL (for demo/test models served from public/)
