@@ -86,9 +86,9 @@ const types = {
 // the viewer's container stands in an element of the host's, with a toolbar beside it rather
 // than inside it, and that element is the one put into fullscreen. Below it are the host's
 // own controls: the fields a key belongs to, and a chooser and a tick box that take no text.
-// The class the viewer sets on the fullscreen element covers the page, as a host's stylesheet
-// has it do for a browser that refuses fullscreen. One button of the host's stays above
-// whatever is covering the page: a press on it runs what the test last gave it to run, as
+// The class the viewer sets on the fullscreen element covers the page, and the host puts it
+// low enough in the page's stacking order for one button of its own to stay above whatever
+// is covering the page: a press on it runs what the test last gave it to run, as
 // something the reader did - which is what the browser asks before it grants fullscreen.
 
 const pageHtml = `<!doctype html>
@@ -99,7 +99,7 @@ const pageHtml = `<!doctype html>
 	#wrap { width: 800px; background: #000; }
 	#bar { position: relative; height: 40px; }
 	#scene { width: 800px; height: 600px; position: relative; }
-	#wrap.toggle-fullscreen { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; z-index: 100; }
+	#wrap.toggle-fullscreen { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; --cv-fullscreen-z-index: 100; }
 	#host { margin-top: 8px; }
 	#editable { display: inline-block; min-width: 80px; background: #fff; }
 	#hostact { position: fixed; right: 0; bottom: 0; z-index: 1000; }
@@ -116,6 +116,32 @@ const pageHtml = `<!doctype html>
 <button id="hostfs" type="button" onclick="document.documentElement.requestFullscreen()">host fullscreen</button>
 <button id="hostact" type="button" onclick="smoke.act()">host action</button>
 </div>
+<script src="/CaveView/js/CaveView2.min.js"></script>
+</body></html>`;
+
+// a page of the kind a viewer is embedded in, refused fullscreen: a header fixed over the
+// top of the window and stacked high, as themes have it, an article with an identity
+// transform left by an entrance animation - which holds any fixed element inside it - and
+// the viewer in the article, kept in the flow at every width as embedding hosts keep it,
+// with its toolbar in a strip above it
+
+const fallbackHtml = `<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="/CaveView/css/caveview.css">
+<style>
+	body { margin: 0; background: #000; }
+	header { position: fixed; left: 0; right: 0; top: 0; height: 48px; z-index: 50001; background: #333; }
+	header button { margin: 8px auto; display: block; }
+	article { transform: matrix( 1, 0, 0, 1, 0, 0 ); margin: 64px 16px 400px; max-width: 760px; }
+	body div#scene.cv-container:not( .toggle-fullscreen ) {
+		position: relative !important; top: auto !important; bottom: auto !important; left: auto !important; right: auto !important;
+		width: 100% !important; height: 400px !important; margin: 0 !important; z-index: auto;
+	}
+</style>
+</head>
+<body>
+<header><button id="menu" type="button">menu</button></header>
+<article><p>text before</p><div id="strip"></div><div id="scene"></div><p>text after</p></article>
 <script src="/CaveView/js/CaveView2.min.js"></script>
 </body></html>`;
 
@@ -137,6 +163,14 @@ const compareHtml = `<!doctype html>
 const server = http.createServer( ( req, res ) => {
 
 	const url = new URL( req.url, 'http://127.0.0.1' );
+
+	if ( url.pathname === '/fallback.html' ) {
+
+		res.writeHead( 200, { 'content-type': 'text/html', 'permissions-policy': 'fullscreen=()' } );
+		res.end( fallbackHtml );
+		return;
+
+	}
 
 	if ( url.pathname === '/compare.html' ) {
 
@@ -2434,9 +2468,82 @@ try {
 
 	const rejections3 = await page3.evaluate( () => smoke.rejections );
 
+	// --- a page that holds fixed elements in an article, fullscreen refused, two widths ---
+
+	let rejections4 = 0;
+
+	for ( const viewport of [ { width: 390, height: 844 }, { width: 1280, height: 900 } ] ) {
+
+		const fourth = await browser.newContext( { viewport } );
+		const { page: page4, seen: seen4 } = await openPage( fourth, '/fallback.html' );
+
+		seenByPage.push( seen4 );
+
+		await page4.evaluate( async ( { survey, timeout } ) => {
+
+			const viewer = new CV2.CaveViewer( 'scene', { home: '/CaveView/', surveyDirectory: '/surveys/', language: 'en' } );
+
+			window.viewer = viewer;
+			window.ui = new CV2.CaveViewUI( viewer );
+
+			const newCave = smoke.wait( viewer, 'newCave', timeout );
+
+			window.ui.loadCave( survey );
+
+			await newCave;
+
+			window.toolbar = new CV2.CaveViewToolbar( viewer, 'scene', { buttons: [ 'autoRotate', 'fullscreen' ], strip: 'strip' } );
+
+		}, { survey: SURVEY, timeout: TIMEOUT } );
+
+		const placed = () => page4.evaluate( () => {
+
+			const scene = document.getElementById( 'scene' );
+			const rect = scene.getBoundingClientRect();
+			const top = document.elementFromPoint( window.innerWidth / 2, 10 );
+
+			return {
+				rect: [ rect.left, rect.top, rect.width, rect.height ].map( Math.round ),
+				window: [ 0, 0, window.innerWidth, window.innerHeight ],
+				onTop: scene.contains( top ),
+				header: top !== null && top.closest( 'header' ) !== null,
+				toolbarIn: scene.contains( document.querySelector( '.cv-toolbar' ) ),
+				toolbarInStrip: document.getElementById( 'strip' ).contains( document.querySelector( '.cv-toolbar' ) ),
+				inArticle: scene.parentElement === document.querySelector( 'article' ) && scene.previousElementSibling?.id === 'strip',
+				state: viewer.fullscreen,
+				document: document.fullscreenElement !== null,
+				rejections: smoke.rejections
+			};
+
+		} );
+
+		const before = await placed();
+
+		await press( page4, '.cv-toolbar-fullscreen' );
+		await page4.waitForFunction( () => viewer.fullscreen && document.getElementById( 'scene' ).parentElement === document.body, null, { timeout: 8000 } ).catch( () => {} );
+		await page4.waitForTimeout( 300 );
+
+		const covering = await placed();
+
+		await press( page4, '.cv-toolbar-fullscreen' );
+		await page4.waitForTimeout( 500 );
+
+		const after = await placed();
+
+		const size = `${viewport.width}x${viewport.height}`;
+
+		check( `refused fullscreen in a transformed article under a fixed header (${size}): the container covers the window, above the header, its toolbar inside it`, ! covering.document && covering.state === true && covering.rect.join() === covering.window.join() && covering.onTop && covering.toolbarIn, `rect ${covering.rect.join( ',' )} of ${covering.window.join( ',' )}, on top: ${covering.onTop}, toolbar inside: ${covering.toolbarIn}` );
+		check( `pressed again (${size}): the container is back in its place at its size, the toolbar in its strip, the header on top`, after.state === false && after.inArticle && after.rect.join() === before.rect.join() && after.toolbarInStrip === before.toolbarInStrip && after.header && before.header, `rect ${after.rect.join( ',' )} against ${before.rect.join( ',' )}, in the article: ${after.inArticle}` );
+
+		rejections4 += await page4.evaluate( () => smoke.rejections );
+
+		await fourth.close();
+
+	}
+
 	const uncaught = seenByPage.reduce( ( total, each ) => total + each.pageErrors.length, 0 );
 	const dialogs = seenByPage.reduce( ( total, each ) => total + each.dialogs.length, 0 );
-	const rejections = rejections1 + rejections2 + rejections3;
+	const rejections = rejections1 + rejections2 + rejections3 + rejections4;
 
 	check( 'no uncaught error, no unhandled rejection and no dialog in any of the pages', uncaught === 0 && dialogs === 0 && rejections === 0, `uncaught errors: ${uncaught}, unhandled rejections: ${rejections}, dialogs: ${dialogs}` );
 
