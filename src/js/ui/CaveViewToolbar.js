@@ -251,6 +251,9 @@ const defaultButtons = Object.keys( definitions );
 
 const SHADING_TEXT_PREFIX = 'settings.';
 
+// the titles of the controls, by the name the control is asked for with
+const CONTROL_TEXT_PREFIX = 'toolbar.';
+
 const legShadingModes = [
 	{ key: 'shading.height', constant: 'SHADING_HEIGHT', value: SHADING_HEIGHT },
 	{ key: 'shading.length', constant: 'SHADING_LENGTH', value: SHADING_LENGTH, legs: true },
@@ -366,8 +369,8 @@ class CaveViewToolbar {
 		viewer.addEventListener( 'resized', layOut );
 		viewer.addEventListener( 'dispose', dispose );
 
-		// the names of the shading modes are read from the catalogue of the interface's
-		// language, which is fetched as the viewer is created and may well arrive after the
+		// the titles of the controls and the names of the shading modes are read from the
+		// catalogue of the interface's language, which is fetched as the viewer is created and may well arrive after the
 		// toolbar has been built - and which another viewer of the page may change
 
 		addListener( cfg, 'change', onConfigurationChange );
@@ -508,14 +511,26 @@ class CaveViewToolbar {
 
 		}
 
-		function controlTitle ( definition ) {
+		function controlTitle ( id, definition ) {
 
-			// the property a control drives is named, rather than described: what the
-			// button does is then the same question as what the documented property does
+			// what the control does, in the language of the interface. A catalogue without
+			// the entry - one a host wrote before the toolbar had any - leaves the control
+			// named by the property it drives, which is what the documentation describes.
+
+			const text = cfg.i18n( CONTROL_TEXT_PREFIX + id );
+
+			if ( typeof text === 'string' && text !== '' ) return text;
 
 			return ( definition.constant === undefined )
 				? definition.property
 				: `${definition.property} = CV2.${definition.constant}`;
+
+		}
+
+		function writeTitle ( element, title ) {
+
+			element.title = title;
+			element.setAttribute( 'aria-label', title );
 
 		}
 
@@ -536,13 +551,11 @@ class CaveViewToolbar {
 		function addButton ( id, definition ) {
 
 			const button = document.createElement( 'button' );
-			const title = controlTitle( definition );
 
 			button.type = 'button';
-			button.title = title;
 
 			button.classList.add( 'cv-toolbar-button', `cv-toolbar-${id}` );
-			button.setAttribute( 'aria-label', title );
+			writeTitle( button, controlTitle( id, definition ) );
 
 			setStyle( button, buttonStyle( sizes ) );
 
@@ -565,6 +578,8 @@ class CaveViewToolbar {
 			bar.appendChild( button );
 
 			controls.push( {
+				id: id,
+				definition: definition,
 				property: definition.property,
 				element: button,
 				style: buttonStyle,
@@ -587,10 +602,8 @@ class CaveViewToolbar {
 
 			const select = document.createElement( 'select' );
 
-			select.title = definition.property;
-
 			select.classList.add( 'cv-toolbar-select', `cv-toolbar-${id}` );
-			select.setAttribute( 'aria-label', definition.property );
+			writeTitle( select, controlTitle( id, definition ) );
 
 			setStyle( select, selectStyle( sizes ) );
 
@@ -601,6 +614,8 @@ class CaveViewToolbar {
 			shadingSelect = select;
 
 			controls.push( {
+				id: id,
+				definition: definition,
 				property: definition.property,
 				element: select,
 				style: selectStyle,
@@ -733,7 +748,10 @@ class CaveViewToolbar {
 
 			if ( event.name !== 'language' ) return;
 
-			// the list is written again in the new language, and shows the mode it showed
+			// the titles the controls are read out by are written again in the new
+			// language, and the list too, which shows the mode it showed
+
+			controls.forEach( control => writeTitle( control.element, controlTitle( control.id, control.definition ) ) );
 
 			buildShadingOptions();
 			refresh( 'shadingMode' );

@@ -285,5 +285,25 @@
 		"depth_from_surface": "depth from surface",
 		"adjusted_depth": "adjusted depth",
 		"distance": "distance"
+	},
+	"toolbar": {
+		"stations": "Stations",
+		"stationLabels": "Station labels",
+		"stationComments": "Station comments",
+		"splays": "Splay legs",
+		"walls": "Walls (LRUD)",
+		"scraps": "Scraps",
+		"entrances": "Entrance labels",
+		"boundingBox": "Bounding box",
+		"viewNorth": "N elevation",
+		"viewEast": "E elevation",
+		"viewSouth": "S elevation",
+		"viewWest": "W elevation",
+		"viewPlan": "Plan",
+		"cameraOrthographic": "Orthographic camera",
+		"cameraPerspective": "Perspective camera",
+		"shadingMode": "Shading",
+		"autoRotate": "Rotate continuously",
+		"fullscreen": "Full screen"
 	}
 }

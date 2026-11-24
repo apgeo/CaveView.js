@@ -319,6 +319,15 @@ function instrument () {
 
 	smoke.shadingNames = () => [ ...document.querySelectorAll( '.cv-toolbar select option' ) ].map( option => option.textContent );
 
+	// what each control of the toolbar is titled and read out by, under the name it was asked
+	// for with
+
+	smoke.titles = () => [ ...document.querySelectorAll( '.cv-toolbar-button, .cv-toolbar-select' ) ].map( control => ( {
+		id: [ ...control.classList ].find( name => /^cv-toolbar-(?!button$|select$)/.test( name ) ).slice( 'cv-toolbar-'.length ),
+		title: control.title,
+		label: control.getAttribute( 'aria-label' )
+	} ) );
+
 	// the viewer, the user interface (for its side panel and its keyboard controls), a
 	// survey, and a toolbar built the way a host builds one: as soon as there is a model,
 	// without waiting for anything else
@@ -352,6 +361,7 @@ function instrument () {
 		window.toolbar = new CV2.CaveViewToolbar( viewer, 'bar', { buttons: [ 'shadingMode', 'autoRotate', 'fullscreen' ] } );
 
 		const shadingNames = smoke.shadingNames();
+		const titles = smoke.titles();
 
 		let stations = 0;
 
@@ -383,7 +393,7 @@ function instrument () {
 
 		const versionLines = [ ...document.querySelectorAll( '.page p' ) ].filter( p => p.textContent === 'CaveView ' + CV2.VERSION ).length;
 
-		return { stations, far: far === null ? null : far.getPath(), leg, version: CV2.VERSION, versionLines, shadingNames };
+		return { stations, far: far === null ? null : far.getPath(), leg, version: CV2.VERSION, versionLines, shadingNames, titles };
 
 	};
 
@@ -1579,13 +1589,21 @@ try {
 	const translated = await page2.evaluate( header => ( {
 		headers: [ ...document.querySelectorAll( '.page .header' ) ].filter( div => div.textContent === header ).length,
 		versionLines: [ ...document.querySelectorAll( '.page p' ) ].filter( p => p.textContent === 'CaveView ' + CV2.VERSION ).length,
-		shadingNames: smoke.shadingNames()
+		shadingNames: smoke.shadingNames(),
+		titles: smoke.titles()
 	} ), surveyHeader );
 
 	const known = new Set( Object.values( names ) );
 	const versionLine = ( catalogue.help.version ?? '' ).replace( '%{version}', loaded2.version );
 
 	check( `the ${LANGUAGE} catalogue is fetched, and the side panel and the help page's version line are written from it`, catalogueStatus === 200 && translated.headers > 0 && versionLine === 'CaveView ' + loaded2.version && translated.versionLines === 1, `status ${catalogueStatus}` );
+	// every control the toolbar was built with is titled from the catalogue once it is there,
+	// and was not before: built early, the bar was titled in the language it fell back to
+
+	const titled = translated.titles.filter( control => control.title === catalogue.toolbar?.[ control.id ] && control.label === control.title );
+	const titledEarly = loaded2.titles.filter( control => control.title === catalogue.toolbar?.[ control.id ] );
+
+	check( 'the toolbar\'s controls, built before the catalogue arrived, are titled and read out from it once it has', translated.titles.length === 3 && titled.length === translated.titles.length && titledEarly.length === 0, `${titled.length} of ${translated.titles.length} from the catalogue, ${titledEarly.length} before it arrived` );
 	check( 'the toolbar\'s chooser, built before the catalogue arrived, lists the shading modes by the catalogue\'s names', loaded2.shadingNames.length > 0 && loaded2.shadingNames.every( name => ! known.has( name ) ) && translated.shadingNames.length === loaded2.shadingNames.length && translated.shadingNames.every( name => known.has( name ) ), `${translated.shadingNames.filter( name => known.has( name ) ).length} of ${translated.shadingNames.length} names from the catalogue` );
 
 	// reduced motion: the same calls, the same events, and no flight
